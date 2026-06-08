@@ -1,7 +1,7 @@
-"""Resonator spectroscopy — the worked reference protocol (backend-free half).
+"""Resonator spectroscopy — the worked reference experiment (backend-free half).
 
 Sweeps readout frequency around each qubit's current resonator frequency, locates the
-transmission dip, and updates ``readout_freq``. A driver only adds ``build()``.
+transmission dip, and updates ``readout_freq``. A driver only adds ``probe()``.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from lmfit.models import ConstantModel, LorentzianModel
 from pydantic import Field
 
 from ..parameters import AveragingParameters, QubitSelection
-from ..protocol import Protocol
+from ..experiment import Experiment
 from ..result import Outcome, Result
 
 
@@ -53,8 +53,8 @@ def _fit_dip(detuning: np.ndarray, magnitude: np.ndarray) -> tuple[float, bool]:
         return float(detuning[np.argmin(magnitude)]), False
 
 
-class ResonatorSpectroscopy(Protocol):
-    """Backend-agnostic resonator spectroscopy. ``build()`` is supplied by a driver."""
+class ResonatorSpectroscopy(Experiment):
+    """Backend-agnostic resonator spectroscopy. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "resonator_spectroscopy"
     description: ClassVar[str] = (
@@ -86,8 +86,8 @@ class ResonatorSpectroscopy(Protocol):
             q_data[k] = rng.normal(0, noise, detuning.size)
         return {"I": i_data, "Q": q_data}
 
-    def analyze(self) -> ResonatorSpectroscopyResult:
-        assert self.dataset is not None, "run() populates self.dataset before analyze()"
+    def estimate(self) -> ResonatorSpectroscopyResult:
+        assert self.dataset is not None, "run() populates self.dataset before estimate()"
         detuning = self.dataset["detuning_hz"].values
         result = ResonatorSpectroscopyResult()
         for qubit in self.params.qubits:

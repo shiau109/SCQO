@@ -1,6 +1,6 @@
 """Device model — neutral names for qubit calibration state.
 
-A protocol's ``update()`` writes fitted quantities back through these neutral names.
+An experiment's ``update()`` writes fitted quantities back through these neutral names.
 Each backend maps them onto its native model:
 
     neutral            QM / QUAM                     Qblox / QuantumDevice

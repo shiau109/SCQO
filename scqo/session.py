@@ -20,7 +20,7 @@ from .backend import Backend
 
 
 class Session:
-    """Bind a backend and expose the protocol-level API."""
+    """Bind a backend and expose the experiment-level API."""
 
     def __init__(self, backend: Backend) -> None:
         self.backend = backend
@@ -29,17 +29,17 @@ class Session:
         """List available measurements with their JSON parameter schemas."""
         return registry.catalog()
 
-    def run(self, protocol: str, params: dict[str, Any], update: bool = True) -> dict:
-        """Run a protocol by name; return its structured result as a dict.
+    def run(self, experiment: str, params: dict[str, Any], update: bool = True) -> dict:
+        """Run an experiment by name; return its structured result as a dict.
 
         If ``update`` and the run succeeded, fitted values are written back into the
-        device model (mirrors the manual analyze -> post_run / update_state step).
+        device model (mirrors the manual estimate -> post_run / update_state step).
         """
-        cls = registry.get(protocol)
-        proto = cls(self.backend, cls.Parameters(**params))
-        result = proto.run()
+        cls = registry.get(experiment)
+        exp = cls(self.backend, cls.Parameters(**params))
+        result = exp.run()
         if update and result.success:
-            proto.update()
+            exp.update()
         return result.model_dump(mode="json")
 
     def device_state(self) -> dict:

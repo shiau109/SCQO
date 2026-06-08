@@ -1,8 +1,8 @@
-"""Backend-free physics protocols.
+"""Backend-free physics experiments.
 
-Each module here defines a protocol's Parameters, Result, sweep, simulator, analysis
-and device writeback — everything *except* ``build()``. Concrete drivers subclass
-these and implement ``build()`` for their instrument, then ``@register`` the subclass.
+Each module here defines an experiment's Parameters, Result, sweep, simulator, analysis
+and device writeback — everything *except* ``probe()``. Concrete drivers subclass
+these and implement ``probe()`` for their instrument, then ``@register`` the subclass.
 """
 
 from .power_rabi import PowerRabi, PowerRabiParameters, PowerRabiResult

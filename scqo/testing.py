@@ -11,7 +11,7 @@ import xarray as xr
 
 from .backend import Backend
 from .device import DeviceModel, QubitView
-from .protocol import Protocol
+from .experiment import Experiment
 
 
 class _InMemoryQubit(QubitView):
@@ -63,7 +63,7 @@ class InMemoryDevice(DeviceModel):
 
 
 class SimulatedBackend(Backend):
-    """Backend that fabricates data from ``protocol.simulate`` (never calls ``build``)."""
+    """Backend that fabricates data from ``experiment.simulate`` (never calls ``probe``)."""
 
     def __init__(self, device: DeviceModel) -> None:
         self._device = device
@@ -72,10 +72,10 @@ class SimulatedBackend(Backend):
     def device(self) -> DeviceModel:
         return self._device
 
-    def acquire(self, protocol: Protocol) -> xr.Dataset:
-        sweep = protocol.sweep_axes
-        raw = protocol.simulate(sweep)  # {var: ndarray of shape (n_qubits, *sweep)}
-        qubits = protocol.params.qubits  # type: ignore[attr-defined]
+    def acquire(self, experiment: Experiment) -> xr.Dataset:
+        sweep = experiment.sweep_axes
+        raw = experiment.simulate(sweep)  # {var: ndarray of shape (n_qubits, *sweep)}
+        qubits = experiment.params.qubits  # type: ignore[attr-defined]
         dims = ["qubit", *sweep.keys()]
         coords = {"qubit": list(qubits), **sweep}
         data_vars = {var: (dims, array) for var, array in raw.items()}

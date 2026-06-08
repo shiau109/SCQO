@@ -1,6 +1,6 @@
-"""Backend — bridges an abstract protocol to a concrete instrument (or a simulator).
+"""Backend — bridges an abstract experiment to a concrete instrument (or a simulator).
 
-The backend owns the device model and knows how to *acquire* data for a protocol.
+The backend owns the device model and knows how to *acquire* data for an experiment.
 This is the only seam where vendor APIs (qm-qua, qblox-scheduler) appear.
 """
 
@@ -14,7 +14,7 @@ import xarray as xr
 from .device import DeviceModel
 
 if TYPE_CHECKING:
-    from .protocol import Protocol
+    from .experiment import Experiment
 
 
 class Backend(ABC):
@@ -26,11 +26,11 @@ class Backend(ABC):
         """The device model whose state experiments read and update."""
 
     @abstractmethod
-    def acquire(self, protocol: "Protocol") -> xr.Dataset:
-        """Realize and execute ``protocol`` on this backend, returning labelled data.
+    def acquire(self, experiment: "Experiment") -> xr.Dataset:
+        """Realize and execute ``experiment`` on this backend, returning labelled data.
 
-        Hardware backends call ``protocol.build()`` to produce a native program
+        Hardware backends call ``experiment.probe()`` to produce a native program
         (a QUA program or a Qblox ``Schedule``), run it, and return the result as an
-        ``xarray.Dataset`` with a ``qubit`` dimension plus the protocol's sweep axes.
-        The simulated backend ignores ``build`` and calls ``protocol.simulate`` instead.
+        ``xarray.Dataset`` with a ``qubit`` dimension plus the experiment's sweep axes.
+        The simulated backend ignores ``probe`` and calls ``experiment.simulate`` instead.
         """

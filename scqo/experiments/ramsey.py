@@ -1,16 +1,16 @@
-"""Ramsey — second worked protocol, proving the pattern generalizes (backend-free half).
+"""Ramsey — second worked experiment, proving the pattern generalizes (backend-free half).
 
 Differs from resonator spectroscopy on every axis that matters:
   * sweep is **time** (idle delay), not frequency;
   * fit is a **decaying cosine** yielding **two** quantities (residual detuning + T2*);
   * writeback targets a **different** neutral device field: ``drive_freq``.
 
-A driver still only adds ``build()``.
+A driver still only adds ``probe()``.
 
 Detuning convention: the experiment deliberately detunes the drive by
 ``frequency_detuning_hz``; the Ramsey fringe then oscillates at
 ``frequency_detuning_hz + err`` where ``err`` is the residual qubit-drive detuning.
-``analyze`` recovers ``err`` and corrects ``drive_freq`` by it.
+``estimate`` recovers ``err`` and corrects ``drive_freq`` by it.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from lmfit import Model
 from pydantic import Field
 
 from ..parameters import AveragingParameters, QubitSelection
-from ..protocol import Protocol
+from ..experiment import Experiment
 from ..result import Outcome, Result
 
 
@@ -75,8 +75,8 @@ def _fit_ramsey(t: np.ndarray, signal: np.ndarray) -> tuple[float, float, bool]:
         return freq_guess, float("nan"), False
 
 
-class Ramsey(Protocol):
-    """Backend-agnostic Ramsey. ``build()`` is supplied by a driver."""
+class Ramsey(Experiment):
+    """Backend-agnostic Ramsey. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "ramsey"
     description: ClassVar[str] = (
@@ -111,8 +111,8 @@ class Ramsey(Protocol):
             q_data[k] = rng.normal(0, noise, t.size)
         return {"I": i_data, "Q": q_data}
 
-    def analyze(self) -> RamseyResult:
-        assert self.dataset is not None, "run() populates self.dataset before analyze()"
+    def estimate(self) -> RamseyResult:
+        assert self.dataset is not None, "run() populates self.dataset before estimate()"
         t = self.dataset["idle_time_ns"].values * 1e-9
         applied = self.params.frequency_detuning_hz
         result = RamseyResult()

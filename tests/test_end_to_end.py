@@ -1,7 +1,7 @@
 """End-to-end test of the abstraction with no instrument installed.
 
-A throwaway concrete protocol (build = no-op) is enough because the SimulatedBackend
-drives ``simulate`` instead of ``build``.
+A throwaway concrete experiment (probe = no-op) is enough because the SimulatedBackend
+drives ``simulate`` instead of ``probe``.
 """
 
 from __future__ import annotations
@@ -9,15 +9,15 @@ from __future__ import annotations
 import numpy as np
 
 from scqo import Outcome, Session, register
-from scqo.protocols import PowerRabi, Ramsey, ResonatorSpectroscopy
+from scqo.experiments import PowerRabi, Ramsey, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
 
 @register
 class DemoResonatorSpectroscopy(ResonatorSpectroscopy):
-    """Concrete protocol for tests/demos; no real instrument program."""
+    """Concrete experiment for tests/demos; no real instrument program."""
 
-    def build(self):  # never called by SimulatedBackend
+    def probe(self):  # never called by SimulatedBackend
         return None
 
 
@@ -25,7 +25,7 @@ class DemoResonatorSpectroscopy(ResonatorSpectroscopy):
 class DemoRamsey(Ramsey):
     """Concrete Ramsey for tests/demos; no real instrument program."""
 
-    def build(self):  # never called by SimulatedBackend
+    def probe(self):  # never called by SimulatedBackend
         return None
 
 
@@ -33,7 +33,7 @@ class DemoRamsey(Ramsey):
 class DemoPowerRabi(PowerRabi):
     """Concrete power Rabi for tests/demos; no real instrument program."""
 
-    def build(self):  # never called by SimulatedBackend
+    def probe(self):  # never called by SimulatedBackend
         return None
 
 
@@ -46,12 +46,12 @@ def _device() -> InMemoryDevice:
     )
 
 
-def test_protocol_runs_and_fits_dip():
+def test_experiment_runs_and_fits_dip():
     backend = SimulatedBackend(_device())
-    proto = DemoResonatorSpectroscopy(
+    exp = DemoResonatorSpectroscopy(
         backend, DemoResonatorSpectroscopy.Parameters(qubits=["q0", "q1"], frequency_span_hz=15e6, num_points=201)
     )
-    result = proto.run()
+    result = exp.run()
     assert result.success
     # recovered dip lies within the swept window for each qubit
     for qubit in ["q0", "q1"]:
@@ -81,7 +81,7 @@ def test_ramsey_generalizes_pattern():
     """Same lifecycle, different sweep/fit/field: time sweep -> T2* + drive_freq update."""
     sess = Session(SimulatedBackend(_device()))
 
-    # both protocols share one catalog/registry
+    # both experiments share one catalog/registry
     assert {"resonator_spectroscopy", "ramsey"} <= {e["name"] for e in sess.catalog()}
 
     before = sess.device_state()["q1"]["drive_freq"]

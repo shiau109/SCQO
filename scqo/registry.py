@@ -1,11 +1,11 @@
-"""Protocol registry — the catalog an AI agent chooses from.
+"""Experiment registry — the catalog an AI agent chooses from.
 
-A driver registers its concrete protocols at import time::
+A driver registers its concrete experiments at import time::
 
     from scqo import register
     @register
     class QbloxResonatorSpectroscopy(ResonatorSpectroscopy):
-        def build(self): ...
+        def probe(self): ...
 
 ``catalog()`` then returns a JSON-friendly menu (name + description + parameter
 schema) — the agent's list of available measurement approaches.
@@ -13,29 +13,29 @@ schema) — the agent's list of available measurement approaches.
 
 from __future__ import annotations
 
-from .protocol import Protocol
+from .experiment import Experiment
 
-_REGISTRY: dict[str, type[Protocol]] = {}
+_REGISTRY: dict[str, type[Experiment]] = {}
 
 
-def register(cls: type[Protocol]) -> type[Protocol]:
-    """Class decorator: add a concrete protocol to the catalog (keyed by ``cls.name``)."""
+def register(cls: type[Experiment]) -> type[Experiment]:
+    """Class decorator: add a concrete experiment to the catalog (keyed by ``cls.name``)."""
     if not getattr(cls, "name", None):
         raise ValueError(f"{cls.__name__} must define a class-level `name` to be registered.")
     _REGISTRY[cls.name] = cls
     return cls
 
 
-def get(name: str) -> type[Protocol]:
-    """Look up a registered protocol class by name."""
+def get(name: str) -> type[Experiment]:
+    """Look up a registered experiment class by name."""
     try:
         return _REGISTRY[name]
     except KeyError:
-        raise KeyError(f"Unknown protocol {name!r}. Available: {sorted(_REGISTRY)}") from None
+        raise KeyError(f"Unknown experiment {name!r}. Available: {sorted(_REGISTRY)}") from None
 
 
 def catalog() -> list[dict]:
-    """Return ``[{name, description, parameters_schema}, ...]`` for every registered protocol."""
+    """Return ``[{name, description, parameters_schema}, ...]`` for every registered experiment."""
     return [
         {
             "name": cls.name,

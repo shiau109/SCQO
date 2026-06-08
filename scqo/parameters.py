@@ -1,6 +1,6 @@
 """Parameter schemas — the *decision surface*.
 
-Every protocol declares its inputs as a pydantic model subclassing ``Parameters``.
+Every experiment declares its inputs as a pydantic model subclassing ``Parameters``.
 Because they are plain pydantic models, ``MyParameters.model_json_schema()`` yields
 a complete, typed, range-validated JSON schema. That schema is exactly what a human
 form *or* an AI agent reads to know which knobs exist and what values are legal.

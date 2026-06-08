@@ -1,4 +1,4 @@
-"""Power Rabi — third worked protocol (backend-free half).
+"""Power Rabi — third worked experiment (backend-free half).
 
 Completes the trio of sweep types: frequency (resonator spec) / time (Ramsey) /
 **amplitude** (here). Sweeps the drive amplitude as a factor of the qubit's current
@@ -6,7 +6,7 @@ Completes the trio of sweep types: frequency (resonator spec) / time (Ramsey) /
 
 Population model: ``P = 0.5 - 0.5 * cos(pi * factor / factor_pi)`` where ``factor_pi`` is
 the amplitude factor giving a full pi rotation (== 1.0 for a perfectly calibrated pulse).
-A driver still only adds ``build()``.
+A driver still only adds ``probe()``.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from lmfit import Model
 from pydantic import Field
 
 from ..parameters import AveragingParameters, QubitSelection
-from ..protocol import Protocol
+from ..experiment import Experiment
 from ..result import Outcome, Result
 
 
@@ -75,8 +75,8 @@ def _fit_rabi(factor: np.ndarray, signal: np.ndarray) -> tuple[float, bool]:
         return float("nan"), False
 
 
-class PowerRabi(Protocol):
-    """Backend-agnostic power Rabi. ``build()`` is supplied by a driver."""
+class PowerRabi(Experiment):
+    """Backend-agnostic power Rabi. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "power_rabi"
     description: ClassVar[str] = (
@@ -109,8 +109,8 @@ class PowerRabi(Protocol):
             q_data[k] = rng.normal(0, noise, factor.size)
         return {"I": i_data, "Q": q_data}
 
-    def analyze(self) -> PowerRabiResult:
-        assert self.dataset is not None, "run() populates self.dataset before analyze()"
+    def estimate(self) -> PowerRabiResult:
+        assert self.dataset is not None, "run() populates self.dataset before estimate()"
         factor = self.dataset["amp_factor"].values
         result = PowerRabiResult()
         for qubit in self.params.qubits:

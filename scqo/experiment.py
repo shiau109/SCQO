@@ -1,13 +1,13 @@
-"""Protocol — one experiment, split into a shared physics half and a backend half.
+"""Experiment — one experiment, split into a shared physics half and a backend half.
 
-* physics half (defined here / in ``scqo.protocols``, shared by every backend):
-  ``define_sweep`` -> ``simulate`` (optional) -> ``analyze`` -> ``update``.
+* physics half (defined here / in ``scqo.experiments``, shared by every backend):
+  ``define_sweep`` -> ``simulate`` (optional) -> ``estimate`` -> ``update``.
 * backend half (implemented by a driver subclass, e.g. LCHQBDriver):
-  ``build`` -> turns ``params`` + device state into a native program.
+  ``probe`` -> turns ``params`` + device state into a native program.
 
-A driver subclass therefore only writes ``build``; Parameters, Result, the fit in
-``analyze`` and the writeback in ``update`` are inherited unchanged. Because the
-simulated backend never calls ``build``, the physics half is fully runnable and
+A driver subclass therefore only writes ``probe``; Parameters, Result, the fit in
+``estimate`` and the writeback in ``update`` are inherited unchanged. Because the
+simulated backend never calls ``probe``, the physics half is fully runnable and
 testable with no instrument installed.
 """
 
@@ -24,7 +24,7 @@ from .parameters import Parameters
 from .result import Result
 
 
-class Protocol(ABC):
+class Experiment(ABC):
     """Base class for every experiment."""
 
     #: Stable identifier used in the registry and shown to humans/AI.
@@ -49,7 +49,7 @@ class Protocol(ABC):
         """Return the swept axes as ``{axis_name: 1d array}`` (no backend calls)."""
 
     @abstractmethod
-    def analyze(self) -> Result:
+    def estimate(self) -> Result:
         """Fit ``self.dataset`` and return a structured :class:`Result`."""
 
     def update(self) -> None:
@@ -64,13 +64,13 @@ class Protocol(ABC):
 
     # ------------------------------------------------------------------ backend
     @abstractmethod
-    def build(self) -> Any:
+    def probe(self) -> Any:
         """Compile ``params`` + device state into a native program (QUA / Schedule)."""
 
     # ------------------------------------------------------------ orchestration
     def run(self) -> Result:
-        """define_sweep -> acquire (via backend) -> analyze. Does not auto-update."""
+        """define_sweep -> acquire (via backend) -> estimate. Does not auto-update."""
         self.sweep_axes = self.define_sweep()
         self.dataset = self.backend.acquire(self)
-        self.result = self.analyze()
+        self.result = self.estimate()
         return self.result

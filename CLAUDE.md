@@ -1,10 +1,10 @@
 # SCQO — Superconducting Qubit Orchestration (instrument-agnostic)
 
 ## Why this repo exists
-Run superconducting-qubit calibration experiments at the level of **protocol + parameters**, independent of
+Run superconducting-qubit calibration experiments at the level of **experiment + parameters**, independent of
 the instrument backend. Two existing lab repos do the same physics on different hardware; SCQO is the
 neutral layer above them, and the substrate for **AI-driven experiment loops** (decide approach + params →
-run → analyze → extract → decide next).
+run → estimate → extract → decide next).
 
 ## Terminology (canonical vocabulary — single source of truth)
 The word **"protocol" is retired**; use these names across all repos.
@@ -16,7 +16,7 @@ The word **"protocol" is retired**; use these names across all repos.
 - **model** — the physics that predicts the signal; used *forward* by a simulated probe and *inverse* by an estimator. SCQ.jl builds/simulates models; scqat fits them.
 - **Parameters / Result / Backend / Session** — input schema / extracted output / instrument adapter (QM, Qblox, Simulated) / the orchestrator entry point (`catalog()` / `run()` / `device_state()`).
 
-**Naming status (2026-06-08):** scqat is migrated (`estimators/`, `tools/`, `BaseEstimator`, `*Estimator`). **SCQO's own code and the sections below still use the legacy names** `Protocol` / `build → run → analyze → update` / `scqo.protocols`; renaming them to **Experiment / probe / estimate** is a pending pass, and LCHQBDriver mirrors the legacy names until then. (QBLOX_training documents Qblox's *own* `Experiment` ABC — a different class from this `Experiment`.)
+**Naming status (2026-06-08):** the scqo stack is fully migrated to this vocabulary — **scqat** (`estimators/`, `tools/`, `BaseEstimator`), **SCQO** (`Experiment`, `scqo.experiments`, `probe()`, `estimate()`), and **LCHQBDriver** (`probe()`-only experiments). scqat's estimator keeps its own orchestrator method `analyze()` (a different layer). LCHQMDriver still uses qualibrate's own `node` framework. (QBLOX_training documents Qblox's *own* `Experiment` ABC — a different class from this `Experiment`.)
 
 ## The two source repos (reference implementations)
 
@@ -40,16 +40,16 @@ The word **"protocol" is retired**; use these names across all repos.
 
 ### Where they diverge (what the neutral layer must absorb)
 1. Parameter declaration: rich pydantic schema vs bare kwargs.
-2. Protocol framework: real framework + GUI vs thin ABC.
+2. Experiment framework: real framework + GUI vs thin ABC.
 3. Pulse/sweep DSL: QUAM macros vs scheduler operations.
 4. Device-model attribute names: `q.f_01` / `q.xy.RF_frequency` vs `q.clock_freqs.f01` / `q.clock_freqs.readout`.
 
 ## Target architecture (AI-drivable, backend-neutral)
 Adopt qualibrate's *patterns*, generalized so QM and Qblox are adapters:
 
-- **Parameters**: pydantic schema per protocol (introspectable: names, types, ranges, defaults, docstrings).
-- **Protocol registry**: named, described catalog of measurement approaches (the AI's decision menu).
-- **Protocol lifecycle**: `build → run → analyze → update` (neutral; each backend implements `build`/`run`).
+- **Parameters**: pydantic schema per experiment (introspectable: names, types, ranges, defaults, docstrings).
+- **Experiment registry**: named, described catalog of measurement approaches (the AI's decision menu).
+- **Experiment lifecycle**: `probe → run → estimate → update` (neutral; a driver implements `probe`, the backend runs it).
 - **Structured Result + Outcome**: machine-readable extracted quantities + success flags (not just figures).
 - **Device model adapter**: neutral parameter names mapped onto QUAM vs QuantumDevice attributes.
 - **State + history**: persistent device state and run history so an AI loop has memory.
@@ -72,12 +72,12 @@ scqo/
   parameters.py   # Parameters base + QubitSelection / AveragingParameters mixins (decision surface)
   result.py       # Outcome enum + Result base (extraction surface)
   device.py       # QubitView / DeviceModel ABCs (neutral field names)
-  backend.py      # Backend ABC: .device + .acquire(protocol) -> xarray.Dataset
-  protocol.py     # Protocol ABC: physics half (define_sweep/simulate/analyze/update) + backend half (build)
+  backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
+  experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update) + backend half (probe)
   registry.py     # @register / get / catalog  (AI's menu of measurements)
   session.py      # Session: catalog() / run() / device_state()  — the one human+AI entry point
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
-  protocols/
+  experiments/
     resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
     ramsey.py                   # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     power_rabi.py               # amplitude sweep, cosine fit -> updates pi_amp
@@ -85,17 +85,17 @@ tests/test_end_to_end.py        # catalog -> run -> writeback, no hardware
 ```
 
 ### How a driver adds an experiment
-1. Subclass the backend-free protocol from `scqo.protocols`.
-2. Implement only `build()` for the instrument (lazy-import the vendor lib inside it).
+1. Subclass the backend-free experiment from `scqo.experiments`.
+2. Implement only `probe()` for the instrument (lazy-import the vendor lib inside it).
 3. `@register` the subclass so it appears in `catalog()`.
-Parameters, Result, `analyze`, `simulate` and `update` are inherited unchanged.
+Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
 
 ### Reference backends
 - `D:\github\LCHQMDriver` — Quantum Machines (qm-qua / quam / qualibrate).
 - `D:\github\LCHQBDriver` — Qblox (qblox-scheduler). Independent of the QM stack.
 
 ## Status
-Core scaffolded and tested offline via `SimulatedBackend`. Three worked protocols prove
+Core scaffolded and tested offline via `SimulatedBackend`. Three worked experiments prove
 the pattern across all three sweep types and device fields:
 frequency->`readout_freq` (resonator spec), time->`drive_freq`+T2* (Ramsey),
-amplitude->`pi_amp` (power Rabi). More protocols + the real backends follow the same pattern.
+amplitude->`pi_amp` (power Rabi). More experiments + the real backends follow the same pattern.
