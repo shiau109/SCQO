@@ -21,6 +21,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ..contract import DatasetContract
 from ..parameters import AveragingParameters, QubitSelection
 from ..experiment import Experiment
 from ..result import Outcome, Result
@@ -55,6 +56,9 @@ class Ramsey(Experiment):
     )
     Parameters: ClassVar[type] = RamseyParameters
     Result: ClassVar[type] = RamseyResult
+    Contract: ClassVar[DatasetContract] = DatasetContract(
+        sweep="idle_time_ns", sweep_unit="ns", variables=("I", "Q")
+    )
 
     params: RamseyParameters
 

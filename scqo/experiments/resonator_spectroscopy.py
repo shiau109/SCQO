@@ -12,6 +12,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ..contract import DatasetContract
 from ..parameters import AveragingParameters, QubitSelection
 from ..experiment import Experiment
 from ..result import Outcome, Result
@@ -45,6 +46,9 @@ class ResonatorSpectroscopy(Experiment):
     )
     Parameters: ClassVar[type] = ResonatorSpectroscopyParameters
     Result: ClassVar[type] = ResonatorSpectroscopyResult
+    Contract: ClassVar[DatasetContract] = DatasetContract(
+        sweep="detuning_hz", sweep_unit="Hz", variables=("I", "Q")
+    )
 
     params: ResonatorSpectroscopyParameters
 
