@@ -17,6 +17,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ._sim import stable_seed
 from ..contract import DatasetContract
 from ..parameters import AveragingParameters, QubitSelection
 from ..experiment import Experiment
@@ -65,7 +66,7 @@ class PowerRabi(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         factor = coords["amp_factor"]
         qubits = self.params.qubits
-        rng = np.random.default_rng(abs(hash(("power_rabi", tuple(qubits)))) % (2**32))
+        rng = np.random.default_rng(stable_seed("power_rabi", *qubits))
         i_data = np.empty((len(qubits), factor.size))
         q_data = np.empty_like(i_data)
         for k in range(len(qubits)):

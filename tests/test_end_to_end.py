@@ -111,5 +111,8 @@ def test_power_rabi_generalizes_pattern():
     # recovered pi factor is near 1 (simulated miscalibration was within +-15%)
     assert 0.8 < result["fit"]["q0"]["pi_amp_factor"] < 1.2
     after = sess.device_state()["q0"]["pi_amp"]
-    assert after != before
+    # the writeback ran (recorded in history) and applied the fitted value. We assert via
+    # history rather than `after != before` because a reproducibly near-perfect simulated
+    # calibration can leave the value numerically unchanged while still being written.
+    assert any(h["qubit"] == "q0" and h["field"] == "pi_amp" for h in sess.history())
     assert np.isclose(after, result["fit"]["q0"]["pi_amp"])

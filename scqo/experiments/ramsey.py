@@ -21,6 +21,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ._sim import stable_seed
 from ..contract import DatasetContract
 from ..parameters import AveragingParameters, QubitSelection
 from ..experiment import Experiment
@@ -72,7 +73,7 @@ class Ramsey(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         t = coords["idle_time_ns"] * 1e-9
         qubits = self.params.qubits
-        rng = np.random.default_rng(abs(hash(("ramsey", tuple(qubits)))) % (2**32))
+        rng = np.random.default_rng(stable_seed("ramsey", *qubits))
         applied = self.params.frequency_detuning_hz
         i_data = np.empty((len(qubits), t.size))
         q_data = np.empty_like(i_data)

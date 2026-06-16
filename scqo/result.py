@@ -32,8 +32,16 @@ class Result(BaseModel):
     fit: dict[str, dict[str, float]] = Field(
         default_factory=dict, description="Per-qubit extracted quantities, keyed by qubit name."
     )
+    error: str | None = Field(
+        default=None, description="Failure message when the run could not complete (else None)."
+    )
 
     @property
     def success(self) -> bool:
         """True only if every measured qubit succeeded."""
         return bool(self.outcomes) and all(o is Outcome.SUCCESSFUL for o in self.outcomes.values())
+
+    @property
+    def any_success(self) -> bool:
+        """True if at least one measured qubit succeeded."""
+        return any(o is Outcome.SUCCESSFUL for o in self.outcomes.values())

@@ -98,4 +98,9 @@ Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
 Core scaffolded and tested offline via `SimulatedBackend`. Three worked experiments prove
 the pattern across all three sweep types and device fields:
 frequency->`readout_freq` (resonator spec), time->`drive_freq`+T2* (Ramsey),
-amplitude->`pi_amp` (power Rabi). More experiments + the real backends follow the same pattern.
+amplitude->`pi_amp` (power Rabi). **Both real backends now exist**: the Qblox backend
+(`LCHQBDriver`) and the QM backend (`LCHQMDriver/customized/scqo/`) implement `probe()`
+against the same experiments. Drivers are discovered automatically via the
+`scqo.experiments` entry-point group (no manual import needed); `Session.run` returns
+structured failures (never raises across the JSON boundary) and writes back per
+successful qubit. More experiments follow the same pattern.
