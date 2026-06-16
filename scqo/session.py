@@ -21,6 +21,9 @@ from typing import Any
 from . import registry
 from .backend import Backend
 from .config import RecordingDevice
+from .contract import ContractError
+from .experiment import Experiment
+from .result import Outcome, Result
 
 
 class Session:
@@ -41,23 +44,40 @@ class Session:
     def run(self, experiment: str, params: dict[str, Any], update: bool = True) -> dict:
         """Run an experiment by name; return its structured result as a dict.
 
-        If ``update`` and the run succeeded, fitted values are written back through the
-        SCQO config — recorded into the change history and pushed to the vendor device —
-        and the SCQO state is persisted (when a ``state_path`` was given).
+        If ``update`` and at least one qubit succeeded, the fitted values for the
+        successful qubits are written back through the SCQO config — recorded into the
+        change history and pushed to the vendor device — and the SCQO state is persisted
+        (when a ``state_path`` was given). A failed run (a non-conforming probe dataset or
+        a raising estimator) is returned as a structured result with ``error`` set and
+        every qubit marked failed, never raised: the Session boundary stays JSON in/out.
         """
         cls = registry.get(experiment)
         exp = cls(self.backend, cls.Parameters(**params))
         exp.device = self.device  # route reads/writes through the recording config
         self.device.set_experiment(experiment)
         try:
-            result = exp.run()
-            if update and result.success:
-                exp.update()
-                if self._persist:
-                    self.device.save()
+            try:
+                result = exp.run()
+            except Exception as err:  # probe/estimator failure -> structured result
+                result = self._failure(cls, exp, err)
+            else:
+                if update and result.any_success:
+                    exp.update()
+                    if self._persist:
+                        self.device.save()
         finally:
             self.device.set_experiment(None)
         return result.model_dump(mode="json")
+
+    @staticmethod
+    def _failure(cls: type[Experiment], exp: Experiment, err: Exception) -> Result:
+        """Build an all-failed structured result for a run that could not complete."""
+        outcome = Outcome.NO_DATA if isinstance(err, ContractError) else Outcome.FAILED
+        qubits = getattr(exp.params, "qubits", [])
+        return cls.Result(
+            outcomes={q: outcome for q in qubits},
+            error=f"{type(err).__name__}: {err}",
+        )
 
     def device_state(self) -> dict:
         """Return a JSON snapshot of the authoritative SCQO calibration config."""

@@ -49,36 +49,36 @@ class ChangeRecord:
         return asdict(self)
 
 
+def _tracked_property(field: str) -> property:
+    """A read/write property routing one tracked field through the RecordingDevice."""
+
+    def getter(self: "_RecordingQubitView") -> float:
+        return self._parent._get(self.name, field)
+
+    def setter(self: "_RecordingQubitView", value: float) -> None:
+        self._parent._set(self.name, field, value)
+
+    return property(getter, setter)
+
+
 class _RecordingQubitView(QubitView):
-    """QubitView that reads/writes the parent :class:`RecordingDevice`'s SCQO config."""
+    """QubitView that reads/writes the parent :class:`RecordingDevice`'s SCQO config.
+
+    One read/write property per :data:`TRACKED_FIELDS` is generated in the class body, so
+    adding a tracked field needs no edit here — only the field list plus each backend's
+    own :class:`~scqo.device.QubitView` and the ABC.
+    """
 
     def __init__(self, parent: "RecordingDevice", name: str) -> None:
         self.name = name
         self._parent = parent
 
-    @property
-    def readout_freq(self) -> float:
-        return self._parent._get(self.name, "readout_freq")
-
-    @readout_freq.setter
-    def readout_freq(self, value: float) -> None:
-        self._parent._set(self.name, "readout_freq", value)
-
-    @property
-    def drive_freq(self) -> float:
-        return self._parent._get(self.name, "drive_freq")
-
-    @drive_freq.setter
-    def drive_freq(self, value: float) -> None:
-        self._parent._set(self.name, "drive_freq", value)
-
-    @property
-    def pi_amp(self) -> float:
-        return self._parent._get(self.name, "pi_amp")
-
-    @pi_amp.setter
-    def pi_amp(self, value: float) -> None:
-        self._parent._set(self.name, "pi_amp", value)
+    # Generate readout_freq / drive_freq / pi_amp / ... from TRACKED_FIELDS. Assigning
+    # into the class namespace (vars()) makes them real properties that satisfy the
+    # QubitView ABC's abstract members.
+    for _field in TRACKED_FIELDS:
+        vars()[_field] = _tracked_property(_field)
+    del _field
 
 
 class RecordingDevice(DeviceModel):
