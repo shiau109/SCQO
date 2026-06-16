@@ -20,6 +20,7 @@ import numpy as np
 import xarray as xr
 
 from .backend import Backend
+from .contract import DatasetContract
 from .parameters import Parameters
 from .result import Result
 
@@ -35,6 +36,8 @@ class Experiment(ABC):
     Parameters: ClassVar[type[Parameters]]
     #: pydantic schema for this experiment's structured output.
     Result: ClassVar[type[Result]]
+    #: canonical dataset every backend's probe must emit (and estimate() consumes).
+    Contract: ClassVar[DatasetContract]
 
     def __init__(self, backend: Backend, params: Parameters) -> None:
         self.backend = backend
@@ -69,8 +72,11 @@ class Experiment(ABC):
 
     # ------------------------------------------------------------ orchestration
     def run(self) -> Result:
-        """define_sweep -> acquire (via backend) -> estimate. Does not auto-update."""
+        """define_sweep -> acquire -> verify contract -> estimate. Does not auto-update."""
         self.sweep_axes = self.define_sweep()
         self.dataset = self.backend.acquire(self)
+        # Certify the probe emitted the method's canonical dataset before analysing it:
+        # this is the runtime form of "the instrument supports this method".
+        self.Contract.validate(self.dataset)
         self.result = self.estimate()
         return self.result

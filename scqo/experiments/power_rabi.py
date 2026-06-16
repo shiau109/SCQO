@@ -17,6 +17,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ..contract import DatasetContract
 from ..parameters import AveragingParameters, QubitSelection
 from ..experiment import Experiment
 from ..result import Outcome, Result
@@ -48,6 +49,9 @@ class PowerRabi(Experiment):
     )
     Parameters: ClassVar[type] = PowerRabiParameters
     Result: ClassVar[type] = PowerRabiResult
+    Contract: ClassVar[DatasetContract] = DatasetContract(
+        sweep="amp_factor", sweep_unit="dimensionless", variables=("I", "Q")
+    )
 
     params: PowerRabiParameters
 
