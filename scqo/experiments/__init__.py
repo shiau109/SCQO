@@ -5,8 +5,8 @@ and device writeback — everything *except* ``probe()``. Concrete drivers subcl
 these and implement ``probe()`` for their instrument, then ``@register`` the subclass.
 """
 
-from .power_rabi import PowerRabi, PowerRabiParameters, PowerRabiResult
-from .ramsey import Ramsey, RamseyParameters, RamseyResult
+from .qubit_power_rabi import QubitPowerRabi, QubitPowerRabiParameters, QubitPowerRabiResult
+from .qubit_ramsey import QubitRamsey, QubitRamseyParameters, QubitRamseyResult
 from .resonator_spectroscopy import (
     ResonatorSpectroscopy,
     ResonatorSpectroscopyParameters,
@@ -17,10 +17,10 @@ __all__ = [
     "ResonatorSpectroscopy",
     "ResonatorSpectroscopyParameters",
     "ResonatorSpectroscopyResult",
-    "Ramsey",
-    "RamseyParameters",
-    "RamseyResult",
-    "PowerRabi",
-    "PowerRabiParameters",
-    "PowerRabiResult",
+    "QubitRamsey",
+    "QubitRamseyParameters",
+    "QubitRamseyResult",
+    "QubitPowerRabi",
+    "QubitPowerRabiParameters",
+    "QubitPowerRabiResult",
 ]

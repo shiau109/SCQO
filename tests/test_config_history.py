@@ -9,7 +9,7 @@ import json
 import numpy as np
 
 from scqo import Outcome, Session, register
-from scqo.experiments import PowerRabi, ResonatorSpectroscopy
+from scqo.experiments import QubitPowerRabi, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
 
@@ -23,7 +23,7 @@ class _DemoRes(ResonatorSpectroscopy):
 
 
 @register
-class _DemoRabi(PowerRabi):
+class _DemoRabi(QubitPowerRabi):
     def probe(self):
         return None
 
@@ -63,7 +63,7 @@ def test_state_round_trips(tmp_path):
     path = str(tmp_path / "scqo_state.json")
 
     sess = Session(SimulatedBackend(_device()), state_path=path)
-    sess.run("power_rabi", {"qubits": ["q0"]})
+    sess.run("qubit_power_rabi", {"qubits": ["q0"]})
     saved_pi = sess.device_state()["q0"]["pi_amp"]
     saved_history = sess.history()
     assert saved_history  # recorded and (since state_path is set) persisted

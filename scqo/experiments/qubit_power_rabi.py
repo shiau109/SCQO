@@ -1,4 +1,4 @@
-"""Power Rabi — third worked experiment (backend-free half).
+"""Qubit power Rabi — third worked experiment (backend-free half).
 
 Completes the trio of sweep types: frequency (resonator spec) / time (Ramsey) /
 **amplitude** (here). Sweeps the drive amplitude as a factor of the qubit's current
@@ -24,7 +24,7 @@ from ..experiment import Experiment
 from ..result import Outcome, Result
 
 
-class PowerRabiParameters(QubitSelection, AveragingParameters):
+class QubitPowerRabiParameters(QubitSelection, AveragingParameters):
     """Inputs for power Rabi."""
 
     min_amp_factor: float = Field(0.0, ge=0, description="Lowest drive amplitude, as a factor of current pi_amp.")
@@ -32,29 +32,29 @@ class PowerRabiParameters(QubitSelection, AveragingParameters):
     num_points: int = Field(101, gt=1, description="Number of amplitude points.")
 
 
-class PowerRabiResult(Result):
-    """Output of power Rabi.
+class QubitPowerRabiResult(Result):
+    """Output of QubitPowerRabi.
 
     ``fit[qubit]`` carries ``pi_amp`` (new absolute), ``pi_amp_factor`` (recovered factor)
     and ``old_pi_amp``.
     """
 
 
-class PowerRabi(Experiment):
+class QubitPowerRabi(Experiment):
     """Backend-agnostic power Rabi. ``probe()`` is supplied by a driver."""
 
-    name: ClassVar[str] = "power_rabi"
+    name: ClassVar[str] = "qubit_power_rabi"
     description: ClassVar[str] = (
         "Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi "
         "oscillation to recalibrate pi_amp."
     )
-    Parameters: ClassVar[type] = PowerRabiParameters
-    Result: ClassVar[type] = PowerRabiResult
+    Parameters: ClassVar[type] = QubitPowerRabiParameters
+    Result: ClassVar[type] = QubitPowerRabiResult
     Contract: ClassVar[DatasetContract] = DatasetContract(
         sweep="amp_factor", sweep_unit="dimensionless", variables=("I", "Q")
     )
 
-    params: PowerRabiParameters
+    params: QubitPowerRabiParameters
 
     def define_sweep(self) -> dict[str, np.ndarray]:
         return {
@@ -66,7 +66,7 @@ class PowerRabi(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         factor = coords["amp_factor"]
         qubits = self.params.qubits
-        rng = np.random.default_rng(stable_seed("power_rabi", *qubits))
+        rng = np.random.default_rng(stable_seed("qubit_power_rabi", *qubits))
         i_data = np.empty((len(qubits), factor.size))
         q_data = np.empty_like(i_data)
         for k in range(len(qubits)):
@@ -77,7 +77,7 @@ class PowerRabi(Experiment):
             q_data[k] = rng.normal(0, noise, factor.size)
         return {"I": i_data, "Q": q_data}
 
-    def estimate(self) -> PowerRabiResult:
+    def estimate(self) -> QubitPowerRabiResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
         from scqat.estimators.power_rabi import PowerRabiEstimator
 
@@ -87,7 +87,7 @@ class PowerRabi(Experiment):
 
         results = per_qubit_results(prepared, PowerRabiEstimator())
 
-        result = PowerRabiResult()
+        result = QubitPowerRabiResult()
         for qubit in self.params.qubits:
             r = results[qubit]
             factor_pi = float(r["opt_amp_prefactor"])

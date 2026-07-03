@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from scqo import ContractError, DatasetContract
-from scqo.experiments import PowerRabi, Ramsey, ResonatorSpectroscopy
+from scqo.experiments import QubitPowerRabi, QubitRamsey, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
 
@@ -29,12 +29,12 @@ class _Res(ResonatorSpectroscopy):
         return None
 
 
-class _Ram(Ramsey):
+class _Ram(QubitRamsey):
     def probe(self):
         return None
 
 
-class _PR(PowerRabi):
+class _PR(QubitPowerRabi):
     def probe(self):
         return None
 

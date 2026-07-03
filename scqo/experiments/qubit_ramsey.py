@@ -1,4 +1,4 @@
-"""Ramsey — second worked experiment, proving the pattern generalizes (backend-free half).
+"""Qubit Ramsey — second worked experiment, proving the pattern generalizes (backend-free half).
 
 Differs from resonator spectroscopy on every axis that matters:
   * sweep is **time** (idle delay), not frequency;
@@ -28,7 +28,7 @@ from ..experiment import Experiment
 from ..result import Outcome, Result
 
 
-class RamseyParameters(QubitSelection, AveragingParameters):
+class QubitRamseyParameters(QubitSelection, AveragingParameters):
     """Inputs for a Ramsey experiment."""
 
     frequency_detuning_hz: float = Field(
@@ -39,29 +39,29 @@ class RamseyParameters(QubitSelection, AveragingParameters):
     num_points: int = Field(101, gt=1, description="Number of idle-time points.")
 
 
-class RamseyResult(Result):
-    """Output of Ramsey.
+class QubitRamseyResult(Result):
+    """Output of QubitRamsey.
 
     ``fit[qubit]`` carries ``drive_freq`` (new absolute Hz), ``detuning_error_hz``,
     ``t2_star_s`` and ``old_drive_freq``.
     """
 
 
-class Ramsey(Experiment):
+class QubitRamsey(Experiment):
     """Backend-agnostic Ramsey. ``probe()`` is supplied by a driver."""
 
-    name: ClassVar[str] = "ramsey"
+    name: ClassVar[str] = "qubit_ramsey"
     description: ClassVar[str] = (
         "Two pi/2 pulses separated by a swept idle time with an artificial drive detuning; "
         "fits the decaying fringe to correct drive_freq and report T2*."
     )
-    Parameters: ClassVar[type] = RamseyParameters
-    Result: ClassVar[type] = RamseyResult
+    Parameters: ClassVar[type] = QubitRamseyParameters
+    Result: ClassVar[type] = QubitRamseyResult
     Contract: ClassVar[DatasetContract] = DatasetContract(
         sweep="idle_time_ns", sweep_unit="ns", variables=("I", "Q")
     )
 
-    params: RamseyParameters
+    params: QubitRamseyParameters
 
     def define_sweep(self) -> dict[str, np.ndarray]:
         return {
@@ -73,7 +73,7 @@ class Ramsey(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         t = coords["idle_time_ns"] * 1e-9
         qubits = self.params.qubits
-        rng = np.random.default_rng(stable_seed("ramsey", *qubits))
+        rng = np.random.default_rng(stable_seed("qubit_ramsey", *qubits))
         applied = self.params.frequency_detuning_hz
         i_data = np.empty((len(qubits), t.size))
         q_data = np.empty_like(i_data)
@@ -86,7 +86,7 @@ class Ramsey(Experiment):
             q_data[k] = rng.normal(0, noise, t.size)
         return {"I": i_data, "Q": q_data}
 
-    def estimate(self) -> RamseyResult:
+    def estimate(self) -> QubitRamseyResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
         from scqat.estimators.ramsey import RamseyEstimator
 
@@ -99,7 +99,7 @@ class Ramsey(Experiment):
         results = per_qubit_results(prepared, RamseyEstimator())
 
         applied = self.params.frequency_detuning_hz
-        result = RamseyResult()
+        result = QubitRamseyResult()
         for qubit in self.params.qubits:
             r = results[qubit]
             model_type = r.get("model_type")

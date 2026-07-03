@@ -5,7 +5,7 @@ same calls drive a manual notebook *and* an LLM tool-use loop:
 
     sess = Session(backend, state_path="scqo_state.json")
     sess.catalog()                     # what can I measure? (with parameter schemas)
-    sess.run("ramsey", {...})          # measure -> structured result
+    sess.run("qubit_ramsey", {...})    # measure -> structured result
     sess.device_state()                # current calibration (the SCQO config)
     sess.history()                     # every recorded change (the loop's memory)
 

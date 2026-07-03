@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from scqo import Outcome, Session, register
-from scqo.experiments import PowerRabi, Ramsey, ResonatorSpectroscopy
+from scqo.experiments import QubitPowerRabi, QubitRamsey, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
 
@@ -22,7 +22,7 @@ class DemoResonatorSpectroscopy(ResonatorSpectroscopy):
 
 
 @register
-class DemoRamsey(Ramsey):
+class DemoQubitRamsey(QubitRamsey):
     """Concrete Ramsey for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -30,7 +30,7 @@ class DemoRamsey(Ramsey):
 
 
 @register
-class DemoPowerRabi(PowerRabi):
+class DemoQubitPowerRabi(QubitPowerRabi):
     """Concrete power Rabi for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -82,11 +82,11 @@ def test_ramsey_generalizes_pattern():
     sess = Session(SimulatedBackend(_device()))
 
     # both experiments share one catalog/registry
-    assert {"resonator_spectroscopy", "ramsey"} <= {e["name"] for e in sess.catalog()}
+    assert {"resonator_spectroscopy", "qubit_ramsey"} <= {e["name"] for e in sess.catalog()}
 
     before = sess.device_state()["q1"]["drive_freq"]
     result = sess.run(
-        "ramsey",
+        "qubit_ramsey",
         {"qubits": ["q1"], "frequency_detuning_hz": 1.0e6, "max_idle_time_ns": 4000, "num_points": 201},
     )
     assert result["outcomes"]["q1"] == Outcome.SUCCESSFUL.value
@@ -103,10 +103,10 @@ def test_power_rabi_generalizes_pattern():
     """Amplitude sweep -> cosine fit -> updates a third device field: pi_amp."""
     sess = Session(SimulatedBackend(_device()))
 
-    assert "power_rabi" in {e["name"] for e in sess.catalog()}
+    assert "qubit_power_rabi" in {e["name"] for e in sess.catalog()}
 
     before = sess.device_state()["q0"]["pi_amp"]
-    result = sess.run("power_rabi", {"qubits": ["q0"], "max_amp_factor": 2.0, "num_points": 201})
+    result = sess.run("qubit_power_rabi", {"qubits": ["q0"], "max_amp_factor": 2.0, "num_points": 201})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     # recovered pi factor is near 1 (simulated miscalibration was within +-15%)
     assert 0.8 < result["fit"]["q0"]["pi_amp_factor"] < 1.2

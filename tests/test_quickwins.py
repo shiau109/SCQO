@@ -134,10 +134,10 @@ def test_discovery_imports_entry_points(monkeypatch):
         name = "fake"
 
         def load(self):
-            from scqo.experiments import Ramsey
+            from scqo.experiments import QubitRamsey
 
             @register
-            class _DiscoveredRamsey(Ramsey):
+            class _DiscoveredRamsey(QubitRamsey):
                 name = "discovered_ramsey"
 
                 def probe(self):

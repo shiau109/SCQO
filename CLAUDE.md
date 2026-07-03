@@ -79,8 +79,8 @@ scqo/
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
   experiments/
     resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
-    ramsey.py                   # time sweep, decaying-cosine fit -> updates drive_freq + T2*
-    power_rabi.py               # amplitude sweep, cosine fit -> updates pi_amp
+    qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
+    qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
 tests/test_end_to_end.py        # catalog -> run -> writeback, no hardware
 ```
 
