@@ -310,7 +310,39 @@ comes back as a structured error with the fit intact.
 | Unknown `run_id` in `--show` | same — rebuild the index |
 | Want a clean slate | deleting `index.sqlite*` (all three files) is always safe; the folders are the data |
 
-## 10. What Phase 1 does NOT include yet
+## 10. Self-test against your REAL device config (no hardware needed)
+
+Before ever touching an instrument, verify the whole stack against your lab's actual
+config files: each driver has a `check_real_config.py` that loads them, runs the full
+pipeline with **simulated data over the real device tree** (read neutral fields → run
+experiments → fit → write back → save in vendor format → reload and compare), and
+prints PASS/FAIL. It works on a **temporary copy** — your originals are never opened
+for writing.
+
+**Qblox** (needs `qblox_scheduler`; lab: `conda activate LCHQB`). Point it at any
+folder holding `dut_config*.json` + `hw_config*.json`:
+
+```powershell
+cd D:\github\LCHQBDriver
+python scripts\check_real_config.py D:\qpu_data\SQ_demo\QBLOX_config
+```
+
+**QM / OPX1000** (needs the QM stack; lab: `conda activate LCHQM_test`). Point it at
+any folder holding `state.json` + `wiring.json`:
+
+```powershell
+cd D:\github\LCHQMDriver
+python customized\scqo\scripts\check_real_config.py D:\qpu_data\SQ_demo\QM_OPX1000_config
+```
+
+Expected output: 5 numbered steps, each OK, ending in
+`PASS - scqo works against this real config`. A qubit whose state is uncalibrated
+(fields `None`) is skipped automatically; on the Qblox device the coupler (`c12`) is
+excluded by the `q*` default — pass `--qubits` to choose explicitly. Both configs
+above passed on 2026-07-04 (and this test caught three real integration bugs
+before any hardware time was spent — that's its job).
+
+## 11. What Phase 1 does NOT include yet
 
 - **Real Qblox hardware**: `QbloxBackend._to_canonical()` is still a TODO — Qblox
   runs are simulated-only today. QM hardware runs the three migrated experiments via
