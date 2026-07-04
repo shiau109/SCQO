@@ -163,10 +163,12 @@ qubit_ramsey            Two pi/2 pulses ... correct drive_freq and report T2*.
 resonator_spectroscopy  Sweep readout frequency ... updates readout_freq.
 ```
 
-Run a Ramsey on q1, tagged so you can find it later:
+Start with **resonator spectroscopy** — always the first measurement on a device: you
+have to find the readout resonance before any qubit experiment means anything, and its
+writeback (`readout_freq`) is the most benign one. Tag it so you can find it later:
 
 ```bash
-python scripts/run_experiment.py qubit_ramsey --qubits q1 --set num_points=201 --tag mytest --note "first try"
+python scripts/run_experiment.py resonator_spectroscopy --qubits q1 --tag mytest --note "first try"
 ```
 
 You get the structured result as JSON — extracted physics, not raw traces:
@@ -174,20 +176,23 @@ You get the structured result as JSON — extracted physics, not raw traces:
 ```json
 {
   "outcomes": { "q1": "successful" },
-  "fit": { "q1": { "drive_freq": 4009827345.3, "detuning_error_hz": -172654.7,
-                    "t2_star_s": 8.24e-06, "old_drive_freq": 4010000000.0 } },
+  "fit": { "q1": { "readout_freq": 5907471431.6,       // dip position, written back
+                    "dip_detuning_hz": -1795822.3,      // how far the dip sat from the old value
+                    "old_readout_freq": 5909267253.9 } },
   "error": null,
-  "run_id": "20260704-153041-qubit_ramsey-01",
-  "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\20260704-153041-qubit_ramsey-01"
+  "run_id": "20260704-225450-resonator_spectroscopy-01",
+  "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\20260704-225450-resonator_spectroscopy-01"
 }
 ```
 
-Because the fit succeeded, `drive_freq` was **written back** to the device state
-(with a history record linking it to this run). Useful variations:
+Because the fit succeeded, `readout_freq` was **written back** to the device state
+(with a history record linking it to this run). Once the readout is in place, the
+qubit experiments follow the same one-liner pattern:
 
 ```bash
+python scripts/run_experiment.py qubit_ramsey --qubits q1 --set num_points=201   # drive_freq + T2*
 python scripts/run_experiment.py qubit_power_rabi                 # all qubits, defaults
-python scripts/run_experiment.py qubit_ramsey --no-update ...     # analyze only, no writeback
+python scripts/run_experiment.py resonator_spectroscopy --no-update ...   # analyze only, no writeback
 python scripts/run_experiment.py qubit_ramsey --params my.json    # parameters from a file
 ```
 
@@ -196,8 +201,8 @@ has its own launcher in `scripts/experiments/` — same flags, and `--help` show
 experiment's full parameter list with defaults and descriptions:
 
 ```bash
-python scripts/experiments/qubit_ramsey.py --qubits q1 --set num_points=201
-python scripts/experiments/qubit_ramsey.py --help
+python scripts/experiments/resonator_spectroscopy.py --qubits q1 --set frequency_span_hz=15e6
+python scripts/experiments/resonator_spectroscopy.py --help
 ```
 
 The **daily workflow** is one command — the standard sequence (resonator spectroscopy
@@ -220,13 +225,13 @@ python scripts/device.py --history 20       # who changed what, when, in which r
 ```bash
 python scripts/find_runs.py                                   # latest runs, newest first
 python scripts/find_runs.py --tag cooldown1                   # everything from this cooldown
-python scripts/find_runs.py --experiment qubit_ramsey --qubit q1 --since 2026-07-01
+python scripts/find_runs.py --experiment resonator_spectroscopy --qubit q1 --since 2026-07-01
 python scripts/find_runs.py --outcome failed                  # what went wrong lately?
-python scripts/find_runs.py --show 20260704-153041-qubit_ramsey-01   # one run, in full
+python scripts/find_runs.py --show 20260704-225450-resonator_spectroscopy-01   # one run, in full
 ```
 
 ```
-20260704-153041-qubit_ramsey-01   successful  q1   cooldown1,mytest  SQ_demo/2026-07-04/20260704-153041-qubit_ramsey-01
+20260704-225450-resonator_spectroscopy-01   successful  q1   cooldown1,mytest  SQ_demo/2026-07-04/20260704-225450-resonator_spectroscopy-01
 ```
 
 - Dates in filters are **local lab time** and match the folder names; a bare date in
@@ -239,19 +244,21 @@ python scripts/find_runs.py --show 20260704-153041-qubit_ramsey-01   # one run, 
 ## 5. What's inside a run folder
 
 ```
-<data_root>/SQ_demo/2026-07-04/20260704-153041-qubit_ramsey-01/
+<data_root>/SQ_demo/2026-07-04/20260704-225450-resonator_spectroscopy-01/
     record.json          run manifest (its absence = run was incomplete/crashed)
-    dataset.nc           the raw I/Q dataset (xarray/netCDF, dims: qubit × sweep)
+    dataset.nc           the raw I/Q dataset (xarray/netCDF, dims: qubit × detuning_hz)
     parameters.json      exactly what you asked for
     result.json          outcomes + fitted quantities + error (if any)
     device_before.json   calibration state before ...
     device_after.json    ... and after the writeback
     analysis/q1/         per-qubit fit artifacts from scqat:
-        ramsey_time_domain.png      ← your figure, already drawn
-        ramsey_fft_spectrum.png
-        ramsey_metadata.json        fit parameters, fit quality
-        ramsey_plotdata.nc          arrays to redraw the figure without refitting
+        resonator_spectroscopy_resonator_spectroscopy.png  ← the dip + fit, already drawn
+        resonator_spectroscopy_metadata.json               fit parameters, fit quality
+        resonator_spectroscopy_plotdata.nc                 arrays to redraw without refitting
 ```
+
+(A Ramsey run looks the same with its own artifacts: `ramsey_time_domain.png`,
+`ramsey_fft_spectrum.png`, etc.)
 
 **The folder is the truth.** The SQLite index (`<data_root>/index.sqlite`) is only a
 cache — if it is ever missing or stale, rebuild it losslessly:
