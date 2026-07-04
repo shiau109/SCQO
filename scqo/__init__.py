@@ -17,6 +17,8 @@ from .device import DeviceModel, QubitView
 from .backend import Backend
 from .experiment import Experiment
 from .registry import catalog, get, register
+from .datastore import DataStore, RunRecord, reindex
+from .labconfig import LabConfig, load as load_lab_config, make_session
 from .session import Session
 
 __all__ = [
@@ -36,5 +38,11 @@ __all__ = [
     "register",
     "get",
     "catalog",
+    "DataStore",
+    "RunRecord",
+    "reindex",
+    "LabConfig",
+    "load_lab_config",
+    "make_session",
     "Session",
 ]

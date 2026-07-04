@@ -5,4 +5,7 @@ level of protocol + parameters (`build → run → analyze → update`). It is t
 shared by the Quantum Machines and Qblox driver repos, and the substrate for AI-driven experiment
 loops (decide → run → analyze → extract → decide next).
 
+**New here? Start with [TUTORIAL.md](TUTORIAL.md)** — hands-on setup, first measurement,
+and how to find your data.
+
 See [CLAUDE.md](CLAUDE.md) for the full architecture, conventions, and operating rules.

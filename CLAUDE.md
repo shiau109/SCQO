@@ -75,20 +75,53 @@ scqo/
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update) + backend half (probe)
   registry.py     # @register / get / catalog  (AI's menu of measurements)
-  session.py      # Session: catalog() / run() / device_state()  — the one human+AI entry point
+  session.py      # Session: catalog() / run() / find_runs() / load_run() / device_state() / history()
+  datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
+  labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
   experiments/
     resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
     qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
 tests/test_end_to_end.py        # catalog -> run -> writeback, no hardware
+tests/test_datastore.py         # run folders + index + tags + reindex, no hardware
 ```
+
+### Datastore (the "find my measurement data" layer)
+`Session(backend, data_root=...)` persists **every** run — raw dataset (`dataset.nc`),
+parameters/result/record JSONs, device before/after snapshots, and the scqat artifacts
+(metadata / plotdata / figure PNGs, per qubit) — under
+`<data_root>/<device>/<YYYY-MM-DD>/<run_id>/`. The **run folder is the truth**;
+`<data_root>/index.sqlite` is a disposable cache (`python -m scqo <data_root>`
+rebuilds it). Query with `Session.find_runs(experiment=, qubit=, tag=, since=, outcome=,...)`,
+reload with `load_run(run_id)` / `datastore.open_dataset(run_id)`. Runs carry searchable
+**tags** (`run(..., tags=[...])`, config `default_tags`, retroactive `tag_run`). Change
+history records the `run_id` that caused each device update. State authority:
+`state_sync="pull"` (default) seeds from the vendor at startup (safe when another tool also
+calibrates, e.g. qualibrate on QM); `"push"` restores the saved SCQO config into the vendor
+(only for devices SCQO fully owns).
 
 ### How a driver adds an experiment
 1. Subclass the backend-free experiment from `scqo.experiments`.
 2. Implement only `probe()` for the instrument (lazy-import the vendor lib inside it).
 3. `@register` the subclass so it appears in `catalog()`.
 Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
+
+### Experiment governance (3 tiers) + promotion checklist
+1. **Students** run the driver scripts (`run_experiment.py` / `find_runs.py`) with
+   `~/.scqo/config.toml`; they change nothing in the governed repos.
+2. **Advanced users** prototype new experiments + estimators in a sandbox (planned:
+   `scqo-contrib` repo on the entry-point group `scqo.experiments.contrib`), against their
+   instrument and QPU. Contrib runs persist to the same datastore, so prove-out is evaluable.
+3. **The manager promotes** a proven experiment into the system. Checklist:
+   - [ ] `DatasetContract` declared; probe output validated against it on the real instrument.
+   - [ ] `simulate()` implemented -> offline end-to-end test in `tests/`.
+   - [ ] Estimator lives in scqat with metadata (+ figures) outputs.
+   - [ ] `update()` writes only neutral tracked fields (extend the field list first if needed).
+   - [ ] Ran repeatedly via contrib with findable data; results reviewed via `find_runs`.
+   - [ ] `description` is catalog-quality (an AI reads it to decide).
+   - [ ] Physics half moved to `scqo/experiments/`; driver `probe()` subclasses registered
+         under the core `scqo.experiments` group; contrib copy deleted.
 
 ### Reference backends
 - `D:\github\LCHQMDriver` — Quantum Machines (qm-qua / quam / qualibrate).
@@ -104,3 +137,11 @@ against the same experiments. Drivers are discovered automatically via the
 `scqo.experiments` entry-point group (no manual import needed); `Session.run` returns
 structured failures (never raises across the JSON boundary) and writes back per
 successful qubit. More experiments follow the same pattern.
+
+**2026-07-04 — data layer landed:** every `Session.run` with a `data_root` persists the
+full run (dataset + params + result + device snapshots + scqat figures) to
+`<data_root>/<device>/<date>/<run_id>/`, indexed in a rebuildable `index.sqlite` with
+searchable tags; `find_runs`/`load_run`/`tag_run` complete the Session surface, and
+change history links each writeback to its `run_id`. Lab config (`~/.scqo/config.toml`,
+`scqo.labconfig`) drives the student scripts in both driver repos. `state_sync="pull"`
+is the default (QM stays pull until qualibrate migration completes).

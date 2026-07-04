@@ -10,9 +10,16 @@ SCQO owns a **neutral calibration config** (a peer to the vendor configs — QM
   to the vendor device so the instrument runs calibrated.
 
 On construction it **seeds** the config from the vendor (pull). If a saved SCQO state
-exists, it instead **loads that and pushes it to the vendor** — SCQO wins for the tracked
-calibration fields ("SCQO config is authoritative"). Wiring/hardware stays vendor-owned
-and is never modelled here.
+exists, what happens depends on ``on_load``:
+
+* ``"pull"`` (default, safe while another tool may also write the vendor config — e.g.
+  unmigrated qualibrate nodes on QM): the vendor wins at startup; only the saved
+  **history** is loaded so provenance stays continuous.
+* ``"push"`` (for devices SCQO fully owns, e.g. simulated): the saved SCQO config is
+  loaded **and pushed to the vendor** — SCQO wins for the tracked calibration fields.
+
+Either way, a *write* during a run always records + pushes: a fresh fit result is
+always legitimate. Wiring/hardware stays vendor-owned and is never modelled here.
 """
 
 from __future__ import annotations
@@ -21,7 +28,7 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from .device import DeviceModel, QubitView
 
@@ -30,8 +37,14 @@ TRACKED_FIELDS = ("readout_freq", "drive_freq", "pi_amp")
 
 
 def _now() -> str:
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).isoformat()
+    """ISO-8601 timestamp in local time WITH the UTC offset (e.g. ``...+08:00``).
+
+    Local (not UTC) so that the date prefix matches the datastore's run folders and
+    what a human types into ``find_runs(since=..., until=...)``; the explicit offset
+    keeps it machine-unambiguous. Lexicographic order == chronological order as long
+    as the lab's UTC offset is fixed (no DST in the lab's timezone).
+    """
+    return datetime.now(timezone.utc).astimezone().isoformat()
 
 
 @dataclass(frozen=True)
@@ -44,6 +57,8 @@ class ChangeRecord:
     old: float | None
     new: float
     experiment: str | None = None
+    #: run_id of the datastore run that caused this change (links history <-> run folder).
+    run_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -87,15 +102,31 @@ class RecordingDevice(DeviceModel):
     Reads serve the SCQO config; writes record + update the config + push to the vendor.
     """
 
-    def __init__(self, inner: DeviceModel, *, state_path: str | None = None) -> None:
+    def __init__(
+        self,
+        inner: DeviceModel,
+        *,
+        state_path: str | None = None,
+        on_load: Literal["push", "pull"] = "pull",
+    ) -> None:
         self._inner = inner
         self._state_path = state_path
         self._config: dict[str, dict[str, float | None]] = {}
         self._history: list[ChangeRecord] = []
         self._experiment: str | None = None  # set by the Session around a run
+        self._run_id: str | None = None
 
         if state_path is not None and os.path.exists(state_path):
-            self._load_and_push(state_path)  # SCQO authoritative: load, then push to vendor
+            if on_load == "push":
+                # SCQO fully owns this device: load the saved config and push it to the
+                # vendor so the instrument matches SCQO for the tracked fields.
+                self._load_and_push(state_path)
+            else:
+                # "pull" (safe default while another tool may also write the vendor
+                # config, e.g. unmigrated qualibrate nodes on QM): the vendor wins at
+                # startup, but the saved history is kept so provenance is continuous.
+                self._load_history(state_path)
+                self._config = inner.snapshot()
         else:
             self._config = inner.snapshot()  # first time: seed (pull) from the vendor
 
@@ -118,9 +149,14 @@ class RecordingDevice(DeviceModel):
         """The recorded change history (the loop's memory)."""
         return list(self._history)
 
+    def set_context(self, experiment: str | None, run_id: str | None = None) -> None:
+        """Tag subsequent changes with the experiment (and datastore run) causing them."""
+        self._experiment = experiment
+        self._run_id = run_id
+
     def set_experiment(self, name: str | None) -> None:
-        """Tag subsequent changes with the experiment that caused them."""
-        self._experiment = name
+        """Backward-compatible alias for :meth:`set_context` (experiment only)."""
+        self.set_context(name, None)
 
     def _get(self, qubit: str, field: str) -> float:
         return self._config[qubit][field]  # type: ignore[return-value]
@@ -128,20 +164,32 @@ class RecordingDevice(DeviceModel):
     def _set(self, qubit: str, field: str, value: float) -> None:
         value = float(value)
         old = self._config.get(qubit, {}).get(field)
+        # Push to the vendor FIRST: if the instrument rejects the value (e.g. an
+        # out-of-range amplitude), neither the SCQO config nor the history may claim
+        # a change that never reached the hardware.
+        setattr(self._inner.qubit(qubit), field, value)
         self._history.append(
             ChangeRecord(
                 timestamp=_now(), qubit=qubit, field=field, old=old, new=value,
-                experiment=self._experiment,
+                experiment=self._experiment, run_id=self._run_id,
             )
         )
         self._config.setdefault(qubit, {})[field] = value          # SCQO config (authoritative)
-        setattr(self._inner.qubit(qubit), field, value)            # push to the vendor device
 
     # ---------------------------------------------------------------- persistence
     def _persist(self, path: str) -> None:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)  # a config'd path must not fail on first save
         data = {"config": self._config, "history": [r.as_dict() for r in self._history]}
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+
+    def _load_history(self, path: str) -> None:
+        """Load only the change history from a saved state (pull mode keeps provenance)."""
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        self._history = [ChangeRecord(**r) for r in data.get("history", [])]
 
     def _load_and_push(self, path: str) -> None:
         with open(path, encoding="utf-8") as f:

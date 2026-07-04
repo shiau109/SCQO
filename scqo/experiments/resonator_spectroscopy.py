@@ -87,7 +87,7 @@ class ResonatorSpectroscopy(Experiment):
         full_freq = np.array([detuning + old_freqs[q] for q in qubits])
         prepared = prepared.assign_coords(full_freq=(("qubit", "detuning"), full_freq))
 
-        results = per_qubit_results(prepared, ResonatorSpectroscopyEstimator())
+        results = per_qubit_results(prepared, ResonatorSpectroscopyEstimator(), artifact_dir=self.artifact_dir)
 
         result = ResonatorSpectroscopyResult()
         for qubit in self.params.qubits:

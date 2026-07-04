@@ -96,7 +96,7 @@ class QubitRamsey(Experiment):
         prepared = self.dataset.rename({"I": "signal", "idle_time_ns": "idle_time"})
         prepared = prepared.assign_coords(idle_time=prepared["idle_time"] * 1e-9)
 
-        results = per_qubit_results(prepared, RamseyEstimator())
+        results = per_qubit_results(prepared, RamseyEstimator(), artifact_dir=self.artifact_dir)
 
         applied = self.params.frequency_detuning_hz
         result = QubitRamseyResult()

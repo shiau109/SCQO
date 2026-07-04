@@ -85,7 +85,7 @@ class QubitPowerRabi(Experiment):
         # amplitude multiplier). It returns `opt_amp_prefactor` == the pi-pulse factor.
         prepared = self.dataset.rename({"I": "signal", "amp_factor": "amp_prefactor"})
 
-        results = per_qubit_results(prepared, PowerRabiEstimator())
+        results = per_qubit_results(prepared, PowerRabiEstimator(), artifact_dir=self.artifact_dir)
 
         result = QubitPowerRabiResult()
         for qubit in self.params.qubits:

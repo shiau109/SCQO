@@ -14,6 +14,7 @@ testable with no instrument installed.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
@@ -49,6 +50,10 @@ class Experiment(ABC):
         self.sweep_axes: dict[str, np.ndarray] = {}
         self.dataset: xr.Dataset | None = None
         self.result: Result | None = None
+        #: where estimate() writes analysis artifacts (scqat metadata/plotdata/figures).
+        #: Set by the Session when a datastore is configured; None keeps analysis
+        #: in-memory only (standalone use, tests without persistence).
+        self.artifact_dir: Path | None = None
 
     # ------------------------------------------------------------------ physics
     @abstractmethod
