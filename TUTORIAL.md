@@ -59,6 +59,7 @@ git clone https://github.com/shiau109/LCHQBDriver.git
 cd D:\github
 uv venv .venv --python 3.12
 uv pip install --python .venv\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO pytest
+uv pip install --python .venv\Scripts\python.exe -e .\LCHQBDriver   # + qblox-scheduler (vendor stack)
 .venv\Scripts\Activate.ps1          # activate (Git Bash: source .venv/Scripts/activate)
 ```
 
@@ -69,8 +70,13 @@ uv pip install --python .venv\Scripts\python.exe -e .\SCqubit-analysis-tool -e .
 cd ~/github
 uv venv .venv --python 3.12
 uv pip install --python .venv/bin/python -e ./SCqubit-analysis-tool -e ./SCQO pytest
+uv pip install --python .venv/bin/python -e ./LCHQBDriver   # + qblox-scheduler (vendor stack)
 source .venv/bin/activate
 ```
+
+(The second install line adds the Qblox driver and its vendor stack — needed for the
+driver scripts and the real-config self-test in section 10. Skip it on a pure
+analysis machine; everything in sections 4–6 works without it.)
 
 Sanity check on any OS — the full test suite passes with no instrument attached
 (CI runs this exact suite on Windows, macOS and Linux):
@@ -319,7 +325,8 @@ experiments → fit → write back → save in vendor format → reload and comp
 prints PASS/FAIL. It works on a **temporary copy** — your originals are never opened
 for writing.
 
-**Qblox** (needs `qblox_scheduler`; lab: `conda activate LCHQB`). Point it at any
+**Qblox** — works in the §2a venv (the `-e ./LCHQBDriver` install brought
+`qblox-scheduler`; the lab's `conda activate LCHQB` env works too). Point it at any
 folder holding `dut_config*.json` + `hw_config*.json`:
 
 ```powershell
