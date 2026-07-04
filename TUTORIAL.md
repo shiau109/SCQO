@@ -139,7 +139,7 @@ python scripts/find_runs.py --show 20260704-225450-resonator_spectroscopy-01   #
     device_before.json   calibration state before ...
     device_after.json    ... and after the writeback
     analysis/q1/         per-qubit fit artifacts from scqat:
-        resonator_spectroscopy_resonator_spectroscopy.png  ← the dip + fit, already drawn
+        resonator_spectroscopy.png                         ← the dip + fit, already drawn
         resonator_spectroscopy_metadata.json               fit parameters, fit quality
         resonator_spectroscopy_plotdata.nc                 arrays to redraw without refitting
 ```
