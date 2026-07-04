@@ -10,10 +10,32 @@ macOS/Linux equivalents follow where they differ.
 
 ## 1. The Python environment
 
-We use a plain **venv** (not conda: every dependency ships wheels for Windows *and*
-macOS, so conda adds nothing here; conda stays only on instrument PCs where the vendor
-stack was installed that way, e.g. the QM `LCHQM_test` env). `uv` creates a standard
-venv and also downloads Python itself if the machine has none.
+**Policy: every environment is a plain venv managed by `uv`.** Conda is retired: an
+audit (2026-07-05) showed the lab's conda envs used conda only as a Python installer
+(all 180+ scientific/vendor packages came from pip) — uv does that job faster, with
+lockfiles, and without licensing questions. One venv per vendor stack:
+
+| venv | contents | used for |
+|---|---|---|
+| `D:\github\.venv` | scqo + scqat + LCHQBDriver (+ qblox-scheduler) | analysis, Qblox, all student scripts |
+| `D:\github\.venv-qm` | scqo + scqat + LCHQMDriver + pinned QM stack | anything touching qm-qua/quam/qualibrate |
+
+Rebuild `.venv-qm` anywhere from the committed pin list (exact versions proven
+against the lab's QOP):
+
+```powershell
+cd D:\github
+uv venv .venv-qm --python 3.11
+uv pip install --python .venv-qm\Scripts\python.exe -r .\LCHQMDriver\requirements-qm.lock.txt
+uv pip install --python .venv-qm\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO -e .\LCHQMDriver --no-deps
+```
+
+(Transition note: the qualibrate GUI launcher `qm.bat` still targets the old conda
+`LCHQM_test` env until the lab flips it after an at-instrument validation; both
+environments import scqo/scqat from the same editable checkouts, so they never drift
+on the neutral layer.)
+
+`uv` creates a standard venv and also downloads Python itself if the machine has none.
 
 The repos must sit next to each other in one folder (`SCQO` and `SCqubit-analysis-tool`
 as siblings) — on the lab PC that folder is `D:\github`; on your own Mac clone them:
