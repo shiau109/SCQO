@@ -92,20 +92,39 @@ This one small file tells every script where data goes, which device you are on,
 and which backend runs. Create it at `~\.scqo\config.toml` (Windows:
 `C:\Users\<you>\.scqo\config.toml`; macOS: `/Users/<you>/.scqo/config.toml`).
 
-Windows:
+**Backend modes** — pick how real your practice is:
+
+| `backend =` | device tree | data | writebacks persist to |
+|---|---|---|---|
+| `"simulated"` | built-in demo qubits | synthetic | scqo state file (use `state_sync="push"`) |
+| `"qblox_sim"` | **your REAL dut config** (working copy) | synthetic | the working `dut_config.json` |
+| `"qm_sim"` | **your REAL QUAM state** (working copy) | synthetic | the working `state.json` |
+| `"qblox"` / `"qm"` | real instrument | real | vendor config (QM: keep `state_sync="pull"`) |
+
+The `*_sim` modes are the **virtual twin**: real qubit names and calibration values as
+starting points, no hardware needed. Set them up once by copying your vendor config
+into a working folder (originals stay pristine), e.g.
+`copy dut_config_AS_QRC.json D:\qpu_data\SQ_demo\qblox_state\dut_config.json`.
+
+Windows (virtual-twin example — the recommended practice mode):
 
 ```toml
 [lab]
 data_root   = 'D:\qpu_data'                          # all measurement data lands here
 device_name = "SQ_demo"                              # your chip / sample name
-state_path  = 'D:\qpu_data\SQ_demo\scqo_state.json'  # calibration state + change history
-backend     = "simulated"                            # "qblox" / "qm" on a control PC
-state_sync  = "push"                                 # simulated/qblox: scqo owns the device.
-                                                     # QM control PCs MUST use "pull" (see LCHQMDriver)
+state_path  = 'D:\qpu_data\SQ_demo\scqo_state.json'  # change history (provenance)
+backend     = "qblox_sim"                            # REAL device tree, synthetic data
 default_tags = ["cooldown1"]                         # stamped on EVERY run; edit each cooldown
+
+[qblox]
+config_dir = 'D:\qpu_data\SQ_demo\qblox_state'       # working copy of dut_config.json (+ hw_config.json for "qblox")
+
+# QM virtual twin instead: backend = "qm_sim" plus
+# [qm]
+# state_dir = 'D:\qpu_data\SQ_demo\qm_state'         # working copy of state.json + wiring.json
 ```
 
-macOS / Linux (`~` is expanded for you):
+macOS / Linux (`~` is expanded for you; plain-simulated example):
 
 ```toml
 [lab]
@@ -117,9 +136,11 @@ state_sync  = "push"
 default_tags = ["cooldown1"]
 ```
 
-(`state_sync = "push"` makes calibrated values persist across script invocations —
-right for a device scqo fully owns, like the simulator. On QM it stays `"pull"` so a
-stale scqo state file can never overwrite calibrations made through qualibrate.)
+(State persistence: in the `*_sim` twin modes the working vendor config **is** the
+device state — it updates on every successful run, so calibrations persist across
+invocations with the default `state_sync = "pull"`. Only the plain `"simulated"` demo
+needs `state_sync = "push"` to persist, since its device is created fresh in memory
+each time. On QM control PCs `"pull"` is mandatory — see LCHQMDriver's CLAUDE.md.)
 
 Notes:
 - `default_tags` is the killer feature: set it once per cooldown and every run is
