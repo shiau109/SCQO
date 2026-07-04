@@ -240,7 +240,7 @@ comes back as a structured error with the fit intact.
 
 - **Real Qblox hardware**: `QbloxBackend._to_canonical()` is still a TODO — Qblox
   runs are simulated/virtual-twin only today. QM hardware runs the three migrated
-  experiments via `LCHQMDriver/customized/scqo/scripts/run_experiment.py` (with
+  experiments via `LCHQMDriver/scripts/run_experiment.py` (with
   `backend = "qm"`, and `state_sync` stays `"pull"` there — see LCHQMDriver's CLAUDE.md).
 - **GUI** (Phase 2): the plan is datasette over `index.sqlite`, then a small
   read-only run-browser.

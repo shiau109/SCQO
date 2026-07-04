@@ -167,7 +167,7 @@ any folder holding `state.json` + `wiring.json`:
 
 ```powershell
 cd D:\github\LCHQMDriver
-python customized\scqo\scripts\check_real_config.py D:\qpu_data\SQ_demo\QM_OPX1000_config
+python scripts\check_real_config.py D:\qpu_data\SQ_demo\QM_OPX1000_config
 ```
 
 Expected output: 5 numbered steps, each OK, ending in
