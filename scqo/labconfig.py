@@ -74,10 +74,11 @@ def load(path: str | Path | None = None) -> LabConfig:
             with open(candidate, "rb") as f:
                 raw = tomllib.load(f)
             lab = raw.pop("lab", {})
+            # expanduser: lets a config say data_root = "~/qpu_data" (macOS/Linux idiom)
             return LabConfig(
-                data_root=Path(lab["data_root"]) if lab.get("data_root") else None,
+                data_root=Path(lab["data_root"]).expanduser() if lab.get("data_root") else None,
                 device_name=lab.get("device_name", "device"),
-                state_path=Path(lab["state_path"]) if lab.get("state_path") else None,
+                state_path=Path(lab["state_path"]).expanduser() if lab.get("state_path") else None,
                 backend=lab.get("backend", "simulated"),
                 state_sync=lab.get("state_sync", "pull"),
                 default_tags=list(lab.get("default_tags", [])),

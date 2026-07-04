@@ -1,0 +1,46 @@
+# Cross-platform proof: the whole scqo stack (incl. scqat estimators + datastore)
+# must pass offline on Windows, macOS, and Linux. scqat is checked out as a sibling
+# (public repo) exactly like the on-disk lab layout.
+#
+# Note for private-repo billing: macOS runner minutes count 10x against the free
+# quota — this workflow runs only on pushes to main / PRs / manual dispatch.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.12"]
+        include:
+          - os: ubuntu-latest
+            python: "3.10"   # oldest supported (exercises the tomli fallback)
+    runs-on: ${{ matrix.os }}
+    env:
+      MPLBACKEND: Agg   # scqat draws figures during tests; never touch a GUI backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SCQO
+      - uses: actions/checkout@v4
+        with:
+          repository: shiau109/SCqubit-analysis-tool
+          path: SCqubit-analysis-tool
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install scqat then scqo (editable, sibling layout)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./SCqubit-analysis-tool
+          pip install -e ./SCQO pytest
+      - name: Run the offline test suite
+        working-directory: SCQO
+        run: python -m pytest -q

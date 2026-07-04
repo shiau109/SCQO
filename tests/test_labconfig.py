@@ -28,6 +28,20 @@ def test_env_var_missing_file_raises(monkeypatch, tmp_path):
         labconfig.load()
 
 
+def test_tilde_paths_are_expanded(tmp_path):
+    """macOS/Linux configs say data_root = '~/qpu_data'; that must not create a
+    literal './~' folder."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[lab]\ndata_root = "~/qpu_data"\nstate_path = "~/qpu_data/scqo_state.json"\n',
+        encoding="utf-8",
+    )
+    cfg = labconfig.load(path)
+    assert "~" not in str(cfg.data_root)
+    assert cfg.data_root.is_absolute()
+    assert "~" not in str(cfg.state_path)
+
+
 def test_parse_full_file(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text(

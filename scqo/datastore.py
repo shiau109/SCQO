@@ -133,7 +133,7 @@ class DataStore:
     """Folder-backed run store with a rebuildable SQLite index."""
 
     def __init__(self, data_root: str | Path, *, device_name: str = "device") -> None:
-        self.data_root = Path(data_root)
+        self.data_root = Path(data_root).expanduser()
         self.device_name = device_name
         self.data_root.mkdir(parents=True, exist_ok=True)
         self._db_path = self.data_root / INDEX_FILE

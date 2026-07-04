@@ -8,6 +8,10 @@ instrument code, and you never edit anything in the repos.
 Everything below runs **offline on the simulated backend** — no hardware needed — and
 the identical commands drive real hardware once the lab config says so.
 
+The stack is cross-platform: the full test suite runs on **Windows, macOS and Linux**
+in CI on every push (`.github/workflows/tests.yml`). Windows commands are shown first;
+macOS/Linux equivalents follow where they differ.
+
 ## 1. The system in one picture
 
 ```
@@ -34,37 +38,55 @@ you (script / notebook / later: GUI or AI agent)
 
 ### 2a. The Python environment
 
-A ready-to-use environment already exists at `D:\github\.venv` (Python 3.12, with
-`scqo` + `scqat` installed editable). Activate it in **PowerShell**:
+We use a plain **venv** (not conda: every dependency ships wheels for Windows *and*
+macOS, so conda adds nothing here; conda stays only on instrument PCs where the vendor
+stack was installed that way, e.g. the QM `LCHQM_test` env). `uv` creates a standard
+venv and also downloads Python itself if the machine has none.
 
-```powershell
-D:\github\.venv\Scripts\Activate.ps1
+The repos must sit next to each other in one folder (`SCQO` and `SCqubit-analysis-tool`
+as siblings) — on the lab PC that folder is `D:\github`; on your own Mac clone them:
+
+```bash
+mkdir -p ~/github && cd ~/github
+git clone https://github.com/shiau109/SCQO.git
+git clone https://github.com/shiau109/SCqubit-analysis-tool.git
+git clone https://github.com/shiau109/LCHQBDriver.git
 ```
 
-(cmd.exe: `D:\github\.venv\Scripts\activate.bat`; Git Bash: `source /d/github/.venv/Scripts/activate`)
-
-To rebuild it from scratch (or on another PC) — we use `uv`, which creates a
-standard `venv` (we prefer venv over conda for this stack: every dependency has a
-Windows wheel, so conda adds nothing; conda stays only on instrument PCs where the
-vendor stack was installed that way, e.g. the QM `LCHQM_test` env):
+**Windows (PowerShell)** — on the lab PC this env already exists at `D:\github\.venv`:
 
 ```powershell
 cd D:\github
 uv venv .venv --python 3.12
 uv pip install --python .venv\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO pytest
+.venv\Scripts\Activate.ps1          # activate (Git Bash: source .venv/Scripts/activate)
 ```
 
-Sanity check — the full test suite should pass with no instrument attached:
+**macOS / Linux** — install uv once with `brew install uv` (or
+`curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
 
-```powershell
-cd D:\github\SCQO
-python -m pytest -q        # expect: 34 passed
+```bash
+cd ~/github
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -e ./SCqubit-analysis-tool -e ./SCQO pytest
+source .venv/bin/activate
+```
+
+Sanity check on any OS — the full test suite passes with no instrument attached
+(CI runs this exact suite on Windows, macOS and Linux):
+
+```bash
+cd SCQO
+python -m pytest -q        # expect: all passed
 ```
 
 ### 2b. Your lab config: `~\.scqo\config.toml`
 
 This one small file tells every script where data goes, which device you are on,
-and which backend runs. Create `C:\Users\<you>\.scqo\config.toml`:
+and which backend runs. Create it at `~\.scqo\config.toml` (Windows:
+`C:\Users\<you>\.scqo\config.toml`; macOS: `/Users/<you>/.scqo/config.toml`).
+
+Windows:
 
 ```toml
 [lab]
@@ -75,18 +97,30 @@ backend     = "simulated"                            # "qblox" / "qm" on a contr
 default_tags = ["cooldown1"]                         # stamped on EVERY run; edit each cooldown
 ```
 
+macOS / Linux (`~` is expanded for you):
+
+```toml
+[lab]
+data_root   = "~/qpu_data"
+device_name = "SQ_demo"
+state_path  = "~/qpu_data/SQ_demo/scqo_state.json"
+backend     = "simulated"
+default_tags = ["cooldown1"]
+```
+
 Notes:
 - `default_tags` is the killer feature: set it once per cooldown and every run is
   automatically findable by cooldown, with nobody remembering to type it.
-- A temporary alternative config can be selected per shell with
-  `$env:SCQO_CONFIG = "path\to\other.toml"` or per command with `--config`.
+- A temporary alternative config can be selected per shell
+  (PowerShell: `$env:SCQO_CONFIG = "path\to\other.toml"`; bash/zsh:
+  `export SCQO_CONFIG=path/to/other.toml`) or per command with `--config`.
 - A mistyped `$SCQO_CONFIG` **fails loudly** — it will not silently run unsaved.
 
 ## 3. Your first measurement
 
-```powershell
-cd D:\github\LCHQBDriver
-python scripts\run_experiment.py                 # no arguments = show the menu
+```bash
+cd LCHQBDriver          # D:\github\LCHQBDriver on the lab PC, ~/github/LCHQBDriver on a Mac
+python scripts/run_experiment.py                 # no arguments = show the menu
 ```
 
 ```
@@ -97,8 +131,8 @@ resonator_spectroscopy  Sweep readout frequency ... updates readout_freq.
 
 Run a Ramsey on q1, tagged so you can find it later:
 
-```powershell
-python scripts\run_experiment.py qubit_ramsey --qubits q1 --set num_points=201 --tag mytest --note "first try"
+```bash
+python scripts/run_experiment.py qubit_ramsey --qubits q1 --set num_points=201 --tag mytest --note "first try"
 ```
 
 You get the structured result as JSON — extracted physics, not raw traces:
@@ -117,20 +151,20 @@ You get the structured result as JSON — extracted physics, not raw traces:
 Because the fit succeeded, `drive_freq` was **written back** to the device state
 (with a history record linking it to this run). Useful variations:
 
-```powershell
-python scripts\run_experiment.py qubit_power_rabi                 # all qubits, defaults
-python scripts\run_experiment.py qubit_ramsey --no-update ...     # analyze only, no writeback
-python scripts\run_experiment.py qubit_ramsey --params my.json    # parameters from a file
+```bash
+python scripts/run_experiment.py qubit_power_rabi                 # all qubits, defaults
+python scripts/run_experiment.py qubit_ramsey --no-update ...     # analyze only, no writeback
+python scripts/run_experiment.py qubit_ramsey --params my.json    # parameters from a file
 ```
 
 ## 4. Finding your data (the whole point)
 
-```powershell
-python scripts\find_runs.py                                   # latest runs, newest first
-python scripts\find_runs.py --tag cooldown1                   # everything from this cooldown
-python scripts\find_runs.py --experiment qubit_ramsey --qubit q1 --since 2026-07-01
-python scripts\find_runs.py --outcome failed                  # what went wrong lately?
-python scripts\find_runs.py --show 20260704-153041-qubit_ramsey-01   # one run, in full
+```bash
+python scripts/find_runs.py                                   # latest runs, newest first
+python scripts/find_runs.py --tag cooldown1                   # everything from this cooldown
+python scripts/find_runs.py --experiment qubit_ramsey --qubit q1 --since 2026-07-01
+python scripts/find_runs.py --outcome failed                  # what went wrong lately?
+python scripts/find_runs.py --show 20260704-153041-qubit_ramsey-01   # one run, in full
 ```
 
 ```
@@ -146,25 +180,25 @@ python scripts\find_runs.py --show 20260704-153041-qubit_ramsey-01   # one run, 
 ## 5. What's inside a run folder
 
 ```
-D:\qpu_data\SQ_demo\2026-07-04\20260704-153041-qubit_ramsey-01\
+<data_root>/SQ_demo/2026-07-04/20260704-153041-qubit_ramsey-01/
     record.json          run manifest (its absence = run was incomplete/crashed)
     dataset.nc           the raw I/Q dataset (xarray/netCDF, dims: qubit × sweep)
     parameters.json      exactly what you asked for
     result.json          outcomes + fitted quantities + error (if any)
     device_before.json   calibration state before ...
     device_after.json    ... and after the writeback
-    analysis\q1\         per-qubit fit artifacts from scqat:
+    analysis/q1/         per-qubit fit artifacts from scqat:
         ramsey_time_domain.png      ← your figure, already drawn
         ramsey_fft_spectrum.png
         ramsey_metadata.json        fit parameters, fit quality
         ramsey_plotdata.nc          arrays to redraw the figure without refitting
 ```
 
-**The folder is the truth.** The SQLite index (`D:\qpu_data\index.sqlite`) is only a
+**The folder is the truth.** The SQLite index (`<data_root>/index.sqlite`) is only a
 cache — if it is ever missing or stale, rebuild it losslessly:
 
 ```powershell
-python -m scqo D:\qpu_data
+python -m scqo <data_root>
 ```
 
 ## 6. Working in Python / Jupyter
@@ -216,11 +250,11 @@ comes back as a structured error with the fit intact.
 
 | Symptom | Cause / fix |
 |---|---|
-| `ModuleNotFoundError: scqo` | venv not activated — run `D:\github\.venv\Scripts\Activate.ps1` |
+| `ModuleNotFoundError: scqo` | venv not activated — Windows: `.venv\Scripts\Activate.ps1`; macOS/Linux: `source .venv/bin/activate` |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (this error is intentional — better loud than silently unsaved) |
 | `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** |
 | A run shows `datastore_error` | measurement succeeded; only saving failed (disk full/locked). Fix the disk, rerun |
-| `find_runs` misses runs you can see on disk | index stale → `python -m scqo D:\qpu_data` |
+| `find_runs` misses runs you can see on disk | index stale → `python -m scqo <data_root>` |
 | Unknown `run_id` in `--show` | same — rebuild the index |
 | Want a clean slate | deleting `index.sqlite*` (all three files) is always safe; the folders are the data |
 
@@ -228,7 +262,7 @@ comes back as a structured error with the fit intact.
 
 - **Real Qblox hardware**: `QbloxBackend._to_canonical()` is still a TODO — Qblox
   runs are simulated-only today. QM hardware runs the three migrated experiments via
-  `LCHQMDriver\customized\scqo\scripts\run_experiment.py` (with `backend = "qm"`,
+  `LCHQMDriver/customized/scqo/scripts/run_experiment.py` (with `backend = "qm"`,
   and `state_sync` stays `"pull"` there — see LCHQMDriver's CLAUDE.md).
 - **GUI** (Phase 2): the plan is datasette over `index.sqlite`, then a small
   read-only run-browser.
