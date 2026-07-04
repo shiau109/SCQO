@@ -1,16 +1,19 @@
 # SCQO tutorial — measure, calibrate, and find your data
 
-This is the hands-on guide for the lab's measurement system. You will run experiments
-by *physics name* (Ramsey, power Rabi, resonator spectroscopy), get fitted device
-parameters back, and be able to find every dataset you ever took. You never touch
-instrument code, and you never edit anything in the repos.
+The student guide to the lab's measurement system. You run experiments by *physics
+name* (resonator spectroscopy, Ramsey, power Rabi), get fitted device parameters back,
+and can find every dataset you ever took. You never touch instrument code, and you
+never edit anything in the repos.
 
-Everything below runs **offline on the simulated backend** — no hardware needed — and
-the identical commands drive real hardware once the lab config says so.
+**Prerequisites** (done once per machine — see [INSTALL.md](INSTALL.md), or ask
+whoever set up the PC): the venv activated (`.venv\Scripts\Activate.ps1`; macOS/Linux
+`source .venv/bin/activate`) and your personal `~\.scqo\config.toml` in place. The one
+thing to keep updated yourself: `default_tags = ["cooldown..."]` in that file — edit
+it once per cooldown and every run you take is automatically findable by cooldown.
 
-The stack is cross-platform: the full test suite runs on **Windows, macOS and Linux**
-in CI on every push (`.github/workflows/tests.yml`). Windows commands are shown first;
-macOS/Linux equivalents follow where they differ.
+Everything below works identically on the simulated backend, the **virtual twin** of
+your real chip (`qblox_sim`/`qm_sim` — the recommended practice mode), and real
+hardware: the backend choice lives in the config, not in the commands.
 
 ## 1. The system in one picture
 
@@ -22,7 +25,7 @@ you (script / notebook / later: GUI or AI agent)
         │
    Experiment  = probe (instrument half)  +  estimator (analysis half, scqat)
         │
-   Backend     = SimulatedBackend | Qblox (LCHQBDriver) | QM (LCHQMDriver)
+   Backend     = Simulated | virtual twin | Qblox (LCHQBDriver) | QM (LCHQMDriver)
         │
    DataStore   = every run saved to a folder + searchable SQLite index
 ```
@@ -34,123 +37,7 @@ you (script / notebook / later: GUI or AI agent)
   snapshots, and the fit figures — under one folder per run, and indexes it so you
   can ask "what T2* did q1 get this week?" without remembering any filename.
 
-## 2. One-time setup (≈2 minutes)
-
-### 2a. The Python environment
-
-We use a plain **venv** (not conda: every dependency ships wheels for Windows *and*
-macOS, so conda adds nothing here; conda stays only on instrument PCs where the vendor
-stack was installed that way, e.g. the QM `LCHQM_test` env). `uv` creates a standard
-venv and also downloads Python itself if the machine has none.
-
-The repos must sit next to each other in one folder (`SCQO` and `SCqubit-analysis-tool`
-as siblings) — on the lab PC that folder is `D:\github`; on your own Mac clone them:
-
-```bash
-mkdir -p ~/github && cd ~/github
-git clone https://github.com/shiau109/SCQO.git
-git clone https://github.com/shiau109/SCqubit-analysis-tool.git
-git clone https://github.com/shiau109/LCHQBDriver.git
-```
-
-**Windows (PowerShell)** — on the lab PC this env already exists at `D:\github\.venv`:
-
-```powershell
-cd D:\github
-uv venv .venv --python 3.12
-uv pip install --python .venv\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO pytest
-uv pip install --python .venv\Scripts\python.exe -e .\LCHQBDriver   # + qblox-scheduler (vendor stack)
-.venv\Scripts\Activate.ps1          # activate (Git Bash: source .venv/Scripts/activate)
-```
-
-**macOS / Linux** — install uv once with `brew install uv` (or
-`curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
-
-```bash
-cd ~/github
-uv venv .venv --python 3.12
-uv pip install --python .venv/bin/python -e ./SCqubit-analysis-tool -e ./SCQO pytest
-uv pip install --python .venv/bin/python -e ./LCHQBDriver   # + qblox-scheduler (vendor stack)
-source .venv/bin/activate
-```
-
-(The second install line adds the Qblox driver and its vendor stack — needed for the
-driver scripts and the real-config self-test in section 10. Skip it on a pure
-analysis machine; everything in sections 4–6 works without it.)
-
-Sanity check on any OS — the full test suite passes with no instrument attached
-(CI runs this exact suite on Windows, macOS and Linux):
-
-```bash
-cd SCQO
-python -m pytest -q        # expect: all passed
-```
-
-### 2b. Your lab config: `~\.scqo\config.toml`
-
-This one small file tells every script where data goes, which device you are on,
-and which backend runs. Create it at `~\.scqo\config.toml` (Windows:
-`C:\Users\<you>\.scqo\config.toml`; macOS: `/Users/<you>/.scqo/config.toml`).
-
-**Backend modes** — pick how real your practice is:
-
-| `backend =` | device tree | data | writebacks persist to |
-|---|---|---|---|
-| `"simulated"` | built-in demo qubits | synthetic | scqo state file (use `state_sync="push"`) |
-| `"qblox_sim"` | **your REAL dut config** (working copy) | synthetic | the working `dut_config.json` |
-| `"qm_sim"` | **your REAL QUAM state** (working copy) | synthetic | the working `state.json` |
-| `"qblox"` / `"qm"` | real instrument | real | vendor config (QM: keep `state_sync="pull"`) |
-
-The `*_sim` modes are the **virtual twin**: real qubit names and calibration values as
-starting points, no hardware needed. Set them up once by copying your vendor config
-into a working folder (originals stay pristine), e.g.
-`copy dut_config_AS_QRC.json D:\qpu_data\SQ_demo\qblox_state\dut_config.json`.
-
-Windows (virtual-twin example — the recommended practice mode):
-
-```toml
-[lab]
-data_root   = 'D:\qpu_data'                          # all measurement data lands here
-device_name = "SQ_demo"                              # your chip / sample name
-state_path  = 'D:\qpu_data\SQ_demo\scqo_state.json'  # change history (provenance)
-backend     = "qblox_sim"                            # REAL device tree, synthetic data
-default_tags = ["cooldown1"]                         # stamped on EVERY run; edit each cooldown
-
-[qblox]
-config_dir = 'D:\qpu_data\SQ_demo\qblox_state'       # working copy of dut_config.json (+ hw_config.json for "qblox")
-
-# QM virtual twin instead: backend = "qm_sim" plus
-# [qm]
-# state_dir = 'D:\qpu_data\SQ_demo\qm_state'         # working copy of state.json + wiring.json
-```
-
-macOS / Linux (`~` is expanded for you; plain-simulated example):
-
-```toml
-[lab]
-data_root   = "~/qpu_data"
-device_name = "SQ_demo"
-state_path  = "~/qpu_data/SQ_demo/scqo_state.json"
-backend     = "simulated"
-state_sync  = "push"
-default_tags = ["cooldown1"]
-```
-
-(State persistence: in the `*_sim` twin modes the working vendor config **is** the
-device state — it updates on every successful run, so calibrations persist across
-invocations with the default `state_sync = "pull"`. Only the plain `"simulated"` demo
-needs `state_sync = "push"` to persist, since its device is created fresh in memory
-each time. On QM control PCs `"pull"` is mandatory — see LCHQMDriver's CLAUDE.md.)
-
-Notes:
-- `default_tags` is the killer feature: set it once per cooldown and every run is
-  automatically findable by cooldown, with nobody remembering to type it.
-- A temporary alternative config can be selected per shell
-  (PowerShell: `$env:SCQO_CONFIG = "path\to\other.toml"`; bash/zsh:
-  `export SCQO_CONFIG=path/to/other.toml`) or per command with `--config`.
-- A mistyped `$SCQO_CONFIG` **fails loudly** — it will not silently run unsaved.
-
-## 3. Your first measurement
+## 2. Your first measurement
 
 ```bash
 cd LCHQBDriver          # D:\github\LCHQBDriver on the lab PC, ~/github/LCHQBDriver on a Mac
@@ -220,7 +107,7 @@ python scripts/device.py                    # current values per qubit
 python scripts/device.py --history 20       # who changed what, when, in which run
 ```
 
-## 4. Finding your data (the whole point)
+## 3. Finding your data (the whole point)
 
 ```bash
 python scripts/find_runs.py                                   # latest runs, newest first
@@ -241,7 +128,7 @@ python scripts/find_runs.py --show 20260704-225450-resonator_spectroscopy-01   #
   `python scripts/tag_run.py 20260704-...-01 --add thesis-fig3 --note "best T2* so far"`
   (also backend-free).
 
-## 5. What's inside a run folder
+## 4. What's inside a run folder
 
 ```
 <data_root>/SQ_demo/2026-07-04/20260704-225450-resonator_spectroscopy-01/
@@ -267,7 +154,7 @@ cache — if it is ever missing or stale, rebuild it losslessly:
 python -m scqo <data_root>
 ```
 
-## 6. Working in Python / Jupyter
+## 5. Working in Python / Jupyter
 
 **Where do my notebooks/scripts live?** Anywhere OUTSIDE the governed repos — e.g. a
 personal `lab-notebooks/` folder (make it your own git repo if you want history).
@@ -275,7 +162,7 @@ Because `scqo`/`scqat` are installed in the venv, imports work from any director
 just select the venv as your interpreter/kernel (VS Code: pick
 `.venv\Scripts\python.exe`; or `uv pip install --python <venv-python> jupyterlab
 ipykernel`). If a notebook grows into a new *experiment* or *estimator*, it graduates
-to the contrib sandbox (section 8) — never straight into SCQO or a driver repo.
+to the contrib sandbox (section 7) — never straight into SCQO or a driver repo.
 
 **Analyzing saved data needs no backend at all** — this is what most notebooks are:
 
@@ -285,11 +172,11 @@ from scqo import DataStore, load_lab_config
 cfg = load_lab_config()
 store = DataStore(cfg.data_root, device_name=cfg.device_name)
 
-store.find_runs(experiment="qubit_ramsey", qubit="q1", tag="cooldown1")
-run = store.load_run("20260704-153041-qubit_ramsey-01")  # record + params + figure paths
-ds = store.open_dataset("20260704-153041-qubit_ramsey-01")
+store.find_runs(experiment="resonator_spectroscopy", qubit="q1", tag="cooldown1")
+run = store.load_run("20260704-225450-resonator_spectroscopy-01")  # record + params + figures
+ds = store.open_dataset("20260704-225450-resonator_spectroscopy-01")
 ds["I"].sel(qubit="q1").plot()
-store.tag_run("20260704-153041-qubit_ramsey-01", add=["thesis-fig3"])
+store.tag_run("20260704-225450-resonator_spectroscopy-01", add=["thesis-fig3"])
 ```
 
 **Running measurements** from a notebook is the same Session the scripts use:
@@ -305,15 +192,15 @@ backend = SimulatedBackend(InMemoryDevice({          # or QbloxBackend / QMBacke
 }))
 sess = make_session(backend, cfg)
 
-result = sess.run("qubit_ramsey", {"qubits": ["q1"], "num_points": 201})
-sess.find_runs(experiment="qubit_ramsey", qubit="q1")   # list of dicts, newest first
+result = sess.run("resonator_spectroscopy", {"qubits": ["q1"]})
+sess.find_runs(experiment="resonator_spectroscopy", qubit="q1")  # list of dicts, newest first
 sess.load_run(result["run_id"])                          # record + params + figure paths
 
 sess.device_state()   # current calibration of every qubit
 sess.history()        # every change ever: who, what, old → new, which run caused it
 ```
 
-## 7. When things fail (by design)
+## 6. When things fail (by design)
 
 A failed fit or a bad probe **never crashes and never loses data**: you get
 `"error": "..."`, the qubits are marked `failed`/`no_data`, nothing is written back
@@ -322,7 +209,7 @@ searchable via `--outcome failed`, because failed data is exactly what you want 
 look at when debugging. Even "measurement fine, instrument rejected the writeback"
 comes back as a structured error with the fit intact.
 
-## 8. Rules of the road (who edits what)
+## 7. Rules of the road (who edits what)
 
 1. **Students**: run the scripts, edit only your own `config.toml` and parameters.
    The repos are read-only for you.
@@ -332,57 +219,22 @@ comes back as a structured error with the fit intact.
 3. **The manager** promotes proven experiments into `scqo/experiments/` + the driver
    repos (checklist in [CLAUDE.md](CLAUDE.md)).
 
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| `ModuleNotFoundError: scqo` | venv not activated — Windows: `.venv\Scripts\Activate.ps1`; macOS/Linux: `source .venv/bin/activate` |
-| `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (this error is intentional — better loud than silently unsaved) |
-| `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** |
+| `ModuleNotFoundError` / `lab config not found` / nothing gets saved | setup problem — see [INSTALL.md](INSTALL.md) §5 |
 | A run shows `datastore_error` | measurement succeeded; only saving failed (disk full/locked). Fix the disk, rerun |
 | `find_runs` misses runs you can see on disk | index stale → `python -m scqo <data_root>` |
 | Unknown `run_id` in `--show` | same — rebuild the index |
 | Want a clean slate | deleting `index.sqlite*` (all three files) is always safe; the folders are the data |
 
-## 10. Self-test against your REAL device config (no hardware needed)
-
-Before ever touching an instrument, verify the whole stack against your lab's actual
-config files: each driver has a `check_real_config.py` that loads them, runs the full
-pipeline with **simulated data over the real device tree** (read neutral fields → run
-experiments → fit → write back → save in vendor format → reload and compare), and
-prints PASS/FAIL. It works on a **temporary copy** — your originals are never opened
-for writing.
-
-**Qblox** — works in the §2a venv (the `-e ./LCHQBDriver` install brought
-`qblox-scheduler`; the lab's `conda activate LCHQB` env works too). Point it at any
-folder holding `dut_config*.json` + `hw_config*.json`:
-
-```powershell
-cd D:\github\LCHQBDriver
-python scripts\check_real_config.py D:\qpu_data\SQ_demo\QBLOX_config
-```
-
-**QM / OPX1000** (needs the QM stack; lab: `conda activate LCHQM_test`). Point it at
-any folder holding `state.json` + `wiring.json`:
-
-```powershell
-cd D:\github\LCHQMDriver
-python customized\scqo\scripts\check_real_config.py D:\qpu_data\SQ_demo\QM_OPX1000_config
-```
-
-Expected output: 5 numbered steps, each OK, ending in
-`PASS - scqo works against this real config`. A qubit whose state is uncalibrated
-(fields `None`) is skipped automatically; on the Qblox device the coupler (`c12`) is
-excluded by the `q*` default — pass `--qubits` to choose explicitly. Both configs
-above passed on 2026-07-04 (and this test caught three real integration bugs
-before any hardware time was spent — that's its job).
-
-## 11. What Phase 1 does NOT include yet
+## 9. What Phase 1 does NOT include yet
 
 - **Real Qblox hardware**: `QbloxBackend._to_canonical()` is still a TODO — Qblox
-  runs are simulated-only today. QM hardware runs the three migrated experiments via
-  `LCHQMDriver/customized/scqo/scripts/run_experiment.py` (with `backend = "qm"`,
-  and `state_sync` stays `"pull"` there — see LCHQMDriver's CLAUDE.md).
+  runs are simulated/virtual-twin only today. QM hardware runs the three migrated
+  experiments via `LCHQMDriver/customized/scqo/scripts/run_experiment.py` (with
+  `backend = "qm"`, and `state_sync` stays `"pull"` there — see LCHQMDriver's CLAUDE.md).
 - **GUI** (Phase 2): the plan is datasette over `index.sqlite`, then a small
   read-only run-browser.
 - **Device-level inference** (Phase 3): combining runs into EJ/EC, anharmonicity,
