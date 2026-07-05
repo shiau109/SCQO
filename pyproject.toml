@@ -30,7 +30,7 @@ viewer = [
 ]
 
 [tool.uv.sources]
-scqat = { path = "../SCqubit-analysis-tool", editable = true }
+scqat = { path = "../scqat", editable = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -29,13 +29,13 @@ All three import scqo/scqat from the same editable checkouts, so they never drif
 the neutral layer. `uv` creates standard venvs and downloads Python itself if the
 machine has none.
 
-The repos must sit next to each other in one folder (`SCQO` and `SCqubit-analysis-tool`
+The repos must sit next to each other in one folder (`SCQO` and `scqat`
 as siblings) — on the lab PC that folder is `D:\github`; on your own Mac clone them:
 
 ```bash
 mkdir -p ~/github && cd ~/github
 git clone https://github.com/shiau109/SCQO.git
-git clone https://github.com/shiau109/SCqubit-analysis-tool.git
+git clone https://github.com/shiau109/scqat.git
 git clone https://github.com/shiau109/LCHQBDriver.git    # only if this machine will measure
 git clone https://github.com/shiau109/scqo-contrib.git   # optional: the Tier-2 sandbox
 ```
@@ -47,17 +47,17 @@ cd D:\github
 
 # view — data browsing, no instrument (the daily default)
 uv venv .venv-view --python 3.12 --prompt view
-uv pip install --python .venv-view\Scripts\python.exe -e ".\SCQO[viewer]" -e .\SCqubit-analysis-tool datasette pytest httpx
+uv pip install --python .venv-view\Scripts\python.exe -e ".\SCQO[viewer]" -e .\scqat datasette pytest httpx
 
 # qblox — measurement env for the Qblox cluster
 uv venv .venv-qblox --python 3.12 --prompt qblox
-uv pip install --python .venv-qblox\Scripts\python.exe -e ".\SCQO[viewer]" -e .\SCqubit-analysis-tool -e .\LCHQBDriver -e .\scqo-contrib datasette pytest httpx
+uv pip install --python .venv-qblox\Scripts\python.exe -e ".\SCQO[viewer]" -e .\scqat -e .\LCHQBDriver -e .\scqo-contrib datasette pytest httpx
 uv pip install --python .venv-qblox\Scripts\python.exe "qblox-scheduler==1.0.0b4"   # exact hardware-proven build (see note)
 
 # qm — measurement env for the OPX1000 (pinned, py3.11)
 uv venv .venv-qm --python 3.11
 uv pip install --python .venv-qm\Scripts\python.exe -r .\LCHQMDriver\requirements-qm.lock.txt
-uv pip install --python .venv-qm\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO -e .\LCHQMDriver --no-deps
+uv pip install --python .venv-qm\Scripts\python.exe -e .\scqat -e .\SCQO -e .\LCHQMDriver --no-deps
 
 .venv-view\Scripts\Activate.ps1     # daily default — prompt shows (view)
 ```
@@ -76,7 +76,7 @@ deliberately after re-validation, never by accidental rebuild.)
 ```bash
 cd ~/github
 uv venv .venv-view --python 3.12 --prompt view
-uv pip install --python .venv-view/bin/python -e "./SCQO[viewer]" -e ./SCqubit-analysis-tool datasette pytest httpx
+uv pip install --python .venv-view/bin/python -e "./SCQO[viewer]" -e ./scqat datasette pytest httpx
 source .venv-view/bin/activate
 ```
 

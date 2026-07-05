@@ -31,15 +31,15 @@ jobs:
           path: SCQO
       - uses: actions/checkout@v4
         with:
-          repository: shiau109/SCqubit-analysis-tool
-          path: SCqubit-analysis-tool
+          repository: shiau109/scqat
+          path: scqat
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
       - name: Install scqat then scqo (editable, sibling layout)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ./SCqubit-analysis-tool
+          pip install -e ./scqat
           pip install -e "./SCQO[viewer]" pytest httpx
       - name: Run the offline test suite
         working-directory: SCQO
