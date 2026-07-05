@@ -50,6 +50,7 @@ def create_app(
         since: str = "",
         until: str = "",
         device: str = "",
+        operator: str = "",
         limit: int = 50,
     ):
         rows = store.find_runs(
@@ -60,6 +61,7 @@ def create_app(
             since=since or None,
             until=until or None,
             device=device or None,
+            operator=operator or None,
             limit=limit,
         )
         return templates.TemplateResponse(
@@ -71,7 +73,7 @@ def create_app(
                 "devices": store.distinct_devices(),
                 "filters": {"experiment": experiment, "qubit": qubit, "tag": tag,
                             "outcome": outcome, "since": since, "until": until,
-                            "device": device, "limit": limit},
+                            "device": device, "operator": operator, "limit": limit},
                 "data_root": str(store.data_root),
             },
         )

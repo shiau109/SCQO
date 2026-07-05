@@ -270,6 +270,26 @@ def test_multi_device_one_index(tmp_path):
     assert [r["run_id"] for r in scoped] == [rb["run_id"]]
 
 
+def test_operator_is_stamped_and_survives_reindex(tmp_path):
+    """Multi-user provenance: every run records the OS login of whoever ran it."""
+    import getpass
+
+    from scqo import DataStore
+
+    sess = _session(tmp_path)
+    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    me = getpass.getuser()
+
+    store = DataStore(tmp_path / "data")
+    assert store.find_runs()[0]["operator"] == me
+    assert store.find_runs(operator=me)[0]["run_id"] == r["run_id"]
+    assert store.find_runs(operator="somebody-else") == []
+
+    (tmp_path / "data" / "index.sqlite").unlink()  # operator lives in record.json too
+    reindex(tmp_path / "data")
+    assert DataStore(tmp_path / "data").find_runs(operator=me)[0]["run_id"] == r["run_id"]
+
+
 def test_device_registry_loader(tmp_path):
     """devices.toml is optional, instrument-independent, and a typo never raises."""
     from scqo.datastore import load_device_registry

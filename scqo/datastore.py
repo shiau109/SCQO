@@ -31,6 +31,7 @@ separation) and aggregate centrally by collecting folders + ``reindex``.
 
 from __future__ import annotations
 
+import getpass
 import json
 import math
 import os
@@ -43,7 +44,7 @@ from typing import Any, Iterator
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # v3: operator column (multi-user SSH provenance)
 RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS runs (
   experiment     TEXT NOT NULL,
   device         TEXT NOT NULL,
   backend        TEXT NOT NULL,
+  operator       TEXT NOT NULL DEFAULT '',
   qubits         TEXT NOT NULL,
   outcome        TEXT NOT NULL,
   outcomes       TEXT NOT NULL,
@@ -87,6 +89,7 @@ class RunRecord(BaseModel):
     experiment: str
     device: str
     backend: str
+    operator: str = ""  # OS login of whoever ran it (multi-user SSH provenance)
     qubits: list[str]
     started_at: str  # ISO-8601 local time with UTC offset (matches the folder dates)
     ended_at: str
@@ -98,6 +101,14 @@ class RunRecord(BaseModel):
     note: str = ""
     path: str  # run folder, relative to data_root (forward slashes)
     schema_version: int = SCHEMA_VERSION
+
+
+def _current_operator() -> str:
+    """OS login name of whoever is running this session ("" if undeterminable)."""
+    try:
+        return getpass.getuser()
+    except Exception:  # pragma: no cover - no user database (containers, odd CI)
+        return ""
 
 
 def _summarize(outcomes: dict[str, str]) -> str:
@@ -211,6 +222,7 @@ class DataStore:
             experiment=experiment,
             device=self.device_name,
             backend=backend,
+            operator=_current_operator(),
             qubits=list(params_dump.get("qubits", [])),
             started_at=started_at,
             ended_at=ended_at,
@@ -239,6 +251,7 @@ class DataStore:
         until: str | None = None,
         outcome: str | None = None,
         device: str | None = None,
+        operator: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """Query the index; newest first; rows as JSON-able dicts (RunRecord fields + fit)."""
@@ -266,6 +279,9 @@ class DataStore:
         if device is not None:
             where.append("device = ?")
             args.append(device)
+        if operator is not None:
+            where.append("operator = ?")
+            args.append(operator)
         sql = "SELECT * FROM runs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -415,9 +431,9 @@ class DataStore:
     def _upsert(db: sqlite3.Connection, record: RunRecord, parameters: dict, fit: dict) -> None:
         db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, ended_at, experiment, device,"
-            " backend, qubits, outcome, outcomes, fit, tags, note, error, parameters,"
+            " backend, operator, qubits, outcome, outcomes, fit, tags, note, error, parameters,"
             " updated_device, path, schema_version)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.run_id,
                 record.started_at,
@@ -425,6 +441,7 @@ class DataStore:
                 record.experiment,
                 record.device,
                 record.backend,
+                record.operator,
                 json.dumps(record.qubits),
                 record.outcome,
                 json.dumps(record.outcomes),

@@ -16,6 +16,8 @@ from ..labconfig import load
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="bind address; 0.0.0.0 serves the lab LAN (zero-install browsing from any laptop)")
     parser.add_argument("--data-root", help="override the lab config's data_root")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
     args = parser.parse_args(argv)
@@ -42,8 +44,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     app = create_app(root, device_name=cfg.device_name, state_path=cfg.state_path)
-    print(f"SCQO run viewer: http://127.0.0.1:{args.port}  (Ctrl+C to stop)")
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    shown = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+    print(f"SCQO run viewer: http://{shown}:{args.port}  (Ctrl+C to stop)")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
 

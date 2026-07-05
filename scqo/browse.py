@@ -22,6 +22,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", type=int, default=8081,
                         help="lab convention: 8081 (8080 = viewer, 8001 = qualibrate)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="bind address; 0.0.0.0 serves the lab LAN")
     parser.add_argument("--data-root", help="override the lab config's data_root")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
     args = parser.parse_args(argv)
@@ -42,8 +44,9 @@ def main(argv: list[str] | None = None) -> int:
         exe = str(candidate)
 
     metadata = Path(__file__).with_name("browse_metadata.json")
-    print(f"serving {root / 'index.sqlite'} at http://127.0.0.1:{args.port}  (Ctrl+C to stop)")
-    return subprocess.call([exe, str(root / "index.sqlite"), "--port", str(args.port), "-m", str(metadata)])
+    print(f"serving {root / 'index.sqlite'} at http://{args.host}:{args.port}  (Ctrl+C to stop)")
+    return subprocess.call([exe, str(root / "index.sqlite"), "--host", args.host,
+                            "--port", str(args.port), "-m", str(metadata)])
 
 
 if __name__ == "__main__":

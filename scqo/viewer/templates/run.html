@@ -4,7 +4,8 @@
 <h2>{{ record.run_id }}
   {% for q, o in record.outcomes.items() %}<span class="badge {{ o }}">{{ q }}: {{ o }}</span> {% endfor %}
 </h2>
-<p class="muted">{{ record.experiment }} · {{ record.started_at }} · backend {{ record.backend }} ·
+<p class="muted">{{ record.experiment }} · {{ record.started_at }} · backend {{ record.backend }}
+{%- if record.operator %} · operator {{ record.operator }}{% endif %} ·
 folder <code>{{ path }}</code></p>
 
 {% if result.error %}<div class="error-box"><b>error:</b> {{ result.error }}</div>{% endif %}

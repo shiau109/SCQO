@@ -229,7 +229,62 @@ excluded by the `q*` default — pass `--qubits` to choose explicitly. Both lab 
 passed on 2026-07-04 (and this test caught three real integration bugs before any
 hardware time was spent — that's its job).
 
-## 5. Install troubleshooting
+## 5. Lab deployment — server + NAS + zero-install laptops
+
+Target topology once the stack leaves the test bench:
+
+```
+instruments ── lab server (a normal PC; runs a TAGGED, stable version)
+                 ├─ data_root on its LOCAL disk        <- ALL writes happen here
+                 ├─ python -m scqo.viewer --host 0.0.0.0     (LAN browsing/tagging)
+                 ├─ OpenSSH server                     (measure from any laptop)
+                 └─ scheduled robocopy ──> \\NAS\qpu_data    (backup + analysis copy)
+
+tier-1 laptop     browser -> http://<server>:8080 ; ssh <user>@<server> to measure
+analysis laptop   view env (section 1) + own config.toml, data_root = the NAS copy
+tier-2/3 dev PC   full local setup as in section 1 (sim/twin backends, contrib sandbox)
+```
+
+The rules that make this safe:
+
+- **The live `index.sqlite` and run folders stay on the server's LOCAL disk** —
+  SQLite's WAL mode does not work on network shares. The NAS holds a *mirror*
+  refreshed by a scheduled task; the folders are the truth (that's what the backup
+  protects) and the index rebuilds anywhere, so it doesn't even need mirroring.
+- **The server's `~\.scqo\config.toml` is the single authoritative config**
+  (instrument → sample mapping). Personal configs exist only on analysis laptops and
+  point `data_root` at the NAS copy — those machines read, never write.
+- Simultaneous users are supported and tested (`tests/test_index_scale.py`), but
+  **one measurement at a time per instrument** remains a social convention — the
+  instruments themselves cannot run two programs at once.
+- The server runs a **git tag** of all repos; dev machines track `main`. Update the
+  server deliberately, after CI is green — never mid-cooldown on a whim.
+- Every run records **who** ran it (`operator` = the SSH/Windows login) — filter with
+  `find_runs.py --operator <name>` or the viewer's operator box.
+
+One-time server setup (Windows 11, admin PowerShell):
+
+```powershell
+# SSH access for tier-1 measuring (macOS/Linux/Windows laptops all have ssh built in)
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Set-Service sshd -StartupType Automatic; Start-Service sshd
+
+# nightly data mirror to the NAS (= the lab's backup policy; /MIR mirrors deletions too)
+schtasks /Create /TN scqo-mirror /SC DAILY /ST 03:00 `
+  /TR "robocopy D:\qpu_data \\NAS\qpu_data /MIR /R:2 /W:5 /LOG:D:\qpu_data\mirror.log"
+```
+
+A student measuring from their own laptop, with nothing installed on it:
+
+```
+ssh <user>@<server>
+D:\github\.venv-qblox\Scripts\Activate.ps1
+python D:\github\LCHQBDriver\scripts\run_experiment.py resonator_spectroscopy --qubits q1
+```
+
+…then views the figures at `http://<server>:8080`.
+
+## 6. Install troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
