@@ -24,11 +24,17 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = load(args.config)
     root = Path(args.data_root) if args.data_root else cfg.data_root
-    if root is None or not (root / "index.sqlite").is_file():
-        raise SystemExit(
-            f"no index.sqlite under {root or '(no data_root configured)'} — "
-            "run a measurement first, or check ~/.scqo/config.toml"
-        )
+    if root is None:
+        raise SystemExit("no data_root configured — set it in ~/.scqo/config.toml or pass --data-root")
+    if not (root / "index.sqlite").is_file():
+        if not root.is_dir():
+            # a mistyped path must fail loudly, never silently serve an empty lab
+            raise SystemExit(f"data_root does not exist: {root} — check ~/.scqo/config.toml or --data-root")
+        # a fresh lab: the folder exists but nothing was measured yet — start empty
+        from ..datastore import DataStore
+
+        DataStore(root)
+        print(f"new data_root: initialized an empty index at {root / 'index.sqlite'}")
 
     try:
         import uvicorn

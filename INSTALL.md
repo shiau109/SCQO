@@ -301,6 +301,8 @@ Set-Service sshd -StartupType Automatic; Start-Service sshd
 # connection-refused (the first-bind firewall popup needs elevation anyway)
 New-NetFirewallRule -DisplayName "SCQO viewer 8080" -Direction Inbound -Action Allow `
   -Protocol TCP -LocalPort 8080
+# add 8081 too if datasette (scqo.browse) should be reachable from laptops:
+# New-NetFirewallRule -DisplayName "SCQO browse 8081" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8081
 
 # make PowerShell the shell students land in (default is cmd.exe, where the
 # venv Activate.ps1 scripts in TUTORIAL section 5 would not run)
@@ -326,7 +328,8 @@ two-way task would let NAS-side edits and deletions flow back INTO the live
 First start of the viewer (standard user — no elevation needed):
 
 ```powershell
-# a FRESH data_root has no index yet and the viewer refuses to start without one:
+# a FRESH data_root has no index yet; on v0.1.0 create it first (newer versions
+# initialize an existing-but-empty folder automatically):
 D:\github\.venv-view\Scripts\python.exe -m scqo D:\qpu_data      # prints: indexed 0 runs
 
 # run it now…
@@ -365,7 +368,7 @@ python D:\github\LCHQBDriver\scripts\run_experiment.py resonator_spectroscopy --
 | self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) |
 | `Repository not found` when cloning | the repo is (still) private and the active GitHub credential cannot see it — GitHub reports 404, not 403, to unauthorized users; sign in with an account that has access |
 | self-test: `Unexpected attribute 'lo_mode'` / `'__package_versions__'` (or similar) | the vendor state file was written by a NEWER quam/vendor lib than this env's pin — delete the unknown null attributes from the **working copy** (originals untouched), or bump the lock deliberately after re-validation |
-| viewer: `no index.sqlite under <data_root>` | fresh data_root with zero runs — create the empty index first: `python -m scqo <data_root>` (section 5) |
+| viewer: `no index.sqlite under <data_root>` (v0.1.0) or `data_root does not exist` | fresh data_root: on v0.1.0 create the index first with `python -m scqo <data_root>`; newer versions initialize an existing folder automatically and only refuse a path that does not exist (typo guard) |
 | viewer works at `http://localhost:8080` but LAN laptops get connection-refused | missing inbound firewall rule — run the `New-NetFirewallRule` line in section 5 (one-time, admin) |
 
 Setup done → hand the machine to the student and point them at

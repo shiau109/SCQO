@@ -152,6 +152,26 @@ def test_multi_device_filter_and_device_page(lab):
     assert rid in page  # history via the <data_root>/<device>/scqo_state.json convention
 
 
+def test_main_initializes_fresh_data_root_but_rejects_typos(tmp_path, monkeypatch):
+    """A fresh (existing, empty) data_root gets an empty index automatically; a
+    nonexistent path still fails loudly — a typo must never serve an empty lab."""
+    import uvicorn
+
+    from scqo.viewer.__main__ import main
+
+    served = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: served.update(kw))
+
+    fresh = tmp_path / "fresh_lab"
+    fresh.mkdir()
+    assert main(["--data-root", str(fresh), "--host", "127.0.0.1"]) == 0
+    assert (fresh / "index.sqlite").is_file()  # empty index created
+    assert served["host"] == "127.0.0.1"
+
+    with pytest.raises(SystemExit, match="does not exist"):
+        main(["--data-root", str(tmp_path / "typo_lab")])
+
+
 def test_trends_never_mix_samples(lab):
     c = lab["client"]
     # q0 readout_freq exists on BOTH samples ("q1 exists on every chip" problem):
