@@ -13,9 +13,12 @@ from scqo.experiments import (
     QubitPowerRabi,
     QubitRamsey,
     QubitSpectroscopy,
+    QubitSpectroscopyFlux,
     ResonatorSpectroscopy,
     ResonatorSpectroscopyPower,
+    SingleShotReadout,
     T1Relaxation,
+    T2Echo,
 )
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
@@ -63,6 +66,30 @@ class DemoT1Relaxation(T1Relaxation):
 @register
 class DemoResonatorSpectroscopyPower(ResonatorSpectroscopyPower):
     """Concrete punchout for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoT2Echo(T2Echo):
+    """Concrete Hahn echo for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoQubitSpectroscopyFlux(QubitSpectroscopyFlux):
+    """Concrete flux map for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoSingleShotReadout(SingleShotReadout):
+    """Concrete IQ blobs for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
         return None
@@ -175,6 +202,52 @@ def test_resonator_power_2d_updates_amp_and_freq():
     # both writebacks are in the history, linked to the same run
     fields = {h["field"] for h in sess.history()}
     assert {"readout_amp", "readout_freq"} <= fields
+
+
+def test_t2_echo_reports_without_writeback():
+    """Echo: exponential envelope fit -> reported t2_echo_s inside the simulated truth
+    range, and NO device field changes (diagnostics, not calibration)."""
+    sess = Session(SimulatedBackend(_device()))
+
+    state_before = sess.device_state()
+    result = sess.run("t2_echo", {"qubits": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    assert 30e-6 * 0.8 < result["fit"]["q0"]["t2_echo_s"] < 80e-6 * 1.2  # sim truth 30-80 us
+    assert sess.device_state() == state_before  # no writeback
+    assert sess.history() == []
+
+
+def test_qubit_flux_map_recovers_arch():
+    """2D flux map: point-cloud + transmon arch fit -> sweet spot inside the swept
+    window, arch top at the current drive_freq; no writeback (Phase-3 schema)."""
+    sess = Session(SimulatedBackend(_device()))
+
+    state_before = sess.device_state()
+    result = sess.run("qubit_spectroscopy_flux", {"qubits": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    assert -0.3 <= fit["sweet_spot_flux_v"] <= 0.3  # sim hides it inside the window
+    # simulate() pins the arch top to the current drive_freq
+    assert fit["f01_at_sweet_spot_hz"] == np.float64(fit["f01_at_sweet_spot_hz"])
+    assert abs(fit["f01_at_sweet_spot_hz"] - fit["old_drive_freq"]) < 40e6
+    assert fit["ej_sum_ghz"] > 0
+    assert sess.device_state() == state_before  # no writeback yet
+    assert sess.history() == []
+
+
+def test_single_shot_readout_fidelity():
+    """First per-shot experiment: GMM on the IQ blobs -> fidelity consistent with the
+    simulated flip probabilities; no writeback."""
+    sess = Session(SimulatedBackend(_device()))
+
+    result = sess.run("single_shot_readout", {"qubits": ["q0"], "num_shots": 1500})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    # sim: 3.5-5 sigma separation, 1-5% thermal flips, 3-8% decay flips
+    assert 0.85 < fit["readout_fidelity"] <= 1.0
+    assert 0.0 <= fit["p_e_given_g"] < 0.12
+    assert 0.0 <= fit["p_g_given_e"] < 0.15
+    assert sess.history() == []
 
 
 def test_power_rabi_generalizes_pattern():

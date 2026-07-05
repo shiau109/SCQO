@@ -1,0 +1,94 @@
+"""T2 echo — Hahn-echo coherence time (backend-free half).
+
+X90 - tau/2 - X - tau/2 - X90, sweeping the total idle time tau: the central pi
+pulse refocuses quasi-static dephasing, so the envelope decays with T2_echo
+(T2* <= T2_echo <= 2*T1). A *reported* quantity like T1: ``update()`` is a no-op
+and the daily value lives in the run index (``fit_trend`` query).
+"""
+
+from __future__ import annotations
+
+from typing import ClassVar
+
+import numpy as np
+from pydantic import Field
+
+from .._scqat import per_qubit_results
+from ._sim import stable_seed
+from ..contract import DatasetContract
+from ..experiment import Experiment
+from ..parameters import AveragingParameters, QubitSelection
+from ..result import Outcome, Result
+
+
+class T2EchoParameters(QubitSelection, AveragingParameters):
+    """Inputs for a Hahn-echo measurement."""
+
+    min_wait_ns: float = Field(32, ge=0, description="Shortest total echo idle time.")
+    max_wait_ns: float = Field(400_000, gt=0, description="Longest total idle time (should exceed a few T2_echo).")
+    num_points: int = Field(51, gt=1, description="Number of idle-time points.")
+
+
+class T2EchoResult(Result):
+    """``fit[qubit]`` carries ``t2_echo_s`` (plus fit amplitude/offset). No writeback."""
+
+
+class T2Echo(Experiment):
+    """Backend-agnostic Hahn echo: X90 - tau/2 - X - tau/2 - X90 -> exponential fit."""
+
+    name: ClassVar[str] = "t2_echo"
+    description: ClassVar[str] = (
+        "Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time; fits "
+        "the exponential envelope to report T2_echo (diagnostics — no device writeback)."
+    )
+    Parameters: ClassVar[type] = T2EchoParameters
+    Result: ClassVar[type] = T2EchoResult
+    Contract: ClassVar[DatasetContract] = DatasetContract(
+        sweeps=("wait_time_ns",), sweep_units=("ns",), variables=("I", "Q")
+    )
+
+    params: T2EchoParameters
+
+    def define_sweep(self) -> dict[str, np.ndarray]:
+        return {
+            "wait_time_ns": np.linspace(self.params.min_wait_ns, self.params.max_wait_ns, self.params.num_points)
+        }
+
+    def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        t = coords["wait_time_ns"] * 1e-9
+        qubits = self.params.qubits
+        rng = np.random.default_rng(stable_seed("t2_echo", *qubits))
+        i_data = np.empty((len(qubits), t.size))
+        q_data = np.empty_like(i_data)
+        for k in range(len(qubits)):
+            t2e = rng.uniform(30e-6, 80e-6)  # hidden truth the fit must recover
+            noise = 0.02
+            i_data[k] = np.exp(-t / t2e) + rng.normal(0, noise, t.size)
+            q_data[k] = rng.normal(0, noise, t.size)
+        return {"I": i_data, "Q": q_data}
+
+    def estimate(self) -> T2EchoResult:
+        assert self.dataset is not None, "run() populates self.dataset before estimate()"
+        from scqat.estimators.t2_echo import T2EchoEstimator
+
+        # scqat's contract: variable `signal` + coord `idle_time` in seconds.
+        prepared = self.dataset.rename({"I": "signal", "wait_time_ns": "idle_time"})
+        prepared = prepared.assign_coords(idle_time=prepared["idle_time"] * 1e-9)
+
+        results = per_qubit_results(prepared, T2EchoEstimator(), artifact_dir=self.artifact_dir)
+
+        result = T2EchoResult()
+        for qubit in self.params.qubits:
+            r = results[qubit]
+            result.fit[qubit] = {
+                "t2_echo_s": float(r["t2_echo"]),
+                "t2_echo_stderr_s": float(r["t2_echo_stderr"]),
+                "amplitude": float(r["amplitude"]),
+                "offset": float(r["offset"]),
+            }
+            result.outcomes[qubit] = Outcome.SUCCESSFUL if bool(r["success"]) else Outcome.FAILED
+        return result
+
+    def update(self) -> None:
+        # T2_echo is reported, not written back (not a tracked device field).
+        return
