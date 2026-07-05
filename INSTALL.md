@@ -143,6 +143,26 @@ description, design values, where it is mounted — instrument-independent facts
 the viewer's Device page shows the matching card. All samples share ONE `data_root`
 and ONE index — filter with `--device` / the viewer's device dropdown.
 
+**Moving a sample to the other instrument** (e.g. chipA from Qblox to the OPX1000)
+needs **no data action at all** — the folder, index, history and trends follow the
+sample name; runs before/after the move stay distinguishable by their `backend`.
+The operator's checklist:
+
+1. Config: carry the sample in the NEW instrument's table (`[qm] device_name =
+   "chipA"` + its `state_path`), set `backend = "qm"`; update `mounted_on` in
+   `devices.toml`; new fridge insert = new cooldown → edit `default_tags`.
+2. Build the new vendor config as usual (wiring/attenuation are new-fridge facts).
+   **Seed the frequencies from the sample's last known values**: open the viewer's
+   Device page (it reads saved snapshots, so it works after the old instrument is
+   disconnected) and copy `readout_freq` / `drive_freq` per qubit — these are sample
+   properties and transfer well.
+3. Do **NOT** transfer `pi_amp` / `readout_amp` — they encode the setup (line
+   attenuation, output gain). Re-derive them with the standard bring-up:
+   `python scripts\calibrate.py` on the new instrument.
+4. Keep **qubit names identical across instruments** — `q1` must mean the same
+   physical qubit in `dut_config.json` AND in the QUAM `state.json`. Names belong to
+   the sample; different names would split its trends and history.
+
 macOS / Linux (`~` is expanded for you; plain-simulated example):
 
 ```toml

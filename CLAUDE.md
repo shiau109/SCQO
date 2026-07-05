@@ -114,6 +114,10 @@ Instrument-independent sample facts live in the optional human-edited registry
 Instrument-DEPENDENT measured values (thermal population etc.) stay in run records with
 backend provenance — compare across instruments by query, never average them away.
 Sample-level inferred physics (`sample.json` per device folder) is Phase-3 output.
+Moving a sample between instruments needs NO data action (folder/history/trends follow
+the sample; eras distinguish by backend) — procedure in INSTALL.md §2. Rule: qubit
+names belong to the SAMPLE and must be identical in every vendor config ("q1" = the
+same physical qubit on both instruments), or its trends and history split.
 
 ### How a driver adds an experiment
 1. Subclass the backend-free experiment from `scqo.experiments`.
