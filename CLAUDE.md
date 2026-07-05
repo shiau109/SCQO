@@ -88,6 +88,9 @@ scqo/
     t2_echo.py                  # Hahn echo, exp-envelope fit -> reports t2_echo_s (no writeback)
     qubit_spectroscopy_flux.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (Phase-3 feeder)
     single_shot_readout.py      # per-shot IQ blobs (prepared_state x shot_idx) -> readout fidelity
+    resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (report)
+    readout_power.py            # per-shot fidelity vs amp prefactor -> updates readout_amp
+    readout_frequency.py        # per-shot fidelity vs readout detuning -> updates readout_freq
     resonator_spectroscopy_power.py  # 2D punchout (detuning x power_db) -> readout_amp + readout_freq
 tests/test_end_to_end.py        # catalog -> run -> writeback, no hardware
 tests/test_datastore.py         # run folders + index + tags + reindex, no hardware

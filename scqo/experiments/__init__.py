@@ -29,6 +29,17 @@ from .single_shot_readout import (
     SingleShotReadoutParameters,
     SingleShotReadoutResult,
 )
+from .resonator_spectroscopy_flux import (
+    ResonatorSpectroscopyFlux,
+    ResonatorSpectroscopyFluxParameters,
+    ResonatorSpectroscopyFluxResult,
+)
+from .readout_power import ReadoutPower, ReadoutPowerParameters, ReadoutPowerResult
+from .readout_frequency import (
+    ReadoutFrequency,
+    ReadoutFrequencyParameters,
+    ReadoutFrequencyResult,
+)
 from .resonator_spectroscopy import (
     ResonatorSpectroscopy,
     ResonatorSpectroscopyParameters,
@@ -54,6 +65,15 @@ __all__ = [
     "SingleShotReadout",
     "SingleShotReadoutParameters",
     "SingleShotReadoutResult",
+    "ResonatorSpectroscopyFlux",
+    "ResonatorSpectroscopyFluxParameters",
+    "ResonatorSpectroscopyFluxResult",
+    "ReadoutPower",
+    "ReadoutPowerParameters",
+    "ReadoutPowerResult",
+    "ReadoutFrequency",
+    "ReadoutFrequencyParameters",
+    "ReadoutFrequencyResult",
     "QubitSpectroscopy",
     "QubitSpectroscopyParameters",
     "QubitSpectroscopyResult",

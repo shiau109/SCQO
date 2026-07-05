@@ -14,7 +14,10 @@ from scqo.experiments import (
     QubitRamsey,
     QubitSpectroscopy,
     QubitSpectroscopyFlux,
+    ReadoutFrequency,
+    ReadoutPower,
     ResonatorSpectroscopy,
+    ResonatorSpectroscopyFlux,
     ResonatorSpectroscopyPower,
     SingleShotReadout,
     T1Relaxation,
@@ -90,6 +93,30 @@ class DemoQubitSpectroscopyFlux(QubitSpectroscopyFlux):
 @register
 class DemoSingleShotReadout(SingleShotReadout):
     """Concrete IQ blobs for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoResonatorSpectroscopyFlux(ResonatorSpectroscopyFlux):
+    """Concrete resonator flux map for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoReadoutPower(ReadoutPower):
+    """Concrete fidelity-vs-amplitude scan for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
+@register
+class DemoReadoutFrequency(ReadoutFrequency):
+    """Concrete fidelity-vs-frequency scan for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
         return None
@@ -248,6 +275,58 @@ def test_single_shot_readout_fidelity():
     assert 0.0 <= fit["p_e_given_g"] < 0.12
     assert 0.0 <= fit["p_g_given_e"] < 0.15
     assert sess.history() == []
+
+
+def test_resonator_flux_map_recovers_dispersive_model():
+    """Resonator-vs-flux: dip trace + dispersive fit -> sweet spot inside the swept
+    window, coupling g near the simulated range; no writeback."""
+    sess = Session(SimulatedBackend(_device()))
+
+    state_before = sess.device_state()
+    result = sess.run("resonator_spectroscopy_flux", {"qubits": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    assert -0.3 <= fit["sweet_spot_flux_v"] <= 0.3
+    assert 40e6 < fit["g_hz"] < 200e6  # sim truth 70-100 MHz, loose fit tolerance
+    assert abs(fit["f_r0_hz"] - fit["old_readout_freq"]) < 20e6  # bare near dressed
+    assert sess.device_state() == state_before  # no writeback
+    assert sess.history() == []
+
+
+def test_readout_power_picks_fidelity_optimum_and_updates_amp():
+    """Per-shot fidelity vs amplitude: best point below the simulated flip knee,
+    readout_amp written back."""
+    sess = Session(SimulatedBackend(_device()))
+
+    before = sess.device_state()["q0"]
+    result = sess.run(
+        "readout_power", {"qubits": ["q0"], "num_amp_points": 8, "num_shots": 400}
+    )
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    assert 0.4 <= fit["best_amp_factor"] <= 1.8
+    assert fit["best_fidelity"] > 0.8
+    after = sess.device_state()["q0"]
+    assert np.isclose(after["readout_amp"], before["readout_amp"] * fit["best_amp_factor"])
+    assert {"readout_amp"} <= {h["field"] for h in sess.history()}
+
+
+def test_readout_frequency_picks_fidelity_optimum_and_updates_freq():
+    """Per-shot fidelity vs frequency: best detuning near the simulated contrast
+    peak, readout_freq written back."""
+    sess = Session(SimulatedBackend(_device()))
+
+    before = sess.device_state()["q0"]
+    result = sess.run(
+        "readout_frequency", {"qubits": ["q0"], "num_freq_points": 9, "num_shots": 400}
+    )
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    # sim hides the peak within +-span/6 = +-0.83 MHz; grid step is 0.625 MHz
+    assert abs(fit["frequency_shift_hz"]) <= 1.5e6
+    after = sess.device_state()["q0"]
+    assert np.isclose(after["readout_freq"], before["readout_freq"] + fit["frequency_shift_hz"])
+    assert {"readout_freq"} <= {h["field"] for h in sess.history()}
 
 
 def test_power_rabi_generalizes_pattern():
