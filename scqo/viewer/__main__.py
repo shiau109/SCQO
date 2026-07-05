@@ -33,10 +33,12 @@ def main(argv: list[str] | None = None) -> int:
 
         from .app import create_app
     except ModuleNotFoundError as err:
+        repo = Path(__file__).resolve().parents[2]
         raise SystemExit(
             f"missing package: {err.name}\n"
-            "The viewer needs its extras:  uv pip install fastapi uvicorn jinja2\n"
-            "(or install scqo with them:   uv pip install -e D:/github/SCQO[viewer])"
+            "Wrong venv? The shared lab env already has the viewer — activate it first\n"
+            "(Windows: ..\\.venv\\Scripts\\Activate.ps1 next to the repos; macOS/Linux: source ../.venv/bin/activate).\n"
+            f'Or install the extras into THIS env:  uv pip install -e "{repo}[viewer]"'
         )
 
     app = create_app(root, device_name=cfg.device_name, state_path=cfg.state_path)

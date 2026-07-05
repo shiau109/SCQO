@@ -185,6 +185,7 @@ hardware time was spent — that's its job).
 | Symptom | Cause / fix |
 |---|---|
 | `ModuleNotFoundError: scqo` | venv not activated — Windows: `.venv\Scripts\Activate.ps1`; macOS/Linux: `source .venv/bin/activate` |
+| viewer: `missing package: uvicorn` (or fastapi/jinja2) | **wrong venv activated** — the shared one lives next to the repos (`D:\github\.venv`, prompt `(.venv)`), not inside them; or this env truly lacks the `[viewer]` extras (section-1 install line) |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (intentional loud failure — better than silently unsaved) |
 | `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2 |
 | self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) or use the lab conda env |
