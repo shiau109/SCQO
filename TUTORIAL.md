@@ -161,6 +161,31 @@ cache — if it is ever missing or stale, rebuild it losslessly:
 python -m scqo <data_root>
 ```
 
+### Browse your runs in the browser (GUI-lite)
+
+One command opens the whole run index as a website (one-time:
+`uv pip install datasette` into the venv):
+
+```powershell
+python -m scqo.browse            # -> http://127.0.0.1:8080
+```
+
+(Port convention: **8001 belongs to qualibrate, 8080 to the data browser** — they can
+run at the same time.) On the front page, under **Queries**, four ready-made searches
+cover the daily questions — each is a small form, no SQL needed:
+
+| Query | Type in | You get |
+|---|---|---|
+| `runs_by_tag` | `cooldown1` | every run of that cooldown, newest first |
+| `runs_by_qubit` | `q1` | every run that measured that qubit |
+| `failed_runs` | (nothing) | recent non-successful runs + their error messages |
+| `fit_trend` | `q1` + `t2_star_s` (or `readout_freq`, `pi_amp`, …) | that fitted quantity vs time — drift at a glance |
+
+You can also click the `runs` table and use column filters/facets directly. The
+browser is read-only: to open a run's figures, copy its `path` column into Explorer
+under your data_root. (This is the interim Phase-2 GUI; the full run-viewer with
+inline figures comes later — tell the manager which queries you wish existed.)
+
 ## 5. Working in Python / Jupyter
 
 **Where do my notebooks/scripts live?** Anywhere OUTSIDE the governed repos — e.g. a
