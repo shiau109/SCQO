@@ -36,9 +36,22 @@ as siblings) — on the lab PC that folder is `D:\github`; on your own Mac clone
 mkdir -p ~/github && cd ~/github
 git clone https://github.com/shiau109/SCQO.git
 git clone https://github.com/shiau109/scqat.git
-git clone https://github.com/shiau109/LCHQBDriver.git    # only if this machine will measure
+git clone https://github.com/shiau109/LCHQBDriver.git    # only if this machine drives the Qblox cluster
+git clone https://github.com/shiau109/LCHQMDriver.git    # only if this machine drives the OPX1000
 git clone https://github.com/shiau109/scqo-contrib.git   # optional: the Tier-2 sandbox
 ```
+
+(A repo that is still **private** answers `Repository not found` when the active
+GitHub credential cannot see it — sign in with an account that has access.)
+
+**Windows: install uv once per machine** (no admin needed):
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+The installer updates the registry PATH, so only **new** terminals see `uv`; in the
+same shell call it by full path — `& "$env:USERPROFILE\.local\bin\uv.exe" venv ...`.
 
 **Windows (PowerShell)** — on the lab PC all three envs already exist under `D:\github`:
 
@@ -88,6 +101,10 @@ machine actually drives a cluster; finding/loading/viewing saved data never need
 This one small file tells every script where data goes, which device you are on,
 and which backend runs. Create it at `~\.scqo\config.toml` (Windows:
 `C:\Users\<you>\.scqo\config.toml`; macOS: `/Users/<you>/.scqo/config.toml`).
+Save it as **UTF-8 without BOM** — Python's `tomllib` rejects UTF-16 and BOM'd
+files. Normal editors do this by default; PowerShell 5.1's `Out-File`/`Set-Content
+-Encoding UTF8` writes a BOM, so when scripting the file use
+`[IO.File]::WriteAllText($path, $text)` instead.
 
 **Backend modes** — pick how real the setup is:
 
@@ -259,7 +276,9 @@ The rules that make this safe:
   instruments themselves cannot run two programs at once.
 - The server runs a **git tag** of all repos (first cut: `v0.1.0`, `git checkout
   v0.1.0` in each); dev machines track `main`. Update the server deliberately, after
-  CI is green — never mid-cooldown on a whim.
+  CI is green — never mid-cooldown on a whim. The update procedure:
+  `git fetch --tags; git checkout <new tag>` in each repo, re-run section 3, restart
+  the viewer (editable installs pick the new code up on restart).
 - **Dev machines (tier 2/3) keep their OWN scratch `data_root`** (e.g.
   `D:\qpu_data_dev`) — never point writes at the server's data over the network
   (the SQLite rule). Tier-2 prove-out runs on real hardware execute from the dev
@@ -270,12 +289,18 @@ The rules that make this safe:
 - Every run records **who** ran it (`operator` = the SSH/Windows login) — filter with
   `find_runs.py --operator <name>` or the viewer's operator box.
 
-One-time server setup (Windows 11, admin PowerShell):
+One-time server setup (Windows 11, **admin** PowerShell — the only part of this
+guide that needs elevation; everything else runs as a standard user):
 
 ```powershell
 # SSH access for tier-1 measuring (macOS/Linux/Windows laptops all have ssh built in)
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service sshd -StartupType Automatic; Start-Service sshd
+
+# let LAN laptops reach the viewer — without this, localhost works but laptops get
+# connection-refused (the first-bind firewall popup needs elevation anyway)
+New-NetFirewallRule -DisplayName "SCQO viewer 8080" -Direction Inbound -Action Allow `
+  -Protocol TCP -LocalPort 8080
 
 # make PowerShell the shell students land in (default is cmd.exe, where the
 # venv Activate.ps1 scripts in TUTORIAL section 5 would not run)
@@ -289,6 +314,30 @@ net user <student> <initial-password> /add /fullname:"Student Name"
 # nightly data mirror to the NAS (= the lab's backup policy; /MIR mirrors deletions too)
 schtasks /Create /TN scqo-mirror /SC DAILY /ST 03:00 `
   /TR "robocopy D:\qpu_data \\NAS\qpu_data /MIR /R:2 /W:5 /LOG:D:\qpu_data\mirror.log"
+```
+
+Mirror notes: robocopy exit codes 1–7 all mean success, so the task's "Last Result"
+of 0x1 is normal, not a failure. A Synology **Drive Client** sync task is an accepted
+alternative to robocopy — but **only as one-way upload** ("Upload data to Synology
+Drive Server only") with files kept fully local (on-demand placeholders off): a
+two-way task would let NAS-side edits and deletions flow back INTO the live
+`data_root`.
+
+First start of the viewer (standard user — no elevation needed):
+
+```powershell
+# a FRESH data_root has no index yet and the viewer refuses to start without one:
+D:\github\.venv-view\Scripts\python.exe -m scqo D:\qpu_data      # prints: indexed 0 runs
+
+# run it now…
+D:\github\.venv-view\Scripts\python.exe -m scqo.viewer --host 0.0.0.0
+
+# …and keep it running across logons with a Startup-folder script (no admin needed;
+# runs while this account has a session — fine for an always-logged-on lab server)
+@'
+@echo off
+start "" /min D:\github\.venv-view\Scripts\python.exe -m scqo.viewer --host 0.0.0.0
+'@ | Set-Content -Encoding Ascii "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\scqo-viewer.cmd"
 ```
 
 (Client side — what a student actually types from their laptop — is
@@ -313,7 +362,11 @@ python D:\github\LCHQBDriver\scripts\run_experiment.py resonator_spectroscopy --
 | `ModuleNotFoundError: lchqb` / `qblox_scheduler` from a run script | you're in the view env (by design it has no instrument libs) — activate `.venv-qblox` to measure |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (intentional loud failure — better than silently unsaved) |
 | `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2 |
-| self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) or use the lab conda env |
+| self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) |
+| `Repository not found` when cloning | the repo is (still) private and the active GitHub credential cannot see it — GitHub reports 404, not 403, to unauthorized users; sign in with an account that has access |
+| self-test: `Unexpected attribute 'lo_mode'` / `'__package_versions__'` (or similar) | the vendor state file was written by a NEWER quam/vendor lib than this env's pin — delete the unknown null attributes from the **working copy** (originals untouched), or bump the lock deliberately after re-validation |
+| viewer: `no index.sqlite under <data_root>` | fresh data_root with zero runs — create the empty index first: `python -m scqo <data_root>` (section 5) |
+| viewer works at `http://localhost:8080` but LAN laptops get connection-refused | missing inbound firewall rule — run the `New-NetFirewallRule` line in section 5 (one-time, admin) |
 
 Setup done → hand the machine to the student and point them at
 [TUTORIAL.md](TUTORIAL.md).
