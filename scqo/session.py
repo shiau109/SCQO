@@ -44,8 +44,13 @@ class Session:
         device_name: str = "device",
         state_sync: Literal["push", "pull"] = "pull",
         default_tags: list[str] | None = None,
+        backend_label: str | None = None,
     ) -> None:
         self.backend = backend
+        #: provenance label recorded on every run. The class name alone is ambiguous:
+        #: SimulatedBackend serves both the demo device AND the virtual twin, so the
+        #: lab config's backend mode (e.g. "qblox_sim") is passed through here.
+        self.backend_label = backend_label or type(backend).__name__
         self._persist = state_path is not None
         #: authoritative SCQO config + history over the backend's vendor device. With
         #: ``state_sync="pull"`` (default) the vendor wins at startup and only history is
@@ -136,7 +141,7 @@ class Session:
                     device_after=self.device.snapshot(),
                     started_at=started_at,
                     ended_at=_now(),
-                    backend=type(self.backend).__name__,
+                    backend=self.backend_label,
                     updated_device=updated,
                     tags=list(dict.fromkeys([*self.default_tags, *(tags or [])])),
                     note=note,

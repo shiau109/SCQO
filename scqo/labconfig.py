@@ -97,4 +97,5 @@ def make_session(backend: Backend, cfg: LabConfig) -> Session:
         device_name=cfg.device_name,
         state_sync=cfg.state_sync,  # type: ignore[arg-type]
         default_tags=cfg.default_tags,
+        backend_label=cfg.backend,  # provenance: "qblox_sim" vs "qblox" vs "simulated" ...
     )
