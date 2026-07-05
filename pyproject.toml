@@ -26,6 +26,7 @@ viewer = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "jinja2>=3.1",
+    "python-multipart>=0.0.9",  # FastAPI Form(...) — the tag-edit POST
 ]
 
 [tool.uv.sources]
