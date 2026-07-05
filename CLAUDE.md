@@ -123,6 +123,9 @@ the composite index — fast at 100k+ runs/sample, unaffected by neighbors; only
 UNSCOPED JSON tag/qubit filters scan lab-wide totals. Simultaneous same-PC sessions
 (two students, two samples) are safe (WAL + busy retry; folder written before index,
 so reindex heals any skipped write); multi-PC writers need per-PC data_roots.
+Deployment split (2026-07-05, INSTALL.md §5): the lab SERVER runs tagged releases
+(v0.1.0+) and owns the canonical data_root; dev machines track main with their OWN
+scratch data_root — never write to the server's data over the network.
 
 ### How a driver adds an experiment
 1. Subclass the backend-free experiment from `scqo.experiments`.

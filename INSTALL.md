@@ -257,8 +257,16 @@ The rules that make this safe:
 - Simultaneous users are supported and tested (`tests/test_index_scale.py`), but
   **one measurement at a time per instrument** remains a social convention — the
   instruments themselves cannot run two programs at once.
-- The server runs a **git tag** of all repos; dev machines track `main`. Update the
-  server deliberately, after CI is green — never mid-cooldown on a whim.
+- The server runs a **git tag** of all repos (first cut: `v0.1.0`, `git checkout
+  v0.1.0` in each); dev machines track `main`. Update the server deliberately, after
+  CI is green — never mid-cooldown on a whim.
+- **Dev machines (tier 2/3) keep their OWN scratch `data_root`** (e.g.
+  `D:\qpu_data_dev`) — never point writes at the server's data over the network
+  (the SQLite rule). Tier-2 prove-out runs on real hardware execute from the dev
+  machine (the instruments are network devices) into the dev data_root, and the
+  manager reviews them there (`find_runs` / a local viewer) before promotion. The
+  one-program-per-instrument convention spans machines: coordinate with whoever is
+  measuring via the server.
 - Every run records **who** ran it (`operator` = the SSH/Windows login) — filter with
   `find_runs.py --operator <name>` or the viewer's operator box.
 
