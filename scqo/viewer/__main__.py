@@ -36,8 +36,8 @@ def main(argv: list[str] | None = None) -> int:
         repo = Path(__file__).resolve().parents[2]
         raise SystemExit(
             f"missing package: {err.name}\n"
-            "Wrong venv? The shared lab env already has the viewer — activate it first\n"
-            "(Windows: ..\\.venv\\Scripts\\Activate.ps1 next to the repos; macOS/Linux: source ../.venv/bin/activate).\n"
+            "Wrong venv? The view env already has the viewer — activate it first\n"
+            "(Windows: ..\\.venv-view\\Scripts\\Activate.ps1 next to the repos; macOS/Linux: source ../.venv-view/bin/activate).\n"
             f'Or install the extras into THIS env:  uv pip install -e "{repo}[viewer]"'
         )
 

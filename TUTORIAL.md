@@ -6,8 +6,12 @@ and can find every dataset you ever took. You never touch instrument code, and y
 never edit anything in the repos.
 
 **Prerequisites** (done once per machine — see [INSTALL.md](INSTALL.md), or ask
-whoever set up the PC): the venv activated (`.venv\Scripts\Activate.ps1`; macOS/Linux
-`source .venv/bin/activate`) and your personal `~\.scqo\config.toml` in place. The one
+whoever set up the PC): a venv activated and your personal `~\.scqo\config.toml` in
+place. **Which venv? One rule:** activate **view** to look at data — the run-viewer,
+browsing, `find_runs.py`, `tag_run.py` (`.venv-view\Scripts\Activate.ps1`, prompt
+`(view)`; macOS/Linux `source .venv-view/bin/activate`) — and an instrument env only
+to measure: `.venv-qblox` for `run_experiment.py`/`calibrate.py`/`device.py` on the
+Qblox cluster, `.venv-qm` on the OPX1000. The one
 thing to keep updated yourself: `default_tags = ["cooldown..."]` in that file — edit
 it once per cooldown and every run you take is automatically findable by cooldown.
 
@@ -193,9 +197,10 @@ ad-hoc SQL, facets and CSV export (same canned queries as before).
 
 **Where do my notebooks/scripts live?** Anywhere OUTSIDE the governed repos — e.g. a
 personal `lab-notebooks/` folder (make it your own git repo if you want history).
-Because `scqo`/`scqat` are installed in the venv, imports work from any directory;
-just select the venv as your interpreter/kernel (VS Code: pick
-`.venv\Scripts\python.exe`; or `uv pip install --python <venv-python> jupyterlab
+Because `scqo`/`scqat` are installed in every env, imports work from any directory;
+just select the right venv as your interpreter/kernel (VS Code: pick
+`.venv-view\Scripts\python.exe` for analysis notebooks, `.venv-qblox\...` if the
+notebook drives the instrument; or `uv pip install --python <venv-python> jupyterlab
 ipykernel`). If a notebook grows into a new *experiment* or *estimator*, it graduates
 to the contrib sandbox (section 7) — never straight into SCQO or a driver repo.
 
