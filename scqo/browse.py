@@ -1,10 +1,10 @@
-"""``python -m scqo.browse`` — open the lab's run index in the browser (GUI-lite).
+"""``python -m scqo.browse`` — raw-SQL power tool over the run index (datasette).
 
-Zero-config: reads ``data_root`` from the lab config and serves ``index.sqlite``
-with datasette, shipping canned queries (runs by tag / by qubit / failures /
-fitted-quantity trend) so nobody has to write JSON1 SQL by hand.
+The daily GUI is ``python -m scqo.viewer`` (port 8080); this serves datasette on 8081
+for ad-hoc SQL, facets and CSV export, shipping canned queries (runs by tag / by
+qubit / failures / fitted-quantity trend) so nobody has to write JSON1 SQL by hand.
 
-Port convention: 8001 belongs to qualibrate; the data browser lives on 8080.
+Port convention: 8001 qualibrate / 8080 viewer / 8081 this datasette browser.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from .labconfig import load
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--port", type=int, default=8080,
-                        help="lab convention: 8080 (8001 is qualibrate's)")
+    parser.add_argument("--port", type=int, default=8081,
+                        help="lab convention: 8081 (8080 = viewer, 8001 = qualibrate)")
     parser.add_argument("--data-root", help="override the lab config's data_root")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
     args = parser.parse_args(argv)

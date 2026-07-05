@@ -163,30 +163,31 @@ cache — if it is ever missing or stale, rebuild it losslessly:
 python -m scqo <data_root>
 ```
 
-### Browse your runs in the browser (GUI-lite)
+### The run viewer — your daily data GUI
 
-One command opens the whole run index as a website (one-time:
-`uv pip install datasette` into the venv):
+One command opens the lab's data as a website (one-time: viewer extras via
+`uv pip install fastapi uvicorn jinja2`, already installed on the lab PC):
 
 ```powershell
-python -m scqo.browse            # -> http://127.0.0.1:8080
+python -m scqo.viewer            # -> http://127.0.0.1:8080
 ```
 
-(Port convention: **8001 belongs to qualibrate, 8080 to the data browser** — they can
-run at the same time.) On the front page, under **Queries**, four ready-made searches
-cover the daily questions — each is a small form, no SQL needed:
+Four pages (port convention: **8001 qualibrate · 8080 viewer · 8081 datasette** —
+all can run at once):
 
-| Query | Type in | You get |
-|---|---|---|
-| `runs_by_tag` | `cooldown1` | every run of that cooldown, newest first |
-| `runs_by_qubit` | `q1` | every run that measured that qubit |
-| `failed_runs` | (nothing) | recent non-successful runs + their error messages |
-| `fit_trend` | `q1` + `t2_star_s` (or `readout_freq`, `pi_amp`, …) | that fitted quantity vs time — drift at a glance |
+- **Runs** — filter by experiment / qubit / tag / outcome / date; click any run.
+- **Run page** — outcome badges, the fit table, **every figure inline** (the dip,
+  the fringe, the 2D power map...), your parameters, and the device before → after
+  diff with changed fields highlighted. You can **add/remove tags and edit the
+  note right here** — the viewer's only write, equivalent to `tag_run.py`.
+- **Trends** — a fitted quantity vs time per qubit (`t1_s`, `t2_star_s`,
+  `readout_freq`, `pi_amp`, ...): coherence drift at a glance, every point linking
+  to its run.
+- **Device** — the last observed calibration and the full change history, each
+  entry linking to the run that caused it.
 
-You can also click the `runs` table and use column filters/facets directly. The
-browser is read-only: to open a run's figures, copy its `path` column into Explorer
-under your data_root. (This is the interim Phase-2 GUI; the full run-viewer with
-inline figures comes later — tell the manager which queries you wish existed.)
+Power users: `python -m scqo.browse` still serves raw datasette on **8081** for
+ad-hoc SQL, facets and CSV export (same canned queries as before).
 
 ## 5. Working in Python / Jupyter
 

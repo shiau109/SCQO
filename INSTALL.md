@@ -52,10 +52,13 @@ git clone https://github.com/shiau109/LCHQBDriver.git
 ```powershell
 cd D:\github
 uv venv .venv --python 3.12
-uv pip install --python .venv\Scripts\python.exe -e .\SCqubit-analysis-tool -e .\SCQO pytest
+uv pip install --python .venv\Scripts\python.exe -e ".\SCQO[viewer]" -e .\SCqubit-analysis-tool pytest datasette
 uv pip install --python .venv\Scripts\python.exe -e .\LCHQBDriver   # + qblox-scheduler (vendor stack)
 .venv\Scripts\Activate.ps1          # activate (Git Bash: source .venv/Scripts/activate)
 ```
+
+(`[viewer]` pulls the run-viewer's web extras — fastapi/uvicorn/jinja2 — for
+`python -m scqo.viewer`; `datasette` powers the SQL browser `python -m scqo.browse`.)
 
 **macOS / Linux** — install uv once with `brew install uv` (or
 `curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
@@ -63,7 +66,7 @@ uv pip install --python .venv\Scripts\python.exe -e .\LCHQBDriver   # + qblox-sc
 ```bash
 cd ~/github
 uv venv .venv --python 3.12
-uv pip install --python .venv/bin/python -e ./SCqubit-analysis-tool -e ./SCQO pytest
+uv pip install --python .venv/bin/python -e "./SCQO[viewer]" -e ./SCqubit-analysis-tool pytest datasette
 uv pip install --python .venv/bin/python -e ./LCHQBDriver   # + qblox-scheduler (vendor stack)
 source .venv/bin/activate
 ```

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ record.run_id }}{% endblock %}
+{% block content %}
+<h2>{{ record.run_id }}
+  {% for q, o in record.outcomes.items() %}<span class="badge {{ o }}">{{ q }}: {{ o }}</span> {% endfor %}
+</h2>
+<p class="muted">{{ record.experiment }} · {{ record.started_at }} · backend {{ record.backend }} ·
+folder <code>{{ path }}</code></p>
+
+{% if result.error %}<div class="error-box"><b>error:</b> {{ result.error }}</div>{% endif %}
+
+{% if result.fit %}
+<h3>Fit</h3>
+<table>
+  <tr><th>qubit</th><th>quantity</th><th>value</th></tr>
+  {% for q, fit in result.fit.items() %}{% for k, v in fit.items() %}
+  <tr><td>{{ q }}</td><td>{{ k }}</td><td>{{ "%.6g" | format(v) if v is number else v }}</td></tr>
+  {% endfor %}{% endfor %}
+</table>
+{% endif %}
+
+{% for fig in figures %}
+<img class="figure" src="/run/{{ record.run_id }}/file/{{ fig }}" alt="{{ fig }}">
+{% endfor %}
+
+<h3>Parameters</h3>
+<table>
+  {% for k, v in parameters.items() %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}
+</table>
+
+{% if diff %}
+<h3>Device before → after</h3>
+<table>
+  <tr><th>qubit</th><th>field</th><th>before</th><th>after</th></tr>
+  {% for d in diff %}
+  <tr {% if d.changed %}class="changed"{% endif %}>
+    <td>{{ d.qubit }}</td><td>{{ d.field }}</td>
+    <td>{{ "%.8g" | format(d.before) if d.before is number else d.before }}</td>
+    <td>{{ "%.8g" | format(d.after) if d.after is number else d.after }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h3>Tags &amp; note</h3>
+<p>tags: <b>{{ record.tags | join(", ") or "(none)" }}</b>{% if record.note %} · note: {{ record.note }}{% endif %}</p>
+<form method="post" action="/run/{{ record.run_id }}/tags">
+  <input name="add" placeholder="add tags (space-separated)" size="24">
+  <input name="remove" placeholder="remove tags" size="18">
+  <input name="note" placeholder="replace note" size="28" value="{{ record.note }}">
+  <button>Save</button>
+</form>
+<p class="muted">Tag/note editing is the viewer's only write: it updates record.json + the index — never instruments or measurement data.</p>
+{% endblock %}

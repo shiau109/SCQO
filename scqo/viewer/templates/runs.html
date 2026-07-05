@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}SCQO runs{% endblock %}
+{% block content %}
+<h2>Runs</h2>
+<form class="filters" method="get" action="/">
+  <select name="experiment">
+    <option value="">any experiment</option>
+    {% for e in experiments %}
+    <option value="{{ e }}" {% if filters.experiment == e %}selected{% endif %}>{{ e }}</option>
+    {% endfor %}
+  </select>
+  <input name="qubit" placeholder="qubit (q1)" value="{{ filters.qubit }}" size="8">
+  <input name="tag" placeholder="tag (cooldown1)" value="{{ filters.tag }}" size="12">
+  <select name="outcome">
+    <option value="">any outcome</option>
+    {% for o in ["successful", "partial", "failed", "no_data"] %}
+    <option value="{{ o }}" {% if filters.outcome == o %}selected{% endif %}>{{ o }}</option>
+    {% endfor %}
+  </select>
+  <input name="since" placeholder="since 2026-07-01" value="{{ filters.since }}" size="12">
+  <input name="until" placeholder="until" value="{{ filters.until }}" size="12">
+  <input name="limit" type="number" value="{{ filters.limit }}" size="4" style="width:60px">
+  <button>Filter</button>
+</form>
+<table>
+  <tr><th>run</th><th>started</th><th>experiment</th><th>qubits</th><th>outcome</th><th>tags</th><th>note</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/run/{{ r.run_id }}">{{ r.run_id }}</a></td>
+    <td>{{ r.started_at[:16] }}</td>
+    <td>{{ r.experiment }}</td>
+    <td>{{ r.qubits | join(", ") }}</td>
+    <td><span class="badge {{ r.outcome }}">{{ r.outcome }}</span></td>
+    <td>{{ r.tags | join(", ") }}</td>
+    <td>{{ r.note }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7">no runs match</td></tr>
+  {% endfor %}
+</table>
+<p class="muted">data_root: {{ data_root }} — the run folders are the truth; this index is rebuildable (<code>python -m scqo &lt;data_root&gt;</code>).</p>
+{% endblock %}

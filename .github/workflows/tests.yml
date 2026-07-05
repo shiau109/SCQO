@@ -40,7 +40,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ./SCqubit-analysis-tool
-          pip install -e ./SCQO pytest
+          pip install -e "./SCQO[viewer]" pytest httpx
       - name: Run the offline test suite
         working-directory: SCQO
         run: python -m pytest -q

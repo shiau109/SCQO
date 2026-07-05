@@ -265,6 +265,28 @@ class DataStore:
             rows = db.execute(sql, args).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def distinct_experiments(self) -> list[str]:
+        """Experiment names present in the index (for filter dropdowns)."""
+        with self._connect() as db:
+            rows = db.execute("SELECT DISTINCT experiment FROM runs ORDER BY experiment").fetchall()
+        return [r["experiment"] for r in rows]
+
+    def fit_trend(self, qubit: str, quantity: str, limit: int = 500) -> list[dict]:
+        """One fitted quantity vs time for one qubit (oldest first) — drift at a glance.
+
+        ``quantity`` is a fit key (t1_s, t2_star_s, readout_freq, pi_amp, ...). The
+        JSON path is passed as a bound parameter, so arbitrary names are safe.
+        """
+        path = f"$.{qubit}.{quantity}"
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT run_id, started_at, experiment, json_extract(fit, ?) AS value "
+                "FROM runs WHERE json_extract(fit, ?) IS NOT NULL "
+                "ORDER BY started_at LIMIT ?",
+                (path, path, int(limit)),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def load_run(self, run_id: str) -> dict:
         """Load one run's JSON-able contents (record, parameters, result, figure paths)."""
         run_dir = self._run_dir(run_id)
