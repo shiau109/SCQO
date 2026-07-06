@@ -53,6 +53,25 @@ powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps
 The installer updates the registry PATH, so only **new** terminals see `uv`; in the
 same shell call it by full path — `& "$env:USERPROFILE\.local\bin\uv.exe" venv ...`.
 
+**Server reached via SSH (multi-account)?** Install the Pythons to a shared folder
+and create the venvs with the EXPLICIT patch-directory interpreter, not a bare
+version number:
+
+```powershell
+$env:UV_PYTHON_INSTALL_DIR = 'D:\uv\python'   # shared — NOT inside one user's profile
+uv python install 3.12 3.11
+uv venv .venv-view --python D:\uv\python\cpython-3.12.13-windows-x86_64-none\python.exe --prompt view
+```
+
+Two reasons, both learned on the lab server (2026-07-06): (a) uv's default Python
+location is inside the installing user's profile — every other account (the SSH
+students) gets `uv trampoline failed to spawn Python child process`; (b) a bare
+`--python 3.12` bakes uv's minor-version *junction* path into the venv trampoline,
+and SSH logon sessions can fail to traverse those junctions — same error over SSH
+while the console works. The explicit patch path sidesteps both and pins the Python
+patch level, which is what a tagged-release server wants anyway (section 6 has the
+symptom table).
+
 **Windows (PowerShell)** — on the lab PC all three envs already exist under `D:\github`:
 
 ```powershell
@@ -276,9 +295,13 @@ The rules that make this safe:
   SQLite's WAL mode does not work on network shares. The NAS holds a *mirror*
   refreshed by a scheduled task; the folders are the truth (that's what the backup
   protects) and the index rebuilds anywhere, so it doesn't even need mirroring.
-- **The server's `~\.scqo\config.toml` is the single authoritative config**
-  (instrument → sample mapping). Personal configs exist only on analysis laptops and
-  point `data_root` at the NAS copy — those machines read, never write.
+- **One authoritative config per server** (instrument → sample mapping). With one
+  login account per student, per-user `~\.scqo\config.toml` silently leaves every
+  OTHER account on built-in defaults (simulated, unsaved!) — put the file at a shared
+  path and select it machine-wide instead (admin, once):
+  `[Environment]::SetEnvironmentVariable('SCQO_CONFIG','D:\github\scqo-config.toml','Machine')`.
+  Personal configs exist only on analysis laptops and point `data_root` at the NAS
+  copy — those machines read, never write.
 - Simultaneous users are supported and tested (`tests/test_index_scale.py`), but
   **one measurement at a time per instrument** remains a social convention — the
   instruments themselves cannot run two programs at once.
@@ -378,6 +401,9 @@ python D:\github\LCHQBDriver\scripts\run_experiment.py resonator_spectroscopy --
 | self-test: `Unexpected attribute 'lo_mode'` / `'__package_versions__'` (or similar) | the vendor state file was written by a NEWER quam/vendor lib than this env's pin — delete the unknown null attributes from the **working copy** (originals untouched), or bump the lock deliberately after re-validation |
 | viewer: `no index.sqlite under <data_root>` (v0.1.0) or `data_root does not exist` | fresh data_root: on v0.1.0 create the index first with `python -m scqo <data_root>`; newer versions initialize an existing folder automatically and only refuse a path that does not exist (typo guard) |
 | viewer works at `http://localhost:8080` but LAN laptops get connection-refused | missing inbound firewall rule — run the `New-NetFirewallRule` line in section 5 (one-time, admin) |
+| `uv trampoline failed to spawn Python child process` / `entity not found` — for every account except the installer | uv's Pythons live in the installing user's profile — reinstall to a shared dir (`UV_PYTHON_INSTALL_DIR`) and recreate the venvs (section 1 SSH-server note) |
+| same trampoline error, but ONLY in SSH sessions (console works) | the venv bakes uv's minor-version junction path in, and SSH logon sessions may not traverse junctions — recreate the venv with the explicit patch-dir interpreter (section 1 SSH-server note) |
+| over SSH a student's catalog header says `built-in defaults` (runs not saved) | that account has no per-user config — set the machine-wide `SCQO_CONFIG` variable to the shared config (section 5) |
 
 Setup done → hand the machine to the student and point them at
 [TUTORIAL.md](TUTORIAL.md).
