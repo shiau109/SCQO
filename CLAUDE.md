@@ -192,3 +192,14 @@ output-power config — FEM-gain reconfiguration stays with the qualibrate power
 `qubit_echo` (files, classes, registered names, scqat estimators + artifact filenames),
 aligning with the `qubit_*` convention. No alias: runs recorded before the rename stay
 findable only under the old names (`find_runs(experiment="t1_relaxation")`).
+
+**2026-07-06 — standing parameter defaults (v0.2.0):** optional `~/.scqo/parameters.toml`
+(one `[experiment]` table each; `parameters_file` in `[lab]` or a vendor table swaps
+sets) merged in `Session.run` — precedence code defaults < file < caller; wired via
+`LabConfig.parameter_defaults`/`make_session` like `default_tags`. `Session.catalog()`
+overlays effective defaults (`x-default-source`, file-supplied keys dropped from
+`required`); params `ValidationError` is now a structured failure (not raised, not
+persisted) that names the defaults file for file-sourced typos. Driver `_cli.py`
+(mirrored) marks file defaults in `--help`, prints applied-defaults provenance to
+stderr, and only falls back to all-device qubits when neither CLI nor file names them.
+Docs: INSTALL §2 subsection + TUTORIAL §2 three-tier parameters.

@@ -20,8 +20,11 @@ result, device snapshots, and the scqat analysis artifacts (figures included).
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any, Literal
+
+from pydantic import ValidationError
 
 from . import registry
 from .backend import Backend
@@ -44,6 +47,8 @@ class Session:
         device_name: str = "device",
         state_sync: Literal["push", "pull"] = "pull",
         default_tags: list[str] | None = None,
+        parameter_defaults: dict[str, dict[str, Any]] | None = None,
+        parameter_defaults_source: str | None = None,
         backend_label: str | None = None,
     ) -> None:
         self.backend = backend
@@ -60,10 +65,41 @@ class Session:
         #: run datastore (folders + rebuildable SQLite index); None disables persistence.
         self.datastore = DataStore(data_root, device_name=device_name) if data_root is not None else None
         self.default_tags = list(default_tags or [])
+        #: standing per-experiment parameter defaults (``~/.scqo/parameters.toml`` via
+        #: make_session), merged UNDER the caller's params in run(): code < file < caller.
+        self.parameter_defaults = dict(parameter_defaults or {})
+        self.parameter_defaults_source = parameter_defaults_source
 
     def catalog(self) -> list[dict]:
-        """List available measurements with their JSON parameter schemas."""
-        return registry.catalog()
+        """List available measurements with their JSON parameter schemas.
+
+        When this Session carries standing parameter defaults, each affected schema
+        shows the EFFECTIVE default (the file value) marked with an ``x-default-source``
+        key naming the file, and a file-supplied key is dropped from ``required`` — a
+        caller of this Session genuinely need not pass it. ``registry.catalog()`` keeps
+        the pristine code schemas.
+        """
+        entries = registry.catalog()
+        if not self.parameter_defaults:
+            return entries
+        source = self.parameter_defaults_source or "parameter_defaults"
+        overlaid = []
+        for entry in entries:
+            table = self.parameter_defaults.get(entry["name"]) or {}
+            props = entry["parameters_schema"].get("properties", {})
+            # Keys unknown to the schema are skipped here; they fail at run() instead.
+            known = {k: v for k, v in table.items() if k in props}
+            if known:
+                entry = copy.deepcopy(entry)  # registry entries stay pristine
+                schema = entry["parameters_schema"]
+                required = schema.get("required", [])
+                for key, value in known.items():
+                    schema["properties"][key]["default"] = value
+                    schema["properties"][key]["x-default-source"] = source
+                    if key in required:
+                        required.remove(key)
+            overlaid.append(entry)
+        return overlaid
 
     def run(
         self,
@@ -88,9 +124,23 @@ class Session:
         ``data_path``. ``tags`` (merged with the Session's ``default_tags``) and ``note``
         are stored searchably. A persistence failure never destroys a measurement
         result: it is reported as ``datastore_error`` in the returned dict instead.
+
+        Standing per-experiment defaults (``parameter_defaults``, wired from
+        ``~/.scqo/parameters.toml`` by :func:`~scqo.labconfig.make_session`) are merged
+        under ``params`` first — code defaults < defaults file < ``params``. Parameters
+        that do not validate (a typo'd key, an out-of-range value) return a structured
+        all-failed result naming the offending key — and, when it came from the defaults
+        file, the file's path. Nothing is measured then and nothing is persisted (no
+        ``run_id``): unlike a probe/estimator failure there is no dataset to debug.
         """
         cls = registry.get(experiment)
-        exp = cls(self.backend, cls.Parameters(**params))
+        defaults = self.parameter_defaults.get(experiment, {})
+        merged = {**defaults, **params}  # code defaults fill the rest at validation
+        try:
+            validated = cls.Parameters(**merged)
+        except ValidationError as err:
+            return self._invalid_params(cls, merged, defaults, params, err).model_dump(mode="json")
+        exp = cls(self.backend, validated)
         exp.device = self.device  # route reads/writes through the recording config
 
         started_at = _now()
@@ -162,6 +212,27 @@ class Session:
             outcomes={q: outcome for q in qubits},
             error=f"{type(err).__name__}: {err}",
         )
+
+    def _invalid_params(
+        self, cls: type[Experiment], merged: dict, defaults: dict, caller: dict, err: ValidationError
+    ) -> Result:
+        """Structured all-failed result for parameters that did not validate.
+
+        A bad key present only in the defaults overlay is attributed to the parameters
+        file by path — the fix belongs there, not on the command line.
+        """
+        hints = []
+        for detail in err.errors():
+            key = str(detail["loc"][0]) if detail.get("loc") else ""
+            if key and key in defaults and key not in caller:
+                source = self.parameter_defaults_source or "the session's parameter_defaults"
+                hints.append(f"'{key}' came from {source} [{cls.name}] — fix it there")
+        qubits = merged.get("qubits")
+        qubits = [q for q in qubits if isinstance(q, str)] if isinstance(qubits, list) else []
+        message = f"invalid parameters for {cls.name!r}: {err}"
+        if hints:
+            message += "\n" + "\n".join(hints)
+        return cls.Result(outcomes={q: Outcome.FAILED for q in qubits}, error=message)
 
     # ------------------------------------------------------------------ datastore
     def find_runs(self, **filters: Any) -> list[dict]:

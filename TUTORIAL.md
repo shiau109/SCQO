@@ -96,10 +96,20 @@ python scripts/run_experiment.py resonator_spectroscopy --no-update ...   # anal
 python scripts/run_experiment.py qubit_ramsey --params my.json    # parameters from a file
 ```
 
-Two ways to pass parameters — don't mix their syntaxes: **`--set KEY=VALUE`** changes
-*one* knob (repeat it for several), while **`--params`** loads a *whole set* as JSON —
-a file path or an inline object like `--params "{""num_points"": 201}"`. See every
-knob an experiment has with `... <experiment> --help`.
+Three tiers of parameters — each overriding the previous:
+
+1. **Code defaults** — every knob ships a sensible built-in default; see them all
+   with `... <experiment> --help`.
+2. **Your standing defaults** (optional) — put semi-permanent project settings in
+   `~\.scqo\parameters.toml`, one table per experiment (format and rules in
+   [INSTALL.md](INSTALL.md) §2). Edit it once per project or cooldown and every run —
+   including `calibrate.py`'s steps — picks the values up; `--help` marks them like
+   `default=15e6 [parameters.toml]`. With this file in place, most runs need no
+   parameter flags at all.
+3. **The command line** — always wins. **`--set KEY=VALUE`** changes *one* knob
+   (repeat it for several), while **`--params`** loads a *whole set* as JSON — a file
+   path or an inline object like `--params "{""num_points"": 201}"`. Don't mix the
+   two syntaxes.
 
 Prefer one command per experiment (qualibrate-node style)? Every cataloged experiment
 has its own launcher in `scripts/experiments/` — same flags, and `--help` shows that
@@ -296,8 +306,8 @@ comes back as a structured error with the fit intact.
 
 ## 8. Rules of the road (who edits what)
 
-1. **Students**: run the scripts, edit only your own `config.toml` and parameters.
-   The repos are read-only for you.
+1. **Students**: run the scripts, edit only your own `config.toml` and
+   `parameters.toml`. The repos are read-only for you.
 2. **Advanced users**: prototype new experiments + estimators in the sandbox
    (`scqo-contrib`, entry-point group `scqo.experiments.contrib`) — your runs land
    in the same datastore, so your evidence is findable.
@@ -310,6 +320,7 @@ comes back as a structured error with the fit intact.
 |---|---|
 | `ModuleNotFoundError` / `lab config not found` / nothing gets saved | setup problem — see [INSTALL.md](INSTALL.md) §5 |
 | A run shows `datastore_error` | measurement succeeded; only saving failed (disk full/locked). Fix the disk, rerun |
+| `invalid parameter-defaults file ...` (even on `--help`) | your `parameters.toml` has a syntax error — it affects measurements, so it never fails silently. Fix the named file |
 | `find_runs` misses runs you can see on disk | index stale → `python -m scqo <data_root>` |
 | Unknown `run_id` in `--show` | same — rebuild the index |
 | Want a clean slate | deleting `index.sqlite*` (all three files) is always safe; the folders are the data |

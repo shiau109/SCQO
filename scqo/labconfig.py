@@ -36,6 +36,22 @@ no way to write runs under the wrong sample)::
     state_dir   = "D:/qpu_data/chipB/qm_state"
     device_name = "chipB"
     state_path  = "D:/qpu_data/chipB/scqo_state.json"
+
+**Standing per-experiment parameter defaults** live in a second, optional TOML file —
+default ``~/.scqo/parameters.toml``, overridable with ``parameters_file`` in ``[lab]``
+(swap files per project) or in a vendor table (two samples, two parameter sets). One
+top-level table per experiment; values sit between the code defaults and whatever the
+caller passes — code defaults < this file < caller/CLI::
+
+    [resonator_spectroscopy]
+    frequency_span_hz = 15e6
+    num_points = 201
+
+A ``parameters_file`` that is named but missing raises (like a mistyped config path),
+and an existing file that does not parse raises too — this file changes what gets
+measured, so it never fails silently. Only the implicit default path may be absent
+(code defaults apply). Tables for experiments not installed here (e.g. contrib) are
+kept untouched; a typo'd KEY inside a table surfaces when that experiment runs.
 """
 
 from __future__ import annotations
@@ -54,6 +70,7 @@ else:  # pragma: no cover - py3.10 fallback
     import tomli as tomllib
 
 DEFAULT_PATH = Path.home() / ".scqo" / "config.toml"
+PARAMS_DEFAULT_PATH = Path.home() / ".scqo" / "parameters.toml"
 ENV_VAR = "SCQO_CONFIG"
 
 
@@ -63,6 +80,37 @@ def _backend_family(backend: str) -> str | None:
         if backend == family or backend == f"{family}_sim":
             return family
     return None
+
+
+def _load_parameter_defaults(path_setting: str | None) -> tuple[dict[str, dict], Path | None]:
+    """Parse the optional per-experiment parameter-defaults TOML (see module docstring).
+
+    A ``parameters_file`` that is named but missing raises; only the implicit
+    ``PARAMS_DEFAULT_PATH`` may be absent (code defaults apply, nothing to merge).
+    A file that exists but does not parse — or whose top level is not experiment
+    tables — raises as well: this file changes what gets measured, so it must never
+    fail silently (deliberately NOT the warn-and-ignore devices.toml convention).
+    """
+    if path_setting is not None:
+        path = Path(path_setting).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"parameters_file not found: {path}")
+    else:
+        path = PARAMS_DEFAULT_PATH
+        if not path.is_file():
+            return {}, None
+    with open(path, "rb") as f:
+        try:
+            raw = tomllib.load(f)
+        except tomllib.TOMLDecodeError as err:
+            raise ValueError(f"invalid parameter-defaults file {path}: {err}") from None
+    for name, table in raw.items():
+        if not isinstance(table, dict):
+            raise ValueError(
+                f"{path}: top-level keys must be experiment tables like [resonator_spectroscopy]; "
+                f"{name!r} belongs inside one"
+            )
+    return raw, path
 
 
 @dataclass(frozen=True)
@@ -75,8 +123,10 @@ class LabConfig:
     backend: str = "simulated"  # scripts dispatch on this: simulated | qblox | qm
     state_sync: str = "pull"
     default_tags: list[str] = field(default_factory=list)
+    parameter_defaults: dict[str, dict] = field(default_factory=dict)  # [experiment] tables from parameters.toml
     extras: dict = field(default_factory=dict)  # non-[lab] tables, passed through
     source: Path | None = None  # which file was loaded (None = built-in defaults)
+    parameters_source: Path | None = None  # which parameters file was loaded (None = none found)
 
 
 def load(path: str | Path | None = None) -> LabConfig:
@@ -105,6 +155,10 @@ def load(path: str | Path | None = None) -> LabConfig:
             vendor = raw.get(family, {}) if family else {}
             device_name = vendor.get("device_name", lab.get("device_name", "device"))
             state_path = vendor.get("state_path", lab.get("state_path"))
+            # Standing parameter defaults: [lab] parameters_file, overridable per vendor
+            # table (two samples want two parameter sets), else ~/.scqo/parameters.toml.
+            params_file = vendor.get("parameters_file", lab.get("parameters_file"))
+            parameter_defaults, parameters_source = _load_parameter_defaults(params_file)
             # expanduser: lets a config say data_root = "~/qpu_data" (macOS/Linux idiom)
             return LabConfig(
                 data_root=Path(lab["data_root"]).expanduser() if lab.get("data_root") else None,
@@ -113,10 +167,15 @@ def load(path: str | Path | None = None) -> LabConfig:
                 backend=backend,
                 state_sync=lab.get("state_sync", "pull"),
                 default_tags=list(lab.get("default_tags", [])),
+                parameter_defaults=parameter_defaults,
                 extras=raw,
                 source=candidate,
+                parameters_source=parameters_source,
             )
-    return LabConfig()
+    # No config.toml at all: the per-user parameters file still applies — standing
+    # experiment preferences are independent of the backend wiring.
+    parameter_defaults, parameters_source = _load_parameter_defaults(None)
+    return LabConfig(parameter_defaults=parameter_defaults, parameters_source=parameters_source)
 
 
 def make_session(backend: Backend, cfg: LabConfig) -> Session:
@@ -128,5 +187,7 @@ def make_session(backend: Backend, cfg: LabConfig) -> Session:
         device_name=cfg.device_name,
         state_sync=cfg.state_sync,  # type: ignore[arg-type]
         default_tags=cfg.default_tags,
+        parameter_defaults=cfg.parameter_defaults,
+        parameter_defaults_source=str(cfg.parameters_source) if cfg.parameters_source else None,
         backend_label=cfg.backend,  # provenance: "qblox_sim" vs "qblox" vs "simulated" ...
     )

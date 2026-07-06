@@ -231,6 +231,47 @@ Other notes:
   `export SCQO_CONFIG=path/to/other.toml`) or per command with `--config`.
 - A mistyped `$SCQO_CONFIG` **fails loudly** — it will not silently run unsaved.
 
+### Standing parameter defaults: `~\.scqo\parameters.toml`
+
+A second, optional TOML file holds your **semi-permanent experiment settings** — the
+knobs you would otherwise retype on every run. One top-level table per experiment
+(names as shown by `run_experiment.py`'s catalog listing); precedence is always
+**code defaults < this file < whatever you pass on the CLI / in the caller dict**,
+so the command line keeps the last word:
+
+```toml
+# Standing per-experiment defaults. Precedence: code defaults < this file < CLI/caller.
+[resonator_spectroscopy]
+frequency_span_hz = 15e6
+num_points = 201
+
+[single_shot_readout]
+qubits = ["q1"]          # even required knobs may get a standing default
+```
+
+- With the file in place, a project's daily commands shrink to
+  `python scripts\run_experiment.py resonator_spectroscopy` — and
+  `calibrate.py` runs every sequence step with these effective defaults too.
+- `--help` on any launcher marks file-sourced values, e.g. `default=15e6 [parameters.toml]`.
+- Working on several projects? Point `parameters_file` in `[lab]` at a different
+  file to swap the whole set. Two samples on two instruments? Each vendor table
+  (`[qblox]`/`[qm]`) may override `parameters_file` with that sample's own set —
+  exactly like `device_name`/`state_path` above.
+- Same encoding rule as the config: **UTF-8 without BOM**.
+- Failure rules match the config's: a *named* `parameters_file` that is missing, or a
+  file that does not parse, **fails loudly** (this file changes what gets measured);
+  only the implicit `~\.scqo\parameters.toml` may be absent — code defaults apply. A
+  typo'd knob NAME inside a table is caught when that experiment runs, as a structured
+  failure naming the key and this file. Tables for experiments not installed in the
+  current env (e.g. contrib) load silently and are simply unused.
+- Every run still records its **fully-resolved** parameters in `parameters.json`, so
+  saved runs stay reproducible no matter which tier a value came from.
+- TOML has no `null`: a knob whose code default is `None` (e.g. `readout_amplitude`)
+  can be *set* here but not reset to `None` — override per run with
+  `--set readout_amplitude=null` instead.
+- Not supported (by design): per-qubit defaults — parameters are per-run scalars
+  shared by every qubit in the run's list.
+
 ## 3. Offline verification
 
 The full test suite passes with no instrument attached (CI runs this exact suite on
