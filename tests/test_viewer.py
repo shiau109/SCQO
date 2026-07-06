@@ -50,6 +50,13 @@ def lab(tmp_path_factory):
     same data_root (multi-device paths), and a viewer client over it all."""
     root = tmp_path_factory.mktemp("data")
     state = root / "scqo_state.json"
+    # Cycle registry BEFORE the runs, so they are stamped with cycle + wiring era.
+    (root / "devV").mkdir()
+    (root / "devV" / "cooldowns.toml").write_text(
+        '[cdV]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
+        '[[cdV.mapping]]\nsince = 2026-07-01\n"q0.readout" = "opx1.fem1.in0"\n',
+        encoding="utf-8",
+    )
     sess = Session(
         SimulatedBackend(_device()), data_root=root, device_name="devV",
         state_path=str(state), state_sync="push",
@@ -67,7 +74,11 @@ def lab(tmp_path_factory):
     )
     r_z = sess_z.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["zcool"])
     (root / "devices.toml").write_text(
-        '[chipZ]\ndescription = "second sample on the other fridge"\nmounted_on = "qm"\n',
+        '[chipZ]\ndescription = "second sample on the other fridge"\nmounted_on = "opx1"\n',
+        encoding="utf-8",
+    )
+    (root / "instruments.toml").write_text(
+        '[opx1]\nkind = "qm_opx1000"\naddress = "10.21.19.50"\n',
         encoding="utf-8",
     )
 
@@ -139,6 +150,48 @@ def test_device_page_state_and_history(lab):
     assert lab["res"]["run_id"] in page  # history entry links to its run
 
 
+def test_device_page_history_operator_column(lab):
+    """P3 attribution: the change history shows WHO made each change."""
+    import getpass
+
+    page = lab["client"].get("/device").text
+    assert "<th>operator</th>" in page
+    assert getpass.getuser() in page  # this test process's login, stamped on the runs
+
+
+def test_device_page_stable_columns_with_heterogeneous_fields(lab):
+    """Only q1 was T1/Ramsey-measured, so q1 carries t1_s/t2_star_s and q0 does not —
+    the state table must still show those columns (the old header used the FIRST
+    qubit's fields and would have dropped them)."""
+    page = lab["client"].get("/device").text
+    assert "<th>t1_s</th>" in page
+    assert "<th>t2_star_s</th>" in page
+    assert ">-</td>" in page  # q0's unmeasured cells render as '-'
+
+
+def test_trends_offer_descriptor_quantities(lab):
+    page = lab["client"].get("/trends").text
+    assert "t2_echo_s" in page
+    assert "readout_fidelity" in page
+
+
+def test_runs_page_cooldown_filter_and_column(lab):
+    c = lab["client"]
+    page = c.get("/", params={"cooldown": "cdV"}).text
+    assert lab["res"]["run_id"] in page  # devV runs were stamped with the active cycle
+    assert c.get("/", params={"cooldown": "nope"}).text.count("/run/") == 0
+
+
+def test_device_page_shows_cycle_and_wiring(lab):
+    page = lab["client"].get("/device").text
+    assert "Cooldown cycles" in page
+    assert "cdV" in page and "(active)" in page
+    assert "PCB v3" in page  # packaging is a cycle fact
+    assert "opx1.fem1.in0" in page  # current wiring table
+    assert "Instrument: opx1" in page  # wiring-referenced instrument card joined
+    assert "10.21.19.50" in page
+
+
 def test_multi_device_filter_and_device_page(lab):
     c = lab["client"]
     rid = lab["chipz"]["run_id"]
@@ -150,6 +203,9 @@ def test_multi_device_filter_and_device_page(lab):
     assert "Device: chipZ" in page
     assert "second sample on the other fridge" in page  # devices.toml card rendered
     assert rid in page  # history via the <data_root>/<device>/scqo_state.json convention
+    # mounted_on -> instruments.toml join: the instrument card renders connection facts
+    assert "Instrument: opx1" in page
+    assert "10.21.19.50" in page
 
 
 def test_main_initializes_fresh_data_root_but_rejects_typos(tmp_path, monkeypatch):

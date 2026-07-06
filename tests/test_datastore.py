@@ -318,3 +318,132 @@ def test_device_registry_loader(tmp_path):
 
     (tmp_path / "devices.toml").write_text("not [valid toml", encoding="utf-8")
     assert load_device_registry(tmp_path) == {}  # broken hand-edit -> warn, not crash
+
+
+def test_instrument_registry_loader(tmp_path):
+    """instruments.toml documents connections (IP etc.); optional, typo-tolerant."""
+    from scqo.datastore import load_instrument_registry
+
+    assert load_instrument_registry(tmp_path) == {}
+    (tmp_path / "instruments.toml").write_text(
+        '[cluster0]\nkind = "qblox_cluster"\naddress = "192.168.0.2"\nconnection = "ethernet"\n\n'
+        '[opx1]\nkind = "qm_opx1000"\naddress = "10.21.19.50"\n',
+        encoding="utf-8",
+    )
+    reg = load_instrument_registry(tmp_path)
+    assert reg["cluster0"]["address"] == "192.168.0.2"
+    assert reg["opx1"]["kind"] == "qm_opx1000"
+
+    (tmp_path / "instruments.toml").write_text("not [valid toml", encoding="utf-8")
+    assert load_instrument_registry(tmp_path) == {}  # display registry: warn, not crash
+
+
+def _write_cooldowns(data_root: Path, device: str, text: str) -> Path:
+    ddir = data_root / device
+    ddir.mkdir(parents=True, exist_ok=True)
+    path = ddir / "cooldowns.toml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_cooldown_registry_loader(tmp_path):
+    """device -> cycle (packaging fixed) -> dated FULL wiring snapshots; the current
+    mapping is the latest applicable snapshot of the open cycle."""
+    from scqo.datastore import active_cooldown, current_mapping, load_cooldowns
+
+    assert load_cooldowns(tmp_path, "devA") == {}  # absent -> no cycles, no stamps
+
+    _write_cooldowns(
+        tmp_path, "devA",
+        "[cd1]\nstart = 2026-01-01\nend = 2026-02-01\n\n"
+        '[cd2]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
+        '[[cd2.mapping]]\nsince = 2026-07-01\n"q0.drive" = "cluster0.module2.out0"\n\n'
+        '[[cd2.mapping]]\nsince = 2026-07-03\nnote = "out0 dead"\n"q0.drive" = "cluster0.module3.out1"\n\n'
+        '[[cd2.mapping]]\nsince = 2099-01-01\n"q0.drive" = "future.staged"\n',
+    )
+    cycles = load_cooldowns(tmp_path, "devA")
+    cid, cycle = active_cooldown(cycles)
+    assert cid == "cd2"
+    assert cycle["packaging"] == "PCB v3"
+    mapping = current_mapping(cycle)
+    assert str(mapping["since"])[:10] == "2026-07-03"  # latest applicable, not the future one
+    assert mapping["q0.drive"] == "cluster0.module3.out1"  # full snapshot = current wiring
+
+
+def test_cooldown_registry_validation_is_loud(tmp_path):
+    """This file stamps runs — a broken registry must fail at run START, not warn."""
+    import pytest
+
+    from scqo.datastore import load_cooldowns
+
+    _write_cooldowns(tmp_path, "devA", "[cd1]\nstart = 2026-01-01\n\n[cd2]\nstart = 2026-07-01\n")
+    with pytest.raises(ValueError, match="more than one open cycle"):
+        load_cooldowns(tmp_path, "devA")
+
+    _write_cooldowns(tmp_path, "devA", '[cd1]\nstart = 2026-01-01\n[[cd1.mapping]]\n"q0.drive" = "x.y"\n')
+    with pytest.raises(ValueError, match="since"):
+        load_cooldowns(tmp_path, "devA")
+
+    path = _write_cooldowns(tmp_path, "devA", "not [valid toml")
+    with pytest.raises(ValueError, match="cooldowns.toml"):
+        load_cooldowns(tmp_path, "devA")
+    assert path.is_file()  # never silently repaired
+
+
+def test_runs_stamp_cooldown_and_wiring_era(tmp_path):
+    """Every run carries its full environment provenance: cycle id + the wiring era
+    in effect — and a MID-CYCLE mapping change moves the era for later runs."""
+    from datetime import date
+
+    from scqo import reindex
+
+    data_root = tmp_path / "data"
+    _write_cooldowns(
+        data_root, "devA",
+        '[cd7]\nstart = 2026-01-05\npackaging = "PCB v2"\n\n'
+        '[[cd7.mapping]]\nsince = 2026-01-05\n"q0.drive" = "cluster0.module2.out0"\n',
+    )
+    sess = _session(tmp_path)
+    r1 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    rec1 = json.loads((Path(r1["data_path"]) / "record.json").read_text(encoding="utf-8"))
+    assert rec1["cooldown"] == "cd7"
+    assert rec1["wiring_since"] == "2026-01-05"
+
+    # mapping change mid-cycle (broken channel scenario): next run carries the NEW era
+    path = data_root / "devA" / "cooldowns.toml"
+    today = date.today().isoformat()
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f'\n[[cd7.mapping]]\nsince = {today}\nnote = "out0 dead"\n"q0.drive" = "cluster0.module3.out1"\n',
+        encoding="utf-8",
+    )
+    r2 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    rec2 = json.loads((Path(r2["data_path"]) / "record.json").read_text(encoding="utf-8"))
+    assert rec2["cooldown"] == "cd7"
+    assert rec2["wiring_since"] == today
+
+    # index filter + reindex survival (record.json is the truth)
+    assert {r["run_id"] for r in sess.find_runs(cooldown="cd7")} == {r1["run_id"], r2["run_id"]}
+    assert sess.find_runs(cooldown="nope") == []
+    (data_root / "index.sqlite").unlink()
+    reindex(data_root)
+    assert len(sess.find_runs(cooldown="cd7")) == 2
+
+
+def test_run_without_registry_stamps_empty(tmp_path):
+    sess = _session(tmp_path)
+    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    rec = json.loads((Path(r["data_path"]) / "record.json").read_text(encoding="utf-8"))
+    assert rec["cooldown"] == "" and rec["wiring_since"] == ""
+
+
+def test_broken_registry_fails_at_run_start(tmp_path):
+    """A corrupt cooldowns.toml must surface BEFORE any instrument time is spent —
+    not after the measurement as a datastore_error that discards the data."""
+    import pytest
+
+    data_root = tmp_path / "data"
+    _write_cooldowns(data_root, "devA", "not [valid toml")
+    sess = _session(tmp_path)
+    with pytest.raises(ValueError, match="cooldowns.toml"):
+        sess.run("resonator_spectroscopy", {"qubits": ["q0"]})

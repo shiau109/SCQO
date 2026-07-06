@@ -6,14 +6,15 @@ and can find every dataset you ever took. You never touch instrument code, and y
 never edit anything in the repos.
 
 **Prerequisites** (done once per machine — see [INSTALL.md](INSTALL.md), or ask
-whoever set up the PC): a venv activated and your personal `~\.scqo\config.toml` in
-place. **Which venv? One rule:** activate **view** to look at data — the run-viewer,
-browsing, `find_runs.py`, `tag_run.py` (`.venv-view\Scripts\Activate.ps1`, prompt
-`(view)`; macOS/Linux `source .venv-view/bin/activate`) — and an instrument env only
-to measure: `.venv-qblox` for `run_experiment.py`/`calibrate.py`/`device.py` on the
-Qblox cluster, `.venv-qm` on the OPX1000. The one
-thing to keep updated yourself: `default_tags = ["cooldown..."]` in that file — edit
-it once per cooldown and every run you take is automatically findable by cooldown.
+whoever set up the PC): a venv activated and a lab config in place (your own
+`~\.scqo\config.toml`, or the server's shared one). **Which venv? One rule:** activate
+**view** to look at data — the run-viewer, browsing, `find_runs.py`, `tag_run.py`
+(`.venv-view\Scripts\Activate.ps1`, prompt `(view)`; macOS/Linux
+`source .venv-view/bin/activate`) — and an instrument env only to measure:
+`.venv-qblox` for `run_experiment.py`/`calibrate.py`/`device.py` on the Qblox
+cluster, `.venv-qm` on the OPX1000. Cooldowns are no longer a tag you maintain:
+the manager registers each cycle (`cooldown.py`), and every run you take is
+auto-stamped with it — findable via `find_runs.py --cooldown`.
 
 Everything below works identically on the simulated backend, the **virtual twin** of
 your real chip (`qblox_sim`/`qm_sim` — the recommended practice mode), and real
@@ -140,7 +141,7 @@ python scripts/device.py --history 20       # who changed what, when, in which r
 
 ```bash
 python scripts/find_runs.py                                   # latest runs, newest first
-python scripts/find_runs.py --tag cooldown1                   # everything from this cooldown
+python scripts/find_runs.py --cooldown cd8                    # everything from this cooldown cycle
 python scripts/find_runs.py --experiment resonator_spectroscopy --qubit q1 --since 2026-07-01
 python scripts/find_runs.py --outcome failed                  # what went wrong lately?
 python scripts/find_runs.py --show 20260704-225450-SQ_demo-resonator_spectroscopy-01   # one run, in full
@@ -223,6 +224,16 @@ the lab network, including tag/note editing.
 **To measure — SSH.** Every OS ships an ssh client (Windows PowerShell, macOS
 Terminal, Linux). Ask the manager for an account on the server, then a session looks
 like this:
+
+Your account carries your own settings — no shared file to fight over:
+
+- `~/.scqo/user.toml` — pick YOUR instrument (`backend = "qm"`; the sample follows
+  it), your project tags, your parameters file. Only these personal keys are allowed.
+- `~/.scqo/parameters.toml` — your standing experiment parameters (three-tier rule
+  in section 2).
+- Don't know what's available? `python scripts\devices.py` prints every configured
+  backend with its sample, instrument address, active cooldown and wiring — plus the
+  exact user.toml line to select it. It touches no instrument, so it is always safe.
 
 ```
 ssh <your-account>@<server>            # password prompt on first login

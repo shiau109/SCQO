@@ -272,6 +272,80 @@ qubits = ["q1"]          # even required knobs may get a standing default
 - Not supported (by design): per-qubit defaults — parameters are per-run scalars
   shared by every qubit in the run's list.
 
+### Per-user overlay: `~\.scqo\user.toml`
+
+On a multi-account server with ONE machine-wide shared config (`SCQO_CONFIG`), each
+account may keep a small personal overlay — flat keys, no tables:
+
+```toml
+backend = "qm"                    # which instrument I measure — the SAMPLE follows it
+default_tags = ["projA"]          # appended to the shared tags, deduped
+parameters_file = "~/my_params.toml"   # beats the vendor table and [lab]
+```
+
+Only these three keys are allowed — anything else (data_root, device_name,
+state_path...) is machine wiring and fails loudly: a user cannot repoint where data
+lands or which sample an instrument carries. The overlay applies only on top of a
+FOUND base config, never to the built-in defaults. `$SCQO_USER_CONFIG` selects a
+different overlay file, or disables the overlay with `none` (scripts/tests use this).
+See which instruments you can select — and the exact line to write — with
+`python scripts\devices.py` (touches no instrument).
+
+### Registries: instruments, cooldown cycles, wiring
+
+Three optional hand-edited TOML files complete the lab picture. The principle:
+**every fact lives at the level that owns it** — and every run is stamped with its
+full environment (cycle id + wiring era + operator + backend).
+
+`<data_root>\instruments.toml` — one table per instrument (connection facts the
+wiring mappings and `devices.toml`'s `mounted_on` reference; documentation only —
+the vendor configs remain what actually drives hardware):
+
+```toml
+[cluster0]
+kind = "qblox_cluster"
+address = "192.168.0.2"
+connection = "ethernet"
+```
+
+`<data_root>\<device>\cooldowns.toml` — the device's cycle registry: one table per
+cooldown (packaging is FIXED per cycle — you cannot repackage cold), with dated FULL
+wiring snapshots underneath. Add a new `[[<id>.mapping]]` block whenever ANY port
+changes — a broken channel moving on the same instrument counts, and so does swapping
+the whole instrument:
+
+```toml
+[cd8]
+start = 2026-07-06
+fridge = "BlueforsA"
+packaging = "PCB v3, Al box"
+# end = 2026-08-01                # absent = this cycle is ACTIVE
+
+[[cd8.mapping]]
+since = 2026-07-06
+"q1.drive"   = "cluster0.module2.out0"
+"q1.readout" = "cluster0.module6.in0"
+
+[[cd8.mapping]]                    # same instrument, one dead channel — still a change
+since = 2026-07-15
+note = "module2 out0 dead"
+"q1.drive"   = "cluster0.module3.out1"
+"q1.readout" = "cluster0.module6.in0"
+```
+
+Manage cycles with `python scripts\cooldown.py` (no args = validate + show;
+`start <id>` / `end` do safe minimal file edits; mapping snapshots are hand-edited).
+Every run is then auto-stamped with the active cycle and wiring era — query with
+`find_runs.py --cooldown cd8`, filter in the viewer, and stop hand-editing a
+cooldown tag into `default_tags`. Failure rules: `instruments.toml`/`devices.toml`
+are display-only (a typo warns and is ignored); `cooldowns.toml` STAMPS RUNS, so a
+broken file fails loudly at run start — before any instrument time is spent.
+
+**Upgrading from v0.2.x or older (fresh-start policy):** existing data was declared
+disposable — there is no migration. The index rebuilds itself (schema check); delete
+`<device>\scqo_state.json` if present (it reseeds from the vendor config; history
+starts fresh); old run folders may stay (reindex skips anything unreadable).
+
 ## 3. Offline verification
 
 The full test suite passes with no instrument attached (CI runs this exact suite on
@@ -346,6 +420,9 @@ The rules that make this safe:
   `parameters_file` **unset** so each account keeps its own standing defaults in
   `~\.scqo\parameters.toml` (section 2); setting it would pin ONE parameter set for
   every account — and a missing path fails loudly for all of them.
+  **The sanctioned per-user layer on top of the shared config is `~\.scqo\user.toml`**
+  (section 2): each account picks its own `backend` (= instrument = device),
+  `default_tags` and `parameters_file` there — and nothing else.
 - Simultaneous users are supported and tested (`tests/test_index_scale.py`), but
   **one measurement at a time per instrument** remains a social convention — the
   instruments themselves cannot run two programs at once.
@@ -439,7 +516,9 @@ python D:\github\LCHQBDriver\scripts\run_experiment.py resonator_spectroscopy --
 | viewer: `missing package: uvicorn` (or fastapi/jinja2) | **wrong venv activated** — the viewer lives in every section-1 env; check the prompt says `(view)`, `(qblox)` or `(.venv-qm)`, not something stale |
 | `ModuleNotFoundError: lchqb` / `qblox_scheduler` from a run script | you're in the view env (by design it has no instrument libs) — activate `.venv-qblox` to measure |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (intentional loud failure — better than silently unsaved) |
-| `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2 |
+| `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2. A personal `user.toml` does NOT rescue this: the overlay needs a base config |
+| `... not allowed in a user overlay` | your `~\.scqo\user.toml` sets a machine-wiring key — only `backend` / `default_tags` / `parameters_file` are personal (section 2) |
+| `invalid cooldown registry ...` at run start | `cooldowns.toml` is broken or has two open cycles — it stamps runs, so it fails BEFORE instrument time is spent; `cooldown.py` (no args) is the validator |
 | self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) |
 | `Repository not found` when cloning | the repo is (still) private and the active GitHub credential cannot see it — GitHub reports 404, not 403, to unauthorized users; sign in with an account that has access |
 | self-test: `Unexpected attribute 'lo_mode'` / `'__package_versions__'` (or similar) | the vendor state file was written by a NEWER quam/vendor lib than this env's pin — delete the unknown null attributes from the **working copy** (originals untouched), or bump the lock deliberately after re-validation |

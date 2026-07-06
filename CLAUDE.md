@@ -213,3 +213,36 @@ window, **not** a numpy-version effect (verified identical on numpy 2.3.1 and 2.
 The floor is a comment in pyproject, not a `>=` pin: scqat's package metadata is stuck
 at 0.1.0 across its tags, so a version pin would break every install until scqat
 bumps `pyproject.version` at release time.
+
+**2026-07-06 — multi-user server model (v0.3.0, fresh-start: no data migration).**
+Principles: every fact lives at the level that owns it; every run carries its full
+provenance (operator + backend + cycle + wiring era). Landed in six phases:
+- **Per-user overlay `~/.scqo/user.toml`** over the machine-wide shared config —
+  allowed keys ONLY `backend` (sample follows instrument via vendor-table
+  re-resolution) / `default_tags` (merged, deduped) / `parameters_file` (user >
+  vendor > lab); `$SCQO_USER_CONFIG` selects/disables (`none` = hermetic tests);
+  applies only on top of a found base config. `LabConfig.user_source` provenance.
+- **Operator on ChangeRecord** — stamped inside `RecordingDevice` writes (manual
+  notebook writes attributed too); `_current_operator` moved datastore→config.
+- **Field-descriptor table** `config.FIELDS: dict[str, FieldSpec(unit, doc, push)]`
+  (TRACKED_FIELDS dropped; nothing imported it). Record-only measured physics —
+  `t1_s`, `t2_star_s`, `t2_echo_s`, `readout_fidelity` (`p_e_given_g` stays run-only)
+  — recorded to state+history, NEVER pushed to the vendor; needs a FIELDS entry and
+  NOTHING else (ABC + drivers untouched). Pull-seed now MERGES saved record-only
+  values (else every restart erased them — QM forces pull); push-load pushes only
+  `PUSHED_FIELDS`. qubit_relaxation/echo/single_shot record; ramsey pushes
+  drive_freq + records t2_star_s. `updated_device` covers record-only runs.
+- **Registries** (hand-edited TOML in data_root): `instruments.toml` (connection
+  facts; display-only loader) and per-device `cooldowns.toml` — device → cycle
+  (packaging fixed) → dated FULL wiring snapshots ([[id.mapping]], `since` required;
+  any port change = new snapshot). LOUD validation (it stamps runs) at run START.
+- **Run stamping (index schema v4, auto-reindex):** `RunRecord.cooldown` +
+  `wiring_since`; `find_runs(cooldown=...)`; viewer: runs cooldown filter/column,
+  device page cycle+wiring panel + instrument cards, stable state columns
+  (descriptor order — fields are heterogeneous per qubit now), history operator
+  column; TREND_QUANTITIES derived from FIELDS.
+- **Mirrored scripts** (now NINE shared files): NEW `cooldown.py` (validate/list;
+  `start` append-only; `end` targeted insert + .bak + re-parse) and `devices.py`
+  (the Tier-1 menu: backend → sample → instrument(IP) → cycle → wiring + the exact
+  user.toml selection line; touches no instrument); `find_runs.py --cooldown`;
+  `device.py --history` shows `by=<operator>`.

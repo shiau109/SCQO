@@ -31,7 +31,6 @@ separation) and aggregate centrally by collecting folders + ``reindex``.
 
 from __future__ import annotations
 
-import getpass
 import json
 import math
 import os
@@ -44,10 +43,14 @@ from typing import Any, Iterator
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = 3  # v3: operator column (multi-user SSH provenance)
+from .config import _current_operator
+
+SCHEMA_VERSION = 4  # v4: cooldown + wiring_since columns (cycle/wiring-era provenance)
 RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
+INSTRUMENTS_FILE = "instruments.toml"  # optional instrument registry (see load_instrument_registry)
+COOLDOWNS_FILE = "cooldowns.toml"  # per device: <data_root>/<device>/cooldowns.toml (see load_cooldowns)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -58,6 +61,8 @@ CREATE TABLE IF NOT EXISTS runs (
   device         TEXT NOT NULL,
   backend        TEXT NOT NULL,
   operator       TEXT NOT NULL DEFAULT '',
+  cooldown       TEXT NOT NULL DEFAULT '',
+  wiring_since   TEXT NOT NULL DEFAULT '',
   qubits         TEXT NOT NULL,
   outcome        TEXT NOT NULL,
   outcomes       TEXT NOT NULL,
@@ -90,6 +95,8 @@ class RunRecord(BaseModel):
     device: str
     backend: str
     operator: str = ""  # OS login of whoever ran it (multi-user SSH provenance)
+    cooldown: str = ""  # active cooldown-cycle id when the run started ("" = none declared)
+    wiring_since: str = ""  # `since` date of the wiring mapping in effect ("" = none)
     qubits: list[str]
     started_at: str  # ISO-8601 local time with UTC offset (matches the folder dates)
     ended_at: str
@@ -101,14 +108,6 @@ class RunRecord(BaseModel):
     note: str = ""
     path: str  # run folder, relative to data_root (forward slashes)
     schema_version: int = SCHEMA_VERSION
-
-
-def _current_operator() -> str:
-    """OS login name of whoever is running this session ("" if undeterminable)."""
-    try:
-        return getpass.getuser()
-    except Exception:  # pragma: no cover - no user database (containers, odd CI)
-        return ""
 
 
 def _summarize(outcomes: dict[str, str]) -> str:
@@ -182,6 +181,10 @@ class DataStore:
         runners; the two-students-two-samples scenario). With the device embedded the
         id is globally unique by construction — no cross-device locking needed.
         """
+        # Validate the cooldown registry LOUDLY at run START — before any instrument
+        # time is spent. (A corrupt registry surfacing only at persist time would
+        # discard the measurement as a datastore_error.)
+        self.run_stamps()
         now = datetime.now()  # local wall-clock: humans browse folders by lab date
         stamp = now.strftime("%Y%m%d-%H%M%S")
         day_dir = self.data_root / self.device_name / now.strftime("%Y-%m-%d")
@@ -194,6 +197,18 @@ class DataStore:
                 continue
             return run_id, run_dir
         raise RuntimeError(f"could not allocate a unique run dir for {stamp}-{experiment}")
+
+    def run_stamps(self) -> tuple[str, str]:
+        """(cooldown id, wiring ``since``) a run started now should carry — the run's
+        environment provenance: device -> cycle -> wiring era. ("", "") when no cycle
+        registry / no open cycle / no applicable mapping exists."""
+        cycles = load_cooldowns(self.data_root, self.device_name)
+        active = active_cooldown(cycles)
+        if active is None:
+            return "", ""
+        cid, cycle = active
+        mapping = current_mapping(cycle)
+        return cid, str(mapping["since"])[:10] if mapping else ""
 
     def persist_run(
         self,
@@ -225,12 +240,15 @@ class DataStore:
         _write_json(run_dir / "device_after.json", device_after)
 
         outcomes = {q: str(o) for q, o in result.get("outcomes", {}).items()}
+        cooldown, wiring_since = self.run_stamps()
         record = RunRecord(
             run_id=run_id,
             experiment=experiment,
             device=self.device_name,
             backend=backend,
             operator=_current_operator(),
+            cooldown=cooldown,
+            wiring_since=wiring_since,
             qubits=list(params_dump.get("qubits", [])),
             started_at=started_at,
             ended_at=ended_at,
@@ -260,6 +278,7 @@ class DataStore:
         outcome: str | None = None,
         device: str | None = None,
         operator: str | None = None,
+        cooldown: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """Query the index; newest first; rows as JSON-able dicts (RunRecord fields + fit)."""
@@ -290,6 +309,9 @@ class DataStore:
         if operator is not None:
             where.append("operator = ?")
             args.append(operator)
+        if cooldown is not None:
+            where.append("cooldown = ?")
+            args.append(cooldown)
         sql = "SELECT * FROM runs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -439,9 +461,9 @@ class DataStore:
     def _upsert(db: sqlite3.Connection, record: RunRecord, parameters: dict, fit: dict) -> None:
         db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, ended_at, experiment, device,"
-            " backend, operator, qubits, outcome, outcomes, fit, tags, note, error, parameters,"
-            " updated_device, path, schema_version)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " backend, operator, cooldown, wiring_since, qubits, outcome, outcomes, fit, tags,"
+            " note, error, parameters, updated_device, path, schema_version)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.run_id,
                 record.started_at,
@@ -450,6 +472,8 @@ class DataStore:
                 record.device,
                 record.backend,
                 record.operator,
+                record.cooldown,
+                record.wiring_since,
                 json.dumps(record.qubits),
                 record.outcome,
                 json.dumps(record.outcomes),
@@ -479,15 +503,13 @@ def reindex(data_root: str | Path) -> int:
     return DataStore(data_root).reindex()
 
 
-def load_device_registry(data_root: str | Path) -> dict:
-    """The optional sample registry ``<data_root>/devices.toml`` -> dict ({} if absent).
+def _load_toml_registry(path: Path) -> dict:
+    """Load an optional hand-edited TOML registry ({} if absent).
 
-    One TOML table per physical sample, holding instrument-INDEPENDENT facts only
-    (description, design values, which instrument it is currently mounted on).
-    Human-edited; the viewer renders it. Instrument-dependent measured quantities
-    never go here — they live in run records with ``backend`` provenance.
+    Display-only convention: a registry with a typo must not take down the viewer —
+    unreadable files warn to stderr and read as empty. (Files that stamp RUNS, like
+    cooldowns.toml, deliberately do NOT use this loader.)
     """
-    path = Path(data_root) / DEVICES_FILE
     if not path.is_file():
         return {}
     if sys.version_info >= (3, 11):
@@ -498,9 +520,98 @@ def load_device_registry(data_root: str | Path) -> dict:
         with open(path, "rb") as f:
             return tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError) as err:
-        # A hand-edited registry with a typo must not take down the viewer.
         print(f"warning: ignoring unreadable {path}: {err}", file=sys.stderr)
         return {}
+
+
+def load_device_registry(data_root: str | Path) -> dict:
+    """The optional sample registry ``<data_root>/devices.toml`` -> dict ({} if absent).
+
+    One TOML table per physical sample, holding instrument-INDEPENDENT facts only
+    (description, design values, which instrument it is currently mounted on).
+    Human-edited; the viewer renders it. Instrument-dependent measured quantities
+    never go here — they live in run records with ``backend`` provenance.
+    """
+    return _load_toml_registry(Path(data_root) / DEVICES_FILE)
+
+
+def load_cooldowns(data_root: str | Path, device: str) -> dict:
+    """The device's cooldown-cycle registry ``<data_root>/<device>/cooldowns.toml``.
+
+    One table per cycle (start, fridge, packaging, note; ``end`` absent = ACTIVE) with
+    ``[[<id>.mapping]]`` snapshots — each a FULL device-port -> "instrument.port" map
+    with a ``since`` date (reserved keys: since, note). Packaging is fixed per cycle;
+    any port change (broken channel on the same instrument, or a whole-instrument
+    swap) = a new snapshot.
+
+    Validation is LOUD — this file stamps every run: corrupt TOML, a non-table cycle,
+    more than one open cycle, or a mapping without ``since`` raise ValueError naming
+    the file. An absent file returns {} (runs stamp cooldown="").
+    """
+    path = Path(data_root) / device / COOLDOWNS_FILE
+    if not path.is_file():
+        return {}
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:  # pragma: no cover - py3.10 fallback
+        import tomli as tomllib
+    try:
+        with open(path, "rb") as f:
+            cycles = tomllib.load(f)
+    except tomllib.TOMLDecodeError as err:
+        raise ValueError(f"invalid cooldown registry {path}: {err}") from None
+    for cid, cycle in cycles.items():
+        if not isinstance(cycle, dict):
+            raise ValueError(f"{path}: top-level keys must be cycle tables like [cd8]; {cid!r} is not")
+        for mapping in cycle.get("mapping", []):
+            if "since" not in mapping:
+                raise ValueError(f"{path}: every [[{cid}.mapping]] snapshot needs a 'since' date")
+    open_cycles = [cid for cid, cycle in cycles.items() if "end" not in cycle]
+    if len(open_cycles) > 1:
+        raise ValueError(
+            f"{path}: more than one open cycle ({', '.join(open_cycles)}) — 'end' the finished one first"
+        )
+    return cycles
+
+
+def active_cooldown(cycles: dict) -> tuple[str, dict] | None:
+    """The open cycle (no ``end`` key) as ``(id, cycle)``, or None."""
+    for cid, cycle in cycles.items():
+        if "end" not in cycle:
+            return cid, cycle
+    return None
+
+
+def current_mapping(cycle: dict) -> dict | None:
+    """The wiring snapshot in effect: latest ``since`` <= today (None if none yet).
+
+    Snapshots are FULL maps, so no delta reconstruction — the latest applicable one
+    IS the current wiring. Future-dated snapshots (pre-staged edits) are ignored.
+    """
+    today = datetime.now().date().isoformat()
+    applicable = [m for m in cycle.get("mapping", []) if str(m["since"])[:10] <= today]
+    if not applicable:
+        return None
+    return max(applicable, key=lambda m: str(m["since"]))
+
+
+def load_instrument_registry(data_root: str | Path) -> dict:
+    """The optional instrument registry ``<data_root>/instruments.toml`` -> dict.
+
+    One TOML table per instrument — the keys that wiring mappings and devices.toml's
+    ``mounted_on`` reference::
+
+        [cluster0]
+        kind = "qblox_cluster"
+        address = "192.168.0.2"
+        connection = "ethernet"
+        note = "left rack"
+
+    Human-edited documentation the viewer and the discovery script render; the vendor
+    configs (hw_config.json, QUAM state) remain the executable truth that actually
+    drives hardware — this registry documents, it never drives.
+    """
+    return _load_toml_registry(Path(data_root) / INSTRUMENTS_FILE)
 
 
 if __name__ == "__main__":  # python -m scqo <data_root>

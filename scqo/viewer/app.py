@@ -16,10 +16,25 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from ..datastore import DataStore, load_device_registry
+from ..config import FIELDS
+from ..datastore import (
+    DataStore,
+    active_cooldown,
+    current_mapping,
+    load_cooldowns,
+    load_device_registry,
+    load_instrument_registry,
+)
 
-#: fit quantities offered as one-click trend links (free-text also accepted)
-TREND_QUANTITIES = ("t1_s", "t2_star_s", "readout_freq", "drive_freq", "pi_amp", "readout_amp")
+#: quantities never tracked as device state (instrument-dependent; recorded decision)
+_FIT_ONLY_TRENDS = ("p_e_given_g",)
+#: fit quantities offered as one-click trend links (free-text also accepted):
+#: measured physics first, then calibration knobs — derived from the field table.
+TREND_QUANTITIES = (
+    *(f for f, s in FIELDS.items() if not s.push),
+    *(f for f, s in FIELDS.items() if s.push),
+    *_FIT_ONLY_TRENDS,
+)
 
 
 def create_app(
@@ -51,6 +66,7 @@ def create_app(
         until: str = "",
         device: str = "",
         operator: str = "",
+        cooldown: str = "",
         limit: int = 50,
     ):
         rows = store.find_runs(
@@ -62,6 +78,7 @@ def create_app(
             until=until or None,
             device=device or None,
             operator=operator or None,
+            cooldown=cooldown or None,
             limit=limit,
         )
         return templates.TemplateResponse(
@@ -73,7 +90,8 @@ def create_app(
                 "devices": store.distinct_devices(),
                 "filters": {"experiment": experiment, "qubit": qubit, "tag": tag,
                             "outcome": outcome, "since": since, "until": until,
-                            "device": device, "operator": operator, "limit": limit},
+                            "device": device, "operator": operator,
+                            "cooldown": cooldown, "limit": limit},
                 "data_root": str(store.data_root),
             },
         )
@@ -173,13 +191,41 @@ def create_app(
             data = _read_json(sfile) or {}
             history = list(reversed(data.get("history", [])))[:200]
         registry = load_device_registry(store.data_root)
+        # Stable column order: descriptor order first, then any extra observed fields.
+        # (Fields are heterogeneous per qubit — only measured qubits carry t1_s etc. —
+        # so the first qubit's keys are NOT a valid header.)
+        observed = {f for fields in (state or {}).values() for f in fields}
+        state_fields = [f for f in FIELDS if f in observed] + sorted(observed - set(FIELDS))
+        # Cooldown cycles + current wiring (device -> cycle -> mapping era). The
+        # registry validates loudly at RUN time; the viewer must render regardless.
+        cooldown_error = ""
+        try:
+            cycles = load_cooldowns(store.data_root, dev)
+        except ValueError as err:
+            cycles, cooldown_error = {}, str(err)
+        active = active_cooldown(cycles)
+        wiring = current_mapping(active[1]) if active else None
+        wiring_ports = {k: v for k, v in (wiring or {}).items() if k not in ("since", "note")}
+        # Instrument cards: mounted_on (devices.toml) + every instrument the current
+        # wiring references ("cluster0.module2.out0" -> "cluster0").
+        instruments = load_instrument_registry(store.data_root)
+        referenced = {str(v).split(".")[0] for v in wiring_ports.values()}
+        mounted_on = (registry.get(dev) or {}).get("mounted_on")
+        if mounted_on:
+            referenced.add(mounted_on)
+        instrument_cards = {k: instruments[k] for k in sorted(referenced) if k in instruments}
         return templates.TemplateResponse(
             request,
             "device.html",
-            {"state": state or {}, "latest": latest[0] if latest else None,
+            {"state": state or {}, "state_fields": state_fields,
+             "latest": latest[0] if latest else None,
              "history": history, "state_path": str(sfile or ""),
              "device": dev, "devices": store.distinct_devices(),
-             "registry": registry.get(dev) or {}},
+             "registry": registry.get(dev) or {},
+             "instrument_cards": instrument_cards,
+             "cycles": cycles, "active_cycle": active[0] if active else None,
+             "wiring": wiring, "wiring_ports": wiring_ports,
+             "cooldown_error": cooldown_error},
         )
 
     return app
