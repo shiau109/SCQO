@@ -12,7 +12,7 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from scqo import Session, register  # noqa: E402
-from scqo.experiments import QubitRamsey, ResonatorSpectroscopy, T1Relaxation  # noqa: E402
+from scqo.experiments import QubitRamsey, QubitRelaxation, ResonatorSpectroscopy  # noqa: E402
 from scqo.testing import InMemoryDevice, SimulatedBackend  # noqa: E402
 from scqo.viewer.app import create_app  # noqa: E402
 
@@ -30,7 +30,7 @@ class _VRamsey(QubitRamsey):
 
 
 @register
-class _VT1(T1Relaxation):
+class _VT1(QubitRelaxation):
     def probe(self):
         return None
 
@@ -56,7 +56,7 @@ def lab(tmp_path_factory):
     )
     r_res = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["cool1"])
     r_ram = sess.run("qubit_ramsey", {"qubits": ["q1"], "num_points": 201}, tags=["cool1", "special"])
-    r_t1 = sess.run("t1_relaxation", {"qubits": ["q1"]}, tags=["cool1"])
+    r_t1 = sess.run("qubit_relaxation", {"qubits": ["q1"]}, tags=["cool1"])
 
     # second physical sample; its state file follows the
     # <data_root>/<device>/scqo_state.json convention the viewer resolves

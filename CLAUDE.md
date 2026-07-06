@@ -84,8 +84,8 @@ scqo/
     qubit_spectroscopy.py       # two-tone peak search -> coarse drive_freq (bring-up step 2)
     qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
-    t1_relaxation.py            # pi + swept wait, exp-decay fit -> reports t1_s (no writeback)
-    t2_echo.py                  # Hahn echo, exp-envelope fit -> reports t2_echo_s (no writeback)
+    qubit_relaxation.py         # pi + swept wait, exp-decay fit -> reports t1_s (no writeback)
+    qubit_echo.py               # Hahn echo, exp-envelope fit -> reports t2_echo_s (no writeback)
     qubit_spectroscopy_flux.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (Phase-3 feeder)
     single_shot_readout.py      # per-shot IQ blobs (prepared_state x shot_idx) -> readout fidelity
     resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (report)
@@ -145,7 +145,7 @@ Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
 2. **Advanced users** prototype new experiments + estimators in the sandbox repo
    `D:\github\scqo-contrib` (github.com/shiau109/scqo-contrib; entry-point group
    `scqo.experiments.contrib`, tagged `maturity: contrib` in the catalog; template:
-   `t1_relaxation`). Contrib runs persist to the same datastore, so prove-out is evaluable.
+   `qubit_relaxation`). Contrib runs persist to the same datastore, so prove-out is evaluable.
 3. **The manager promotes** a proven experiment into the system. Checklist:
    - [ ] `DatasetContract` declared; probe output validated against it on the real instrument.
    - [ ] `simulate()` implemented -> offline end-to-end test in `tests/`.
@@ -187,3 +187,8 @@ promoted from the QM qualibrate path. The stack now supports **multi-axis sweeps
 (`DatasetContract.sweeps` tuple; N-D `_to_canonical` in both drivers) and a fourth
 tracked field **`readout_amp`** (readout pulse amplitude; QM: within the current
 output-power config — FEM-gain reconfiguration stays with the qualibrate power node).
+
+**2026-07-06 — rename:** `t1_relaxation` -> `qubit_relaxation` and `t2_echo` ->
+`qubit_echo` (files, classes, registered names, scqat estimators + artifact filenames),
+aligning with the `qubit_*` convention. No alias: runs recorded before the rename stay
+findable only under the old names (`find_runs(experiment="t1_relaxation")`).

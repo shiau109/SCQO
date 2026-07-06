@@ -20,8 +20,8 @@ from scqo.experiments import (
     ResonatorSpectroscopyFlux,
     ResonatorSpectroscopyPower,
     SingleShotReadout,
-    T1Relaxation,
-    T2Echo,
+    QubitRelaxation,
+    QubitEcho,
 )
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
@@ -59,7 +59,7 @@ class DemoQubitSpectroscopy(QubitSpectroscopy):
 
 
 @register
-class DemoT1Relaxation(T1Relaxation):
+class DemoQubitRelaxation(QubitRelaxation):
     """Concrete T1 for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -75,7 +75,7 @@ class DemoResonatorSpectroscopyPower(ResonatorSpectroscopyPower):
 
 
 @register
-class DemoT2Echo(T2Echo):
+class DemoQubitEcho(QubitEcho):
     """Concrete Hahn echo for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -198,13 +198,13 @@ def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
     assert np.isclose(after, before + fit["peak_detuning_hz"])
 
 
-def test_t1_relaxation_reports_without_writeback():
+def test_qubit_relaxation_reports_without_writeback():
     """T1: exponential decay fit -> reported t1_s inside the simulated truth range,
     and NO device field changes (diagnostics, not calibration)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
-    result = sess.run("t1_relaxation", {"qubits": ["q0"]})
+    result = sess.run("qubit_relaxation", {"qubits": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 20e-6 * 0.8 < result["fit"]["q0"]["t1_s"] < 60e-6 * 1.2  # sim truth 20-60 us
     assert sess.device_state() == state_before  # no writeback
@@ -231,13 +231,13 @@ def test_resonator_power_2d_updates_amp_and_freq():
     assert {"readout_amp", "readout_freq"} <= fields
 
 
-def test_t2_echo_reports_without_writeback():
+def test_qubit_echo_reports_without_writeback():
     """Echo: exponential envelope fit -> reported t2_echo_s inside the simulated truth
     range, and NO device field changes (diagnostics, not calibration)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
-    result = sess.run("t2_echo", {"qubits": ["q0"]})
+    result = sess.run("qubit_echo", {"qubits": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 30e-6 * 0.8 < result["fit"]["q0"]["t2_echo_s"] < 80e-6 * 1.2  # sim truth 30-80 us
     assert sess.device_state() == state_before  # no writeback

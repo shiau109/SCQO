@@ -1,11 +1,12 @@
-"""T1 relaxation — excited-state lifetime (backend-free half).
+"""Qubit relaxation — excited-state lifetime T1 (backend-free half).
 
 Excite with a pi pulse, wait a swept delay, measure; fit the exponential decay to
 extract T1. A *reported* quantity: there is no calibration writeback (T1 is not a
 tracked device field — that is a Phase-3 schema discussion), so ``update()`` is a
 no-op and the daily value lives in the run index (``fit_trend`` query).
 
-Promoted from scqo-contrib 2026-07-05 — the first Tier-3 promotion.
+Promoted from scqo-contrib 2026-07-05 (as ``t1_relaxation``; renamed
+``qubit_relaxation`` 2026-07-06) — the first Tier-3 promotion.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from ..parameters import AveragingParameters, QubitSelection
 from ..result import Outcome, Result
 
 
-class T1RelaxationParameters(QubitSelection, AveragingParameters):
+class QubitRelaxationParameters(QubitSelection, AveragingParameters):
     """Inputs for a T1 relaxation measurement."""
 
     min_wait_ns: float = Field(16, ge=0, description="Shortest delay after the pi pulse.")
@@ -31,25 +32,25 @@ class T1RelaxationParameters(QubitSelection, AveragingParameters):
     num_points: int = Field(51, gt=1, description="Number of delay points.")
 
 
-class T1RelaxationResult(Result):
+class QubitRelaxationResult(Result):
     """``fit[qubit]`` carries ``t1_s`` (plus fit amplitude/offset). No writeback."""
 
 
-class T1Relaxation(Experiment):
+class QubitRelaxation(Experiment):
     """Backend-agnostic T1: pi pulse -> swept wait -> measure -> exponential fit."""
 
-    name: ClassVar[str] = "t1_relaxation"
+    name: ClassVar[str] = "qubit_relaxation"
     description: ClassVar[str] = (
         "Excite with a pi pulse, wait a swept delay and measure; fits the exponential "
         "decay to report T1 (diagnostics — no device writeback)."
     )
-    Parameters: ClassVar[type] = T1RelaxationParameters
-    Result: ClassVar[type] = T1RelaxationResult
+    Parameters: ClassVar[type] = QubitRelaxationParameters
+    Result: ClassVar[type] = QubitRelaxationResult
     Contract: ClassVar[DatasetContract] = DatasetContract(
         sweeps=("wait_time_ns",), sweep_units=("ns",), variables=("I", "Q")
     )
 
-    params: T1RelaxationParameters
+    params: QubitRelaxationParameters
 
     def define_sweep(self) -> dict[str, np.ndarray]:
         return {
@@ -59,7 +60,7 @@ class T1Relaxation(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         t = coords["wait_time_ns"] * 1e-9
         qubits = self.params.qubits
-        rng = np.random.default_rng(stable_seed("t1_relaxation", *qubits))
+        rng = np.random.default_rng(stable_seed("qubit_relaxation", *qubits))
         i_data = np.empty((len(qubits), t.size))
         q_data = np.empty_like(i_data)
         for k in range(len(qubits)):
@@ -69,17 +70,17 @@ class T1Relaxation(Experiment):
             q_data[k] = rng.normal(0, noise, t.size)
         return {"I": i_data, "Q": q_data}
 
-    def estimate(self) -> T1RelaxationResult:
+    def estimate(self) -> QubitRelaxationResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
-        from scqat.estimators.t1_relaxation import T1RelaxationEstimator
+        from scqat.estimators.qubit_relaxation import QubitRelaxationEstimator
 
         # scqat's contract: variable `signal` + coord `wait_time` in seconds.
         prepared = self.dataset.rename({"I": "signal", "wait_time_ns": "wait_time"})
         prepared = prepared.assign_coords(wait_time=prepared["wait_time"] * 1e-9)
 
-        results = per_qubit_results(prepared, T1RelaxationEstimator(), artifact_dir=self.artifact_dir)
+        results = per_qubit_results(prepared, QubitRelaxationEstimator(), artifact_dir=self.artifact_dir)
 
-        result = T1RelaxationResult()
+        result = QubitRelaxationResult()
         for qubit in self.params.qubits:
             r = results[qubit]
             result.fit[qubit] = {

@@ -17,8 +17,8 @@ from .resonator_spectroscopy_power import (
     ResonatorSpectroscopyPowerParameters,
     ResonatorSpectroscopyPowerResult,
 )
-from .t1_relaxation import T1Relaxation, T1RelaxationParameters, T1RelaxationResult
-from .t2_echo import T2Echo, T2EchoParameters, T2EchoResult
+from .qubit_relaxation import QubitRelaxation, QubitRelaxationParameters, QubitRelaxationResult
+from .qubit_echo import QubitEcho, QubitEchoParameters, QubitEchoResult
 from .qubit_spectroscopy_flux import (
     QubitSpectroscopyFlux,
     QubitSpectroscopyFluxParameters,
@@ -53,12 +53,12 @@ __all__ = [
     "ResonatorSpectroscopyPower",
     "ResonatorSpectroscopyPowerParameters",
     "ResonatorSpectroscopyPowerResult",
-    "T1Relaxation",
-    "T1RelaxationParameters",
-    "T1RelaxationResult",
-    "T2Echo",
-    "T2EchoParameters",
-    "T2EchoResult",
+    "QubitRelaxation",
+    "QubitRelaxationParameters",
+    "QubitRelaxationResult",
+    "QubitEcho",
+    "QubitEchoParameters",
+    "QubitEchoResult",
     "QubitSpectroscopyFlux",
     "QubitSpectroscopyFluxParameters",
     "QubitSpectroscopyFluxResult",

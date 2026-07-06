@@ -49,8 +49,10 @@ python scripts/run_experiment.py                 # no arguments = show the menu
 ```
 
 ```
+qubit_echo                    Hahn echo ... reports T2_echo (no writeback).
 qubit_power_rabi              Sweep drive amplitude ... recalibrate pi_amp.
 qubit_ramsey                  Two pi/2 pulses ... correct drive_freq and report T2*.
+qubit_relaxation              Pi pulse + swept wait ... reports T1 (no writeback).
 qubit_spectroscopy            Sweep a weak saturation drive ... recalibrates drive_freq.
 qubit_spectroscopy_flux       2D flux map ... reports sweet spot / Ej_sum (no writeback).
 readout_frequency             Per-shot fidelity vs freq ... updates readout_freq.
@@ -59,8 +61,6 @@ resonator_spectroscopy        Sweep readout frequency ... updates readout_freq.
 resonator_spectroscopy_flux   2D resonator flux map ... reports sweet spot / g (no writeback).
 resonator_spectroscopy_power  2D punchout ... updates readout_amp and readout_freq.
 single_shot_readout           IQ blobs ... reports readout fidelity (no writeback).
-t1_relaxation                 Pi pulse + swept wait ... reports T1 (no writeback).
-t2_echo                       Hahn echo ... reports T2_echo (no writeback).
 ```
 
 Start with **resonator spectroscopy** — always the first measurement on a device: you
