@@ -86,9 +86,12 @@ class ResonatorSpectroscopyPower(Experiment):
                 center = dressed - walk * 0.8e6  # ~-0.8 MHz per dB past the knee
                 depth = 0.8 / (1.0 + walk / 4.0)
                 magnitude = 1.0 - depth / (1.0 + ((detuning - center) / kappa) ** 2)
+                # like the real instrument, the measured |IQ| scales with the
+                # drive amplitude prefactor 10**(p/20)
+                amp = 10.0 ** (p / 20.0)
                 noise = 0.01
-                i_data[k, :, j] = magnitude + rng.normal(0, noise, detuning.size)
-                q_data[k, :, j] = rng.normal(0, noise, detuning.size)
+                i_data[k, :, j] = amp * (magnitude + rng.normal(0, noise, detuning.size))
+                q_data[k, :, j] = amp * rng.normal(0, noise, detuning.size)
         return {"I": i_data, "Q": q_data}
 
     def estimate(self) -> ResonatorSpectroscopyPowerResult:
