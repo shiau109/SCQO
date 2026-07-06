@@ -8,12 +8,14 @@ from scqo import labconfig
 
 
 @pytest.fixture(autouse=True)
-def _isolate_parameters_file(monkeypatch, tmp_path):
-    """Hermeticity: never read the developer's real ~/.scqo/parameters.toml.
+def _isolate_user_files(monkeypatch, tmp_path):
+    """Hermeticity: never read the developer's real ~/.scqo/parameters.toml or user.toml.
 
-    Individual tests re-point PARAMS_DEFAULT_PATH at their own file when they need one.
+    Individual tests re-point the paths at their own files when they need one.
     """
     monkeypatch.setattr(labconfig, "PARAMS_DEFAULT_PATH", tmp_path / "no-parameters.toml")
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", tmp_path / "no-user.toml")
+    monkeypatch.delenv(labconfig.USER_ENV_VAR, raising=False)
 
 
 def test_defaults_when_no_config(monkeypatch, tmp_path):
@@ -233,6 +235,134 @@ def test_unknown_experiment_table_loads_silently(monkeypatch, tmp_path):
     config.write_text("[lab]\n", encoding="utf-8")
     cfg = labconfig.load(config)
     assert cfg.parameter_defaults["not_installed_experiment"] == {"foo": 1}
+
+
+# ---------------------------------------------------------------- user overlay
+
+
+def _write_user(tmp_path, text):
+    user = tmp_path / "user.toml"
+    user.write_text(text, encoding="utf-8")
+    return user
+
+
+def _base_config(tmp_path, body='[lab]\nbackend = "simulated"\n'):
+    config = tmp_path / "config.toml"
+    config.write_text(body, encoding="utf-8")
+    return config
+
+
+def test_user_overlay_backend_switches_vendor_table(monkeypatch, tmp_path):
+    """The overlay picks the instrument; the vendor table — and the SAMPLE — follow."""
+    config = _base_config(tmp_path, _TWO_SAMPLE_CONFIG % "qblox_sim")
+    user = _write_user(tmp_path, 'backend = "qm"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    cfg = labconfig.load(config)
+    assert cfg.backend == "qm"
+    assert cfg.device_name == "chipB"  # [qm] table selected by the overlaid backend
+    assert cfg.user_source == user
+
+
+def test_user_overlay_default_tags_merge_dedup(monkeypatch, tmp_path):
+    config = _base_config(tmp_path, '[lab]\ndefault_tags = ["cooldown7", "shared"]\n')
+    user = _write_user(tmp_path, 'default_tags = ["projA", "cooldown7"]\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    cfg = labconfig.load(config)
+    assert cfg.default_tags == ["cooldown7", "shared", "projA"]
+
+
+def test_user_overlay_parameters_file_beats_vendor_and_lab(monkeypatch, tmp_path):
+    for name, points in (("lab.toml", 1), ("chip.toml", 2), ("mine.toml", 3)):
+        (tmp_path / name).write_text(f"[qubit_ramsey]\nnum_points = {points}\n", encoding="utf-8")
+    body = (
+        '[lab]\nbackend = "%s"\nparameters_file = "' + (tmp_path / "lab.toml").as_posix() + '"\n\n'
+        '[qblox]\nparameters_file = "' + (tmp_path / "chip.toml").as_posix() + '"\n'
+    )
+    config = tmp_path / "config.toml"
+    user = _write_user(tmp_path, f'parameters_file = "{(tmp_path / "mine.toml").as_posix()}"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    config.write_text(body % "qblox_sim", encoding="utf-8")  # vendor table active
+    assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 3
+    config.write_text(body % "simulated", encoding="utf-8")  # only [lab] in play
+    assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 3
+
+
+def test_user_overlay_disallowed_key_raises(monkeypatch, tmp_path):
+    """Machine wiring is not a personal choice — reject loudly, naming the key."""
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'data_root = "D:/elsewhere"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    with pytest.raises(ValueError, match="data_root") as err:
+        labconfig.load(config)
+    assert "backend" in str(err.value)  # message names the allowed keys
+
+
+def test_user_overlay_ignored_without_base_config(monkeypatch, tmp_path):
+    """No base config = built-in defaults; a backend switch could run unsaved."""
+    monkeypatch.delenv(labconfig.ENV_VAR, raising=False)
+    monkeypatch.setattr(labconfig, "DEFAULT_PATH", tmp_path / "absent.toml")
+    user = _write_user(tmp_path, 'backend = "qblox"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    cfg = labconfig.load()
+    assert cfg.backend == "simulated"
+    assert cfg.user_source is None
+
+
+@pytest.mark.parametrize("value", ["none", "NONE", "None", ""])
+def test_user_env_none_disables_overlay(monkeypatch, tmp_path, value):
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'default_tags = ["projA"]\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    monkeypatch.setenv(labconfig.USER_ENV_VAR, value)
+    cfg = labconfig.load(config)
+    assert cfg.default_tags == []
+    assert cfg.user_source is None
+
+
+def test_user_env_path_missing_raises(monkeypatch, tmp_path):
+    config = _base_config(tmp_path)
+    monkeypatch.setenv(labconfig.USER_ENV_VAR, str(tmp_path / "gone.toml"))
+    with pytest.raises(FileNotFoundError):
+        labconfig.load(config)
+
+
+def test_user_env_path_selects_file(monkeypatch, tmp_path):
+    config = _base_config(tmp_path)
+    _write_user(tmp_path, 'default_tags = ["default-file"]\n')  # at USER_DEFAULT_PATH's dir
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", tmp_path / "user.toml")
+    other = tmp_path / "other.toml"
+    other.write_text('default_tags = ["env-file"]\n', encoding="utf-8")
+    monkeypatch.setenv(labconfig.USER_ENV_VAR, str(other))
+    cfg = labconfig.load(config)
+    assert cfg.default_tags == ["env-file"]
+    assert cfg.user_source == other
+
+
+def test_user_overlay_malformed_toml_raises(monkeypatch, tmp_path):
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'backend = "unclosed\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    with pytest.raises(ValueError, match="user.toml"):
+        labconfig.load(config)
+
+
+def test_user_overlay_wrong_type_raises(monkeypatch, tmp_path):
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'default_tags = "oops"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    with pytest.raises(ValueError, match="default_tags"):
+        labconfig.load(config)
+
+
+def test_user_overlay_applies_to_explicit_config_path(monkeypatch, tmp_path):
+    """--config / $SCQO_CONFIG select the BASE; the overlay still layers on top —
+    that IS the shared-server pattern (machine-wide SCQO_CONFIG + per-account user.toml)."""
+    config = _base_config(tmp_path, '[lab]\ndefault_tags = ["shared"]\n')
+    user = _write_user(tmp_path, 'default_tags = ["mine"]\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    cfg = labconfig.load(config)  # explicit path argument
+    assert cfg.default_tags == ["shared", "mine"]
+    assert cfg.user_source == user
 
 
 def test_make_session_wires_parameter_defaults(monkeypatch, tmp_path):
