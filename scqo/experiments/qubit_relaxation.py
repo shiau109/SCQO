@@ -1,9 +1,9 @@
 """Qubit relaxation — excited-state lifetime T1 (backend-free half).
 
 Excite with a pi pulse, wait a swept delay, measure; fit the exponential decay to
-extract T1. A *reported* quantity: there is no calibration writeback (T1 is not a
-tracked device field — that is a Phase-3 schema discussion), so ``update()`` is a
-no-op and the daily value lives in the run index (``fit_trend`` query).
+extract T1. ``update()`` records ``t1_s`` into the device state + change history as a
+RECORD-ONLY field (never pushed to the instrument — see ``scqo.config.FIELDS``); the
+per-run value also lives in the run index (``fit_trend`` query).
 
 Promoted from scqo-contrib 2026-07-05 (as ``t1_relaxation``; renamed
 ``qubit_relaxation`` 2026-07-06) — the first Tier-3 promotion.
@@ -42,7 +42,7 @@ class QubitRelaxation(Experiment):
     name: ClassVar[str] = "qubit_relaxation"
     description: ClassVar[str] = (
         "Excite with a pi pulse, wait a swept delay and measure; fits the exponential "
-        "decay to report T1 (diagnostics — no device writeback)."
+        "decay and records t1_s into the device state (record-only, no instrument push)."
     )
     Parameters: ClassVar[type] = QubitRelaxationParameters
     Result: ClassVar[type] = QubitRelaxationResult
@@ -93,5 +93,9 @@ class QubitRelaxation(Experiment):
         return result
 
     def update(self) -> None:
-        # T1 is reported, not written back (not a tracked device field).
-        return
+        # Record T1 as device state (record-only field: history + config, no push).
+        if self.result is None:
+            return
+        for qubit, fit in self.result.fit.items():
+            if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
+                self.device.qubit(qubit).t1_s = fit["t1_s"]

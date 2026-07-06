@@ -198,17 +198,19 @@ def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
     assert np.isclose(after, before + fit["peak_detuning_hz"])
 
 
-def test_qubit_relaxation_reports_without_writeback():
-    """T1: exponential decay fit -> reported t1_s inside the simulated truth range,
-    and NO device field changes (diagnostics, not calibration)."""
+def test_qubit_relaxation_records_t1():
+    """T1: exponential decay fit -> t1_s RECORDED into device state + history
+    (record-only field: every calibration knob stays untouched, nothing is pushed)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
     result = sess.run("qubit_relaxation", {"qubits": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 20e-6 * 0.8 < result["fit"]["q0"]["t1_s"] < 60e-6 * 1.2  # sim truth 20-60 us
-    assert sess.device_state() == state_before  # no writeback
-    assert sess.history() == []
+    after = sess.device_state()
+    assert after["q0"]["t1_s"] == result["fit"]["q0"]["t1_s"]  # recorded as state
+    assert {f: v for f, v in after["q0"].items() if f != "t1_s"} == state_before["q0"]
+    assert [(h["field"], h["qubit"]) for h in sess.history()] == [("t1_s", "q0")]
 
 
 def test_resonator_power_2d_updates_amp_and_freq():
@@ -231,17 +233,19 @@ def test_resonator_power_2d_updates_amp_and_freq():
     assert {"readout_amp", "readout_freq"} <= fields
 
 
-def test_qubit_echo_reports_without_writeback():
-    """Echo: exponential envelope fit -> reported t2_echo_s inside the simulated truth
-    range, and NO device field changes (diagnostics, not calibration)."""
+def test_qubit_echo_records_t2_echo():
+    """Echo: exponential envelope fit -> t2_echo_s RECORDED into device state +
+    history (record-only field: calibration knobs untouched)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
     result = sess.run("qubit_echo", {"qubits": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 30e-6 * 0.8 < result["fit"]["q0"]["t2_echo_s"] < 80e-6 * 1.2  # sim truth 30-80 us
-    assert sess.device_state() == state_before  # no writeback
-    assert sess.history() == []
+    after = sess.device_state()
+    assert after["q0"]["t2_echo_s"] == result["fit"]["q0"]["t2_echo_s"]
+    assert {f: v for f, v in after["q0"].items() if f != "t2_echo_s"} == state_before["q0"]
+    assert [h["field"] for h in sess.history()] == ["t2_echo_s"]
 
 
 def test_qubit_flux_map_recovers_arch():
@@ -264,7 +268,8 @@ def test_qubit_flux_map_recovers_arch():
 
 def test_single_shot_readout_fidelity():
     """First per-shot experiment: GMM on the IQ blobs -> fidelity consistent with the
-    simulated flip probabilities; no writeback."""
+    simulated flip probabilities; the fidelity is RECORDED (record-only), while the
+    confusion probabilities stay run-record-only (instrument-dependent by decision)."""
     sess = Session(SimulatedBackend(_device()))
 
     result = sess.run("single_shot_readout", {"qubits": ["q0"], "num_shots": 1500})
@@ -274,7 +279,9 @@ def test_single_shot_readout_fidelity():
     assert 0.85 < fit["readout_fidelity"] <= 1.0
     assert 0.0 <= fit["p_e_given_g"] < 0.12
     assert 0.0 <= fit["p_g_given_e"] < 0.15
-    assert sess.history() == []
+    assert sess.device_state()["q0"]["readout_fidelity"] == fit["readout_fidelity"]
+    assert "p_e_given_g" not in sess.device_state()["q0"]  # stays run-record-only
+    assert [h["field"] for h in sess.history()] == ["readout_fidelity"]
 
 
 def test_resonator_flux_map_recovers_dispersive_model():

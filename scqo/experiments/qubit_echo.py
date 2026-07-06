@@ -41,7 +41,8 @@ class QubitEcho(Experiment):
     name: ClassVar[str] = "qubit_echo"
     description: ClassVar[str] = (
         "Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time; fits "
-        "the exponential envelope to report T2_echo (diagnostics — no device writeback)."
+        "the exponential envelope and records t2_echo_s into the device state "
+        "(record-only, no instrument push)."
     )
     Parameters: ClassVar[type] = QubitEchoParameters
     Result: ClassVar[type] = QubitEchoResult
@@ -92,5 +93,9 @@ class QubitEcho(Experiment):
         return result
 
     def update(self) -> None:
-        # T2_echo is reported, not written back (not a tracked device field).
-        return
+        # Record T2_echo as device state (record-only field: history + config, no push).
+        if self.result is None:
+            return
+        for qubit, fit in self.result.fit.items():
+            if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
+                self.device.qubit(qubit).t2_echo_s = fit["t2_echo_s"]

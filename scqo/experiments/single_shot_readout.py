@@ -44,8 +44,8 @@ class SingleShotReadout(Experiment):
     name: ClassVar[str] = "single_shot_readout"
     description: ClassVar[str] = (
         "Prepare |g> and |e> and record every readout shot's I/Q point; two-Gaussian "
-        "mixture gives the assignment fidelity and confusion probabilities "
-        "(diagnostics — no device writeback)."
+        "mixture gives the assignment fidelity (recorded into the device state, "
+        "record-only) and confusion probabilities (run-record only)."
     )
     Parameters: ClassVar[type] = SingleShotReadoutParameters
     Result: ClassVar[type] = SingleShotReadoutResult
@@ -119,5 +119,12 @@ class SingleShotReadout(Experiment):
         return result
 
     def update(self) -> None:
-        # Fidelity/confusion are reported, not written back.
-        return
+        # Record the assignment fidelity as device state (record-only field). The
+        # confusion entries (p_e_given_g = thermal population etc.) deliberately stay
+        # run-record-only: they are instrument-dependent — compare across instruments
+        # by query, never as device state.
+        if self.result is None:
+            return
+        for qubit, fit in self.result.fit.items():
+            if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
+                self.device.qubit(qubit).readout_fidelity = fit["readout_fidelity"]

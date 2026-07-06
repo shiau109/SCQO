@@ -119,6 +119,11 @@ class Session:
         a raising estimator) is returned as a structured result with ``error`` set and
         every qubit marked failed, never raised: the Session boundary stays JSON in/out.
 
+        ``update=True`` covers RECORD-ONLY fields too (t1_s, readout_fidelity, ...):
+        those are written into the SCQO state + change history without touching the
+        instrument, and ``updated_device`` reports both kinds — filter the history by
+        field to distinguish "calibration pushed" from "physics recorded".
+
         With a ``data_root`` configured, **every** run — successful or failed — is saved
         to its own run folder and indexed; the returned dict gains ``run_id`` and
         ``data_path``. ``tags`` (merged with the Session's ``default_tags``) and ``note``

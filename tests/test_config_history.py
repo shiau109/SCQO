@@ -9,7 +9,7 @@ import json
 import numpy as np
 
 from scqo import Outcome, Session, register
-from scqo.experiments import QubitPowerRabi, ResonatorSpectroscopy
+from scqo.experiments import QubitPowerRabi, QubitRamsey, QubitRelaxation, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
 
@@ -24,6 +24,18 @@ class _DemoRes(ResonatorSpectroscopy):
 
 @register
 class _DemoRabi(QubitPowerRabi):
+    def probe(self):
+        return None
+
+
+@register
+class _DemoRamsey(QubitRamsey):
+    def probe(self):
+        return None
+
+
+@register
+class _DemoT1(QubitRelaxation):
     def probe(self):
         return None
 
@@ -126,6 +138,27 @@ def test_pull_load_does_not_clobber_vendor(tmp_path):
     assert len(sess.history()) == 2
 
 
+def test_change_records_carry_operator(monkeypatch):
+    """Every property change is attributed: run -> author (P3)."""
+    monkeypatch.setattr("scqo.config._current_operator", lambda: "alice")
+    sess = Session(SimulatedBackend(_device()))
+    sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    assert sess.history()[0]["operator"] == "alice"
+
+
+def test_manual_write_is_attributed(monkeypatch):
+    """Writes outside any run (a notebook tweaking pi_amp) are attributed too —
+    stamping lives in RecordingDevice, not in the Session's run context."""
+    monkeypatch.setattr("scqo.config._current_operator", lambda: "bob")
+    from scqo import RecordingDevice
+
+    device = RecordingDevice(_device())
+    device.qubit("q0").pi_amp = 0.31
+    rec = device.history()[0].as_dict()
+    assert rec["operator"] == "bob"
+    assert rec["experiment"] is None and rec["run_id"] is None
+
+
 def test_vendor_rejection_leaves_no_phantom_history():
     """If the instrument rejects a value, neither the SCQO config nor the history may
     claim a change that never reached the hardware (vendor push happens first)."""
@@ -161,3 +194,170 @@ def test_vendor_rejection_leaves_no_phantom_history():
         device.qubit("q0").pi_amp = 0.5
     assert device.history() == []  # no phantom record
     assert device.snapshot()["q0"]["pi_amp"] == before  # config untouched
+
+
+# ---------------------------------------------------------------- record-only fields
+
+
+class _SpyDevice:
+    """Vendor device that records every setattr it receives (push detector)."""
+
+    def __init__(self):
+        self._inner = _device()
+        self.pushed: list[tuple[str, str, float]] = []
+
+    def qubit(self, name):
+        spy = self
+
+        class _SpyQubit:
+            def __init__(self, view):
+                object.__setattr__(self, "_view", view)
+
+            def __getattr__(self, attr):
+                return getattr(object.__getattribute__(self, "_view"), attr)
+
+            def __setattr__(self, attr, value):
+                spy.pushed.append((name, attr, value))
+                setattr(object.__getattribute__(self, "_view"), attr, value)
+
+        return _SpyQubit(self._inner.qubit(name))
+
+    def snapshot(self):
+        return self._inner.snapshot()
+
+    def save(self):
+        pass
+
+
+def test_record_only_write_skips_vendor():
+    """Measured physics is recorded (history + config) but NEVER pushed — the
+    instrument has no t1_s knob; a calibration knob still pushes."""
+    from scqo import RecordingDevice
+
+    vendor = _SpyDevice()
+    device = RecordingDevice(vendor)
+
+    device.qubit("q0").t1_s = 25e-6
+    assert vendor.pushed == []  # no vendor setattr for a record-only field
+    assert device.snapshot()["q0"]["t1_s"] == 25e-6
+    assert device.history()[-1].field == "t1_s"
+
+    device.qubit("q0").pi_amp = 0.3
+    assert ("q0", "pi_amp", 0.3) in vendor.pushed  # pushed fields still push
+
+
+def test_record_only_getter_none_when_absent():
+    from scqo import RecordingDevice
+
+    device = RecordingDevice(_device())
+    assert device.qubit("q0").t1_s is None  # not measured yet — no KeyError
+
+
+def test_record_only_rejects_non_finite():
+    import pytest
+
+    from scqo import RecordingDevice
+
+    device = RecordingDevice(_device())
+    with pytest.raises(ValueError, match="non-finite"):
+        device.qubit("q0").t1_s = float("nan")
+    assert device.history() == []
+
+
+def test_pull_seed_merges_recorded_physics(tmp_path):
+    """Pull mode: vendor wins every PUSHED field and the qubit set; saved RECORD-ONLY
+    values are retained; qubits the vendor dropped disappear from the config."""
+    path = tmp_path / "scqo_state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "config": {
+                    "q0": {"readout_freq": 7.0e9, "t1_s": 25e-6},
+                    "gone": {"t1_s": 1e-6},
+                },
+                "history": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sess = Session(SimulatedBackend(_device()), state_path=str(path))  # default pull
+    state = sess.device_state()
+    assert state["q0"]["readout_freq"] == 5.95e9  # vendor wins the pushed field
+    assert state["q0"]["t1_s"] == 25e-6  # recorded physics retained
+    assert "gone" not in state  # vendor-dropped qubit not resurrected
+    assert "t1_s" not in state["q1"]  # never measured on q1
+
+
+def test_push_load_never_pushes_record_only(tmp_path):
+    """Push mode pushes the calibration fields into the vendor — record-only fields
+    stay out of the vendor entirely but remain in the SCQO state."""
+    from scqo import RecordingDevice
+
+    path = tmp_path / "scqo_state.json"
+    path.write_text(
+        json.dumps({"config": {"q0": {"pi_amp": 0.5, "t1_s": 25e-6}}, "history": []}),
+        encoding="utf-8",
+    )
+    vendor = _SpyDevice()
+    device = RecordingDevice(vendor, state_path=str(path), on_load="push")
+    pushed_fields = {f for _, f, _ in vendor.pushed}
+    assert "pi_amp" in pushed_fields
+    assert "t1_s" not in pushed_fields
+    assert device.snapshot()["q0"]["t1_s"] == 25e-6
+
+
+def test_recorded_physics_survives_session_restart_pull(tmp_path):
+    """THE regression test: measure T1 in session 1; a FRESH pull-mode session over a
+    fresh vendor still shows it (without the seed merge, every restart erased it)."""
+    path = str(tmp_path / "scqo_state.json")
+
+    sess1 = Session(SimulatedBackend(_device()), state_path=path)  # pull is the default
+    result = sess1.run("qubit_relaxation", {"qubits": ["q0"]})
+    t1 = result["fit"]["q0"]["t1_s"]
+    assert sess1.device_state()["q0"]["t1_s"] == t1
+
+    sess2 = Session(SimulatedBackend(_device()), state_path=path)  # restart, fresh vendor
+    assert sess2.device_state()["q0"]["t1_s"] == t1  # retained across the restart
+    assert sess2.device_state()["q0"]["readout_freq"] == 5.95e9  # vendor wins pushed
+    hist = sess2.history()
+    assert [h["field"] for h in hist] == ["t1_s"]  # provenance continuous
+
+
+def test_ramsey_pushes_drive_freq_and_records_t2_star():
+    sess = Session(SimulatedBackend(_device()))
+    result = sess.run(
+        "qubit_ramsey",
+        {"qubits": ["q1"], "frequency_detuning_hz": 1.0e6, "max_idle_time_ns": 4000, "num_points": 201},
+    )
+    assert result["outcomes"]["q1"] == Outcome.SUCCESSFUL.value
+    state = sess.device_state()["q1"]
+    assert state["drive_freq"] == result["fit"]["q1"]["drive_freq"]  # pushed calibration
+    assert state["t2_star_s"] == result["fit"]["q1"]["t2_star_s"]  # recorded physics
+    assert [h["field"] for h in sess.history()] == ["drive_freq", "t2_star_s"]
+
+
+def test_record_only_run_counts_as_device_update(tmp_path):
+    """A T1-only run sets updated_device: 'the device record changed' now includes
+    recorded physics — filter history by field to mean 'calibration pushed'."""
+    sess = Session(SimulatedBackend(_device()), data_root=tmp_path / "data", device_name="devA")
+    result = sess.run("qubit_relaxation", {"qubits": ["q0"]})
+    record = sess.find_runs(experiment="qubit_relaxation")[0]
+    assert record["updated_device"] is True
+    assert result["run_id"] == record["run_id"]
+
+
+def test_record_only_skipped_for_failed_qubit():
+    from scqo import Outcome as _O
+    from scqo import RecordingDevice
+    from scqo.experiments import QubitRelaxation
+
+    class _Demo(QubitRelaxation):
+        def probe(self):
+            return None
+
+    backend = SimulatedBackend(_device())
+    exp = _Demo(backend, _Demo.Parameters(qubits=["q0"]))
+    exp.device = RecordingDevice(backend.device)
+    exp.result = _Demo.Result(outcomes={"q0": _O.FAILED}, fit={"q0": {"t1_s": 1e-6}})
+    exp.update()
+    assert exp.device.history() == []  # failed fits record nothing

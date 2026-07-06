@@ -20,11 +20,21 @@ exists, what happens depends on ``on_load``:
 
 Either way, a *write* during a run always records + pushes: a fresh fit result is
 always legitimate. Wiring/hardware stays vendor-owned and is never modelled here.
+
+**Two classes of fields** (see :data:`FIELDS`): *pushed* calibration knobs
+(readout_freq, drive_freq, pi_amp, readout_amp) behave as above; *record-only*
+measured physics (t1_s, t2_star_s, t2_echo_s, readout_fidelity) is recorded into the
+SCQO config + history but NEVER pushed — the instrument has no such knob, and drivers
+need no code for these. Pull-mode startup merges saved record-only values back in
+(the vendor snapshot cannot carry them). Every change record is stamped with the
+**operator** (OS login) — attribution works for manual notebook writes too.
 """
 
 from __future__ import annotations
 
+import getpass
 import json
+import math
 import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -32,8 +42,47 @@ from typing import Any, Literal
 
 from .device import DeviceModel, QubitView
 
-#: The neutral calibration fields SCQO owns (and a QubitView exposes).
-TRACKED_FIELDS = ("readout_freq", "drive_freq", "pi_amp", "readout_amp")
+
+def _current_operator() -> str:
+    """OS login name of whoever is running this process ("" if undeterminable)."""
+    try:
+        return getpass.getuser()
+    except Exception:  # pragma: no cover - no login name in exotic environments
+        return ""
+
+@dataclass(frozen=True)
+class FieldSpec:
+    """Descriptor of one neutral device field SCQO owns."""
+
+    unit: str
+    doc: str
+    #: True = calibration knob, pushed to the vendor instrument on write/load.
+    #: False = measured physics — recorded into state + history, NEVER pushed
+    #: (the instrument has no such knob; drivers need no code for these).
+    push: bool
+
+
+#: The neutral device fields SCQO owns. Adding a PUSHED field still requires the
+#: QubitView ABC + each backend's view; adding a RECORD-ONLY field requires an entry
+#: here and nothing else.
+FIELDS: dict[str, FieldSpec] = {
+    # pushed calibration (vendor-backed; each backend's QubitView implements them)
+    "readout_freq": FieldSpec("Hz", "Resonator readout frequency.", push=True),
+    "drive_freq": FieldSpec("Hz", "Qubit 0->1 drive frequency.", push=True),
+    "pi_amp": FieldSpec("", "Amplitude of the calibrated pi (x180) pulse.", push=True),
+    "readout_amp": FieldSpec("", "Amplitude of the readout pulse (dimensionless, within "
+                                 "the backend's current output-power configuration).", push=True),
+    # record-only measured physics (no vendor knob exists; drivers untouched).
+    # p_e_given_g (thermal population) deliberately stays run-record-only: it is
+    # instrument-dependent — compare across instruments by query, never as state.
+    "t1_s": FieldSpec("s", "Energy-relaxation time T1.", push=False),
+    "t2_star_s": FieldSpec("s", "Ramsey dephasing time T2*.", push=False),
+    "t2_echo_s": FieldSpec("s", "Hahn-echo coherence time T2_echo.", push=False),
+    "readout_fidelity": FieldSpec("", "Single-shot assignment fidelity (0.5..1).", push=False),
+}
+
+#: The vendor-backed subset — the only fields ever setattr'd on a driver's QubitView.
+PUSHED_FIELDS = tuple(f for f, s in FIELDS.items() if s.push)
 
 
 def _now() -> str:
@@ -59,41 +108,56 @@ class ChangeRecord:
     experiment: str | None = None
     #: run_id of the datastore run that caused this change (links history <-> run folder).
     run_id: str | None = None
+    #: OS login of whoever made the change (None only when undeterminable).
+    operator: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def _tracked_property(field: str) -> property:
-    """A read/write property routing one tracked field through the RecordingDevice."""
+def _tracked_property(field: str, spec: FieldSpec) -> property:
+    """A read/write property routing one device field through the RecordingDevice.
 
-    def getter(self: "_RecordingQubitView") -> float:
-        return self._parent._get(self.name, field)
+    Pushed fields keep strict reads and vendor-coupled writes; record-only fields
+    read as None until first measured and never touch the vendor.
+    """
+    if spec.push:
 
-    def setter(self: "_RecordingQubitView", value: float) -> None:
-        self._parent._set(self.name, field, value)
+        def getter(self: "_RecordingQubitView") -> float:
+            return self._parent._get(self.name, field)
 
-    return property(getter, setter)
+        def setter(self: "_RecordingQubitView", value: float) -> None:
+            self._parent._set(self.name, field, value)
+
+    else:
+
+        def getter(self: "_RecordingQubitView") -> float | None:  # type: ignore[misc]
+            return self._parent._get_recorded(self.name, field)
+
+        def setter(self: "_RecordingQubitView", value: float) -> None:
+            self._parent._record(self.name, field, value)
+
+    return property(getter, setter, doc=f"{spec.doc} [{spec.unit}]" if spec.unit else spec.doc)
 
 
 class _RecordingQubitView(QubitView):
     """QubitView that reads/writes the parent :class:`RecordingDevice`'s SCQO config.
 
-    One read/write property per :data:`TRACKED_FIELDS` is generated in the class body, so
-    adding a tracked field needs no edit here — only the field list plus each backend's
-    own :class:`~scqo.device.QubitView` and the ABC.
+    One read/write property per :data:`FIELDS` entry is generated in the class body.
+    Adding a PUSHED field still needs each backend's own QubitView and the ABC;
+    adding a RECORD-ONLY field needs only its :data:`FIELDS` entry.
     """
 
     def __init__(self, parent: "RecordingDevice", name: str) -> None:
         self.name = name
         self._parent = parent
 
-    # Generate readout_freq / drive_freq / pi_amp / ... from TRACKED_FIELDS. Assigning
-    # into the class namespace (vars()) makes them real properties that satisfy the
-    # QubitView ABC's abstract members.
-    for _field in TRACKED_FIELDS:
-        vars()[_field] = _tracked_property(_field)
-    del _field
+    # Generate one property per FIELDS entry. Assigning into the class namespace
+    # (vars()) makes them real properties; the pushed subset satisfies the QubitView
+    # ABC's abstract members, the record-only ones are additive.
+    for _field, _spec in FIELDS.items():
+        vars()[_field] = _tracked_property(_field, _spec)
+    del _field, _spec
 
 
 class RecordingDevice(DeviceModel):
@@ -117,16 +181,20 @@ class RecordingDevice(DeviceModel):
         self._run_id: str | None = None
 
         if state_path is not None and os.path.exists(state_path):
+            saved = self._load_state(state_path)
             if on_load == "push":
                 # SCQO fully owns this device: load the saved config and push it to the
-                # vendor so the instrument matches SCQO for the tracked fields.
-                self._load_and_push(state_path)
+                # vendor so the instrument matches SCQO for the pushed fields.
+                self._config = saved
+                self._push_config()
             else:
                 # "pull" (safe default while another tool may also write the vendor
                 # config, e.g. unmigrated qualibrate nodes on QM): the vendor wins at
-                # startup, but the saved history is kept so provenance is continuous.
-                self._load_history(state_path)
-                self._config = inner.snapshot()
+                # startup for the pushed fields, the saved history is kept so
+                # provenance is continuous — and saved RECORD-ONLY values (measured
+                # physics) are merged back in: the vendor knows nothing about them,
+                # so without the merge every session start would erase them.
+                self._config = _merge_pull_seed(inner.snapshot(), saved)
         else:
             self._config = inner.snapshot()  # first time: seed (pull) from the vendor
 
@@ -157,20 +225,36 @@ class RecordingDevice(DeviceModel):
     def _get(self, qubit: str, field: str) -> float:
         return self._config[qubit][field]  # type: ignore[return-value]
 
-    def _set(self, qubit: str, field: str, value: float) -> None:
+    def _get_recorded(self, qubit: str, field: str) -> float | None:
+        """Record-only fields read as None until first measured (pushed stay strict)."""
+        return self._config.get(qubit, {}).get(field)
+
+    def _record(self, qubit: str, field: str, value: float) -> None:
+        """Record a measured value: history + SCQO config, NO vendor push."""
         value = float(value)
+        if not math.isfinite(value):  # the state JSON must stay strictly parseable
+            raise ValueError(f"refusing to record non-finite {field}={value!r} for {qubit}")
         old = self._config.get(qubit, {}).get(field)
-        # Push to the vendor FIRST: if the instrument rejects the value (e.g. an
-        # out-of-range amplitude), neither the SCQO config nor the history may claim
-        # a change that never reached the hardware.
-        setattr(self._inner.qubit(qubit), field, value)
         self._history.append(
             ChangeRecord(
                 timestamp=_now(), qubit=qubit, field=field, old=old, new=value,
                 experiment=self._experiment, run_id=self._run_id,
+                # Stamped here (not via set_context) so manual writes outside a run —
+                # a notebook tweaking pi_amp — are attributed too.
+                operator=_current_operator() or None,
             )
         )
         self._config.setdefault(qubit, {})[field] = value          # SCQO config (authoritative)
+
+    def _set(self, qubit: str, field: str, value: float) -> None:
+        value = float(value)
+        if not math.isfinite(value):  # never hand the instrument a NaN/Inf
+            raise ValueError(f"refusing to push non-finite {field}={value!r} for {qubit}")
+        # Push to the vendor FIRST: if the instrument rejects the value (e.g. an
+        # out-of-range amplitude), neither the SCQO config nor the history may claim
+        # a change that never reached the hardware.
+        setattr(self._inner.qubit(qubit), field, value)
+        self._record(qubit, field, value)
 
     # ---------------------------------------------------------------- persistence
     def _persist(self, path: str) -> None:
@@ -181,20 +265,33 @@ class RecordingDevice(DeviceModel):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    def _load_history(self, path: str) -> None:
-        """Load only the change history from a saved state (pull mode keeps provenance)."""
+    def _load_state(self, path: str) -> dict:
+        """Load a saved state file: installs the history, returns the saved config."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         self._history = [ChangeRecord(**r) for r in data.get("history", [])]
+        return data.get("config", {})
 
-    def _load_and_push(self, path: str) -> None:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        self._config = data.get("config", {})
-        self._history = [ChangeRecord(**r) for r in data.get("history", [])]
-        # SCQO is authoritative: push the loaded values into the vendor device so it
-        # matches SCQO for the tracked fields (wiring/hardware is left untouched).
+    def _push_config(self) -> None:
+        """Push the PUSHED fields of the SCQO config into the vendor device (SCQO is
+        authoritative in push mode). Record-only fields have no vendor knob and are
+        never pushed; wiring/hardware is left untouched."""
         for qubit, fields in self._config.items():
             for field, value in fields.items():
-                if value is not None:
+                if value is not None and field in PUSHED_FIELDS:
                     setattr(self._inner.qubit(qubit), field, value)
+
+
+def _merge_pull_seed(vendor: dict, saved: dict) -> dict:
+    """Pull-mode startup seed. The vendor snapshot is authoritative for the qubit set
+    and every PUSHED field; saved values of non-pushed fields (record-only measured
+    physics) are retained for qubits the vendor still reports. Qubits only in the
+    saved config are dropped (their history rows remain untouched)."""
+    merged = {qubit: dict(fields) for qubit, fields in vendor.items()}
+    for qubit, fields in saved.items():
+        if qubit not in merged:
+            continue
+        for field, value in fields.items():
+            if field not in PUSHED_FIELDS:
+                merged[qubit][field] = value
+    return merged
