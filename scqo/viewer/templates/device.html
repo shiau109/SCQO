@@ -28,40 +28,32 @@ measured values stay in runs with their backend recorded.</p>
 {% if cycles %}
 <h3>Cooldown cycles</h3>
 <table>
-  <tr><th>cycle</th><th>start</th><th>end</th><th>fridge</th><th>packaging</th><th>mappings</th></tr>
+  <tr><th>cycle</th><th>start</th><th>end</th><th>fridge</th><th>packaging</th><th>setups</th></tr>
   {% for cid, c in cycles.items() %}
   <tr>
     <td>{% if cid == active_cycle %}<b>{{ cid }}</b> (active){% else %}{{ cid }}{% endif %}</td>
     <td>{{ c.start }}</td><td>{{ c.end or "-" }}</td>
     <td>{{ c.fridge or "-" }}</td><td>{{ c.packaging or "-" }}</td>
-    <td>{{ c.mapping | default([]) | length }}</td>
+    <td>{{ c.setup | default([]) | length }}</td>
   </tr>
   {% endfor %}
 </table>
-{% if wiring %}
-<p class="muted">Current wiring of <b>{{ active_cycle }}</b> (since {{ wiring.since }}{% if wiring.note %} — {{ wiring.note }}{% endif %}):</p>
+{% if setup %}
+<p class="muted">Current setup of <b>{{ active_cycle }}</b> (since {{ setup.since }}{% if setup.note %} — {{ setup.note }}{% endif %}):
+backend <b>{{ setup.backend }}</b>{% if setup.instrument_config %}, config <code>{{ setup.instrument_config }}</code>{% endif %}</p>
+{% if setup_ports %}
 <table>
   <tr><th>device port</th><th>instrument port</th></tr>
-  {% for port, target in wiring_ports.items() %}
+  {% for port, target in setup_ports.items() %}
   <tr><td>{{ port }}</td><td>{{ target }}</td></tr>
   {% endfor %}
 </table>
+{% else %}
+<p class="muted">No ports recorded yet — hand-add them to the [[{{ active_cycle }}.setup]] block.</p>
+{% endif %}
 {% elif active_cycle %}
-<p class="muted">{{ active_cycle }} has no wiring mapping yet — add a [[{{ active_cycle }}.mapping]] snapshot to cooldowns.toml.</p>
+<p class="muted">{{ active_cycle }} has no setup in effect — check the [[{{ active_cycle }}.setup]] 'since' dates.</p>
 {% endif %}
-{% endif %}
-
-{% for iname, ifacts in instrument_cards.items() %}
-<h3>Instrument: {{ iname }}</h3>
-<table>
-  {% for k, v in ifacts.items() %}
-  <tr><th>{{ k }}</th><td>{{ v }}</td></tr>
-  {% endfor %}
-</table>
-{% endfor %}
-{% if instrument_cards %}
-<p class="muted">Connection facts from <code>instruments.toml</code> — documentation;
-the vendor config remains what actually drives the hardware.</p>
 {% endif %}
 
 {% if state %}

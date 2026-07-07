@@ -22,8 +22,8 @@ def test_defaults_when_no_config(monkeypatch, tmp_path):
     monkeypatch.delenv(labconfig.ENV_VAR, raising=False)
     monkeypatch.setattr(labconfig, "DEFAULT_PATH", tmp_path / "absent.toml")
     cfg = labconfig.load()
-    assert cfg.backend == "simulated"
-    assert cfg.data_root is None and cfg.state_path is None
+    assert cfg.device is None  # device-less demo fallback
+    assert cfg.data_root is None
     assert cfg.source is None  # built-in defaults, nothing loaded
 
 
@@ -43,52 +43,10 @@ def test_tilde_paths_are_expanded(tmp_path):
     """macOS/Linux configs say data_root = '~/qpu_data'; that must not create a
     literal './~' folder."""
     path = tmp_path / "config.toml"
-    path.write_text(
-        '[lab]\ndata_root = "~/qpu_data"\nstate_path = "~/qpu_data/scqo_state.json"\n',
-        encoding="utf-8",
-    )
+    path.write_text('[lab]\ndata_root = "~/qpu_data"\n', encoding="utf-8")
     cfg = labconfig.load(path)
     assert "~" not in str(cfg.data_root)
     assert cfg.data_root.is_absolute()
-    assert "~" not in str(cfg.state_path)
-
-
-_TWO_SAMPLE_CONFIG = """
-[lab]
-data_root = "D:/qpu_data"
-device_name = "fallback"
-state_path = "D:/qpu_data/fallback/scqo_state.json"
-backend = "%s"
-
-[qblox]
-config_dir = "./qblox_state"
-device_name = "chipA"
-state_path = "D:/qpu_data/chipA/scqo_state.json"
-
-[qm]
-device_name = "chipB"
-"""
-
-
-def test_backend_table_overrides_device(tmp_path):
-    """Two instruments carrying two samples: the ACTIVE backend's vendor table names
-    the mounted sample, so switching backend switches device (device = the sample)."""
-    path = tmp_path / "config.toml"
-
-    path.write_text(_TWO_SAMPLE_CONFIG % "qblox_sim", encoding="utf-8")
-    cfg = labconfig.load(path)
-    assert cfg.device_name == "chipA"  # qblox_sim reads the [qblox] table
-    assert "chipA" in str(cfg.state_path)
-
-    path.write_text(_TWO_SAMPLE_CONFIG % "qm", encoding="utf-8")
-    cfg = labconfig.load(path)
-    assert cfg.device_name == "chipB"
-    assert "fallback" in str(cfg.state_path)  # [qm] has no state_path -> [lab] wins
-
-    path.write_text(_TWO_SAMPLE_CONFIG % "simulated", encoding="utf-8")
-    cfg = labconfig.load(path)
-    assert cfg.device_name == "fallback"  # no vendor family -> [lab] values
-    assert cfg.extras["qblox"]["config_dir"] == "./qblox_state"  # passthrough intact
 
 
 def test_parse_full_file(tmp_path):
@@ -97,25 +55,32 @@ def test_parse_full_file(tmp_path):
         """
 [lab]
 data_root = "D:/qpu_data"
-device_name = "SQ4B_v3"
-state_path = "D:/qpu_data/SQ4B_v3/scqo_state.json"
-backend = "qblox"
+device = "SQ4B_v3"
 state_sync = "push"
-default_tags = ["cooldown7", "run-b"]
-
-[qblox]
-config_dir = "./qblox_state"
+default_tags = ["projX", "run-b"]
 """,
         encoding="utf-8",
     )
     cfg = labconfig.load(path)
-    assert cfg.device_name == "SQ4B_v3"
-    assert cfg.backend == "qblox"
+    assert cfg.device == "SQ4B_v3"
     assert cfg.state_sync == "push"
-    assert cfg.default_tags == ["cooldown7", "run-b"]
-    assert cfg.data_root is not None and cfg.state_path is not None
-    assert cfg.extras["qblox"]["config_dir"] == "./qblox_state"
+    assert cfg.default_tags == ["projX", "run-b"]
+    assert cfg.data_root is not None
     assert cfg.source == path
+
+
+def test_retired_keys_are_simply_ignored(tmp_path):
+    """v0.5.0 fresh-start: old configs half-work at most — retired keys ([lab]
+    backend/device_name/state_path, vendor tables) are just not read anymore."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[lab]\ndata_root = "D:/qpu_data"\nbackend = "qblox"\ndevice_name = "old"\n\n'
+        '[qblox]\ndevice_name = "chipA"\n',
+        encoding="utf-8",
+    )
+    cfg = labconfig.load(path)
+    assert cfg.device is None  # neither `device` nor the retired keys select anything
+    assert not hasattr(cfg, "backend")
 
 
 # ---------------------------------------------------------------- parameters.toml
@@ -184,21 +149,11 @@ def test_explicit_parameters_file_missing_raises(tmp_path):
         labconfig.load(config)
 
 
-def test_vendor_table_overrides_parameters_file(tmp_path):
-    """Two samples on two instruments: the ACTIVE backend's vendor table may name its
-    own parameter set, exactly like it names its own device_name/state_path."""
+def test_lab_parameters_file_applies(tmp_path):
     lab_file = tmp_path / "lab.toml"
     lab_file.write_text("[qubit_ramsey]\nnum_points = 1\n", encoding="utf-8")
-    chip_file = tmp_path / "chipA.toml"
-    chip_file.write_text("[qubit_ramsey]\nnum_points = 2\n", encoding="utf-8")
-    template = (
-        '[lab]\nbackend = "%s"\nparameters_file = "' + lab_file.as_posix() + '"\n\n'
-        '[qblox]\nparameters_file = "' + chip_file.as_posix() + '"\n'
-    )
     config = tmp_path / "config.toml"
-    config.write_text(template % "qblox_sim", encoding="utf-8")
-    assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 2
-    config.write_text(template % "simulated", encoding="utf-8")
+    config.write_text(f'[lab]\nparameters_file = "{lab_file.as_posix()}"\n', encoding="utf-8")
     assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 1
 
 
@@ -252,15 +207,17 @@ def _base_config(tmp_path, body='[lab]\nbackend = "simulated"\n'):
     return config
 
 
-def test_user_overlay_backend_switches_vendor_table(monkeypatch, tmp_path):
-    """The overlay picks the instrument; the vendor table — and the SAMPLE — follow."""
-    config = _base_config(tmp_path, _TWO_SAMPLE_CONFIG % "qblox_sim")
-    user = _write_user(tmp_path, 'backend = "qm"\n')
+def test_user_overlay_device_beats_lab_default(monkeypatch, tmp_path):
+    """The user names the SAMPLE they work on; it beats the lab's default device."""
+    config = _base_config(tmp_path, '[lab]\ndevice = "chipA"\n')
+    user = _write_user(tmp_path, 'device = "chipB"\n')
     monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
     cfg = labconfig.load(config)
-    assert cfg.backend == "qm"
-    assert cfg.device_name == "chipB"  # [qm] table selected by the overlaid backend
+    assert cfg.device == "chipB"
     assert cfg.user_source == user
+    # and without a user.toml, the lab default applies
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", tmp_path / "absent-user.toml")
+    assert labconfig.load(config).device == "chipA"
 
 
 def test_user_overlay_default_tags_merge_dedup(monkeypatch, tmp_path):
@@ -271,19 +228,14 @@ def test_user_overlay_default_tags_merge_dedup(monkeypatch, tmp_path):
     assert cfg.default_tags == ["cooldown7", "shared", "projA"]
 
 
-def test_user_overlay_parameters_file_beats_vendor_and_lab(monkeypatch, tmp_path):
-    for name, points in (("lab.toml", 1), ("chip.toml", 2), ("mine.toml", 3)):
+def test_user_overlay_parameters_file_beats_lab(monkeypatch, tmp_path):
+    for name, points in (("lab.toml", 1), ("mine.toml", 3)):
         (tmp_path / name).write_text(f"[qubit_ramsey]\nnum_points = {points}\n", encoding="utf-8")
-    body = (
-        '[lab]\nbackend = "%s"\nparameters_file = "' + (tmp_path / "lab.toml").as_posix() + '"\n\n'
-        '[qblox]\nparameters_file = "' + (tmp_path / "chip.toml").as_posix() + '"\n'
-    )
     config = tmp_path / "config.toml"
+    config.write_text(f'[lab]\nparameters_file = "{(tmp_path / "lab.toml").as_posix()}"\n',
+                      encoding="utf-8")
     user = _write_user(tmp_path, f'parameters_file = "{(tmp_path / "mine.toml").as_posix()}"\n')
     monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
-    config.write_text(body % "qblox_sim", encoding="utf-8")  # vendor table active
-    assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 3
-    config.write_text(body % "simulated", encoding="utf-8")  # only [lab] in play
     assert labconfig.load(config).parameter_defaults["qubit_ramsey"]["num_points"] == 3
 
 
@@ -294,17 +246,17 @@ def test_user_overlay_disallowed_key_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
     with pytest.raises(ValueError, match="data_root") as err:
         labconfig.load(config)
-    assert "backend" in str(err.value)  # message names the allowed keys
+    assert "device" in str(err.value)  # message names the allowed keys
 
 
 def test_user_overlay_ignored_without_base_config(monkeypatch, tmp_path):
-    """No base config = built-in defaults; a backend switch could run unsaved."""
+    """No base config = built-in defaults; a device pick without a data_root is moot."""
     monkeypatch.delenv(labconfig.ENV_VAR, raising=False)
     monkeypatch.setattr(labconfig, "DEFAULT_PATH", tmp_path / "absent.toml")
-    user = _write_user(tmp_path, 'backend = "qblox"\n')
+    user = _write_user(tmp_path, 'device = "chipA"\n')
     monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
     cfg = labconfig.load()
-    assert cfg.backend == "simulated"
+    assert cfg.device is None
     assert cfg.user_source is None
 
 
@@ -374,6 +326,32 @@ def test_make_session_wires_parameter_defaults(monkeypatch, tmp_path):
     config = tmp_path / "config.toml"
     config.write_text("[lab]\n", encoding="utf-8")
     cfg = labconfig.load(config)
-    sess = labconfig.make_session(SimulatedBackend(InMemoryDevice({"q0": {"readout_freq": 5.9e9}})), cfg)
+    sess = labconfig.make_session(SimulatedBackend(InMemoryDevice({"q0": {"readout_freq": 5.9e9}})),
+                                  cfg, backend_label="simulated")
     assert sess.parameter_defaults == {"qubit_ramsey": {"num_points": 201}}
     assert sess.parameter_defaults_source == str(params)
+    assert sess.backend_label == "simulated"
+
+
+def test_make_session_state_convention_and_forced_push(tmp_path):
+    """state file = <data_root>/<device>/scqo_state.json by convention; simulated
+    always persists (forced push — an in-memory demo has no vendor truth to pull)."""
+    from scqo.testing import InMemoryDevice, SimulatedBackend
+
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f"[lab]\ndata_root = '{(tmp_path / 'data').as_posix()}'\ndevice = \"chipA\"\n",
+        encoding="utf-8",
+    )
+    cfg = labconfig.load(config)
+    backend = SimulatedBackend(InMemoryDevice({"q0": {"readout_freq": 5.9e9, "drive_freq": 4e9,
+                                                      "pi_amp": 0.2, "readout_amp": 0.2}}))
+    sess = labconfig.make_session(backend, cfg, backend_label="simulated")
+    sess.device.qubit("q0").pi_amp = 0.33
+    sess.device.save()
+    assert (tmp_path / "data" / "chipA" / "scqo_state.json").is_file()  # the convention
+    # forced push: a FRESH simulated session over a fresh vendor still sees the value
+    backend2 = SimulatedBackend(InMemoryDevice({"q0": {"readout_freq": 5.9e9, "drive_freq": 4e9,
+                                                       "pi_amp": 0.2, "readout_amp": 0.2}}))
+    sess2 = labconfig.make_session(backend2, cfg, backend_label="simulated")
+    assert sess2.device_state()["q0"]["pi_amp"] == 0.33

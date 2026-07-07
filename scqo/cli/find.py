@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     cfg = load_lab_config(args.config)
     if cfg.data_root is None:
         raise SystemExit(f"no data_root configured in {cfg.source or 'the lab config'} — nothing is being saved")
-    store = DataStore(cfg.data_root, device_name=cfg.device_name)
+    store = DataStore(cfg.data_root, device_name=cfg.device or "device")
 
     if args.show:
         print(json.dumps(store.load_run(args.show), indent=2))

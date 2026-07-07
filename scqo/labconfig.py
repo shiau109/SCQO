@@ -1,47 +1,30 @@
 """Lab configuration — so students run scripts without editing any repo.
 
-One small TOML file tells every script where data goes, which device this is, and
-which backend to use. Resolution order:
+One tiny TOML file tells every command where data goes; everything ELSE follows the
+DEVICE: which instrument a sample hangs on, and where its vendor config lives, is
+recorded per era in the sample's cooldown registry
+(``<data_root>/<device>/cooldowns.toml`` — see ``scqo.datastore.load_cooldowns``),
+and the scqo state file is pure convention (``<data_root>/<device>/scqo_state.json``).
+Resolution order for the config file:
 
 1. an explicit path passed to :func:`load`;
-2. the ``SCQO_CONFIG`` environment variable;
-3. ``~/.scqo/config.toml`` (per-user; the lab installs a canonical copy);
-4. built-in defaults (simulated backend, no persistence) — everything still works,
-   nothing is saved.
+2. the ``SCQO_CONFIG`` environment variable (machine-wide on shared servers);
+3. ``~/.scqo/config.toml`` (per-user, dev machines);
+4. built-in defaults (device-less simulated demo, no persistence) — everything still
+   works, nothing is saved.
 
 Example ``~/.scqo/config.toml``::
 
     [lab]
     data_root   = "D:/qpu_data"
-    device_name = "SQ4B_v3"          # the SAMPLE (physical chip) name — never the instrument
-    state_path  = "D:/qpu_data/SQ4B_v3/scqo_state.json"
-    backend     = "simulated"        # "qblox" / "qm" on the control PC
-    state_sync  = "pull"             # "push" only for devices SCQO fully owns
-    default_tags = ["cooldown7"]     # stamped on every run; edit once per cooldown
-
-Driver-specific keys live in their own tables (e.g. ``[qblox]``) and are passed
-through untouched in :attr:`LabConfig.extras`.
-
-**Two instruments carrying two different samples?** Each vendor table may override
-``device_name`` / ``state_path`` with the sample mounted on *that* instrument —
-switching ``backend`` then switches the device automatically (no second config file,
-no way to write runs under the wrong sample)::
-
-    [qblox]
-    config_dir  = "D:/qpu_data/chipA/qblox_state"
-    device_name = "chipA"
-    state_path  = "D:/qpu_data/chipA/scqo_state.json"
-
-    [qm]
-    state_dir   = "D:/qpu_data/chipB/qm_state"
-    device_name = "chipB"
-    state_path  = "D:/qpu_data/chipB/scqo_state.json"
+    device      = "chipA"            # OPTIONAL lab-default sample (omit on multi-user servers)
+    state_sync  = "pull"             # real backends; "simulated" always forces push
+    default_tags = ["projX"]         # stamped on every run
 
 **Standing per-experiment parameter defaults** live in a second, optional TOML file —
 default ``~/.scqo/parameters.toml``, overridable with ``parameters_file`` in ``[lab]``
-(swap files per project) or in a vendor table (two samples, two parameter sets). One
-top-level table per experiment; values sit between the code defaults and whatever the
-caller passes — code defaults < this file < caller/CLI::
+or per user. One top-level table per experiment; values sit between the code defaults
+and whatever the caller passes — code defaults < this file < caller/CLI::
 
     [resonator_spectroscopy]
     frequency_span_hz = 15e6
@@ -57,14 +40,13 @@ kept untouched; a typo'd KEY inside a table surfaces when that experiment runs.
 (``$SCQO_CONFIG``), each account may keep ``~/.scqo/user.toml`` with PERSONAL keys
 only (flat, no tables)::
 
-    backend = "qm"                    # which instrument I measure — the sample follows
+    device = "chipA"                  # which SAMPLE I work on — the setup follows it
     default_tags = ["projA"]          # appended to the shared tags, deduped
     # parameters_file = "~/projB.toml"     # OPTIONAL — only to use a DIFFERENT file;
     #                                      # ~/.scqo/parameters.toml applies automatically
-    #                                      # (when set, it beats the vendor table and [lab])
 
-Any other key is rejected loudly: machine wiring (data_root, device_name, state_path,
-state_sync, vendor tables) belongs to the shared lab config. The overlay applies only
+Any other key is rejected loudly: machine wiring belongs to the shared lab config,
+and the instrument follows the device's cooldown registry. The overlay applies only
 on top of a FOUND base config — never to the built-in defaults. ``$SCQO_USER_CONFIG``
 selects a different overlay file, or disables the overlay entirely with ``none``.
 """
@@ -89,18 +71,10 @@ PARAMS_DEFAULT_PATH = Path.home() / ".scqo" / "parameters.toml"
 USER_DEFAULT_PATH = Path.home() / ".scqo" / "user.toml"
 ENV_VAR = "SCQO_CONFIG"
 USER_ENV_VAR = "SCQO_USER_CONFIG"
-#: The only keys a per-user overlay may set. Machine wiring (data_root, device_name,
-#: state_path, state_sync, vendor tables) belongs to the shared lab config — a user
-#: cannot repoint where data lands or which sample an instrument carries.
-USER_ALLOWED_KEYS = ("backend", "default_tags", "parameters_file")
-
-
-def _backend_family(backend: str) -> str | None:
-    """The vendor table a backend reads overrides from ("qblox_sim" -> "qblox")."""
-    for family in ("qblox", "qm"):
-        if backend == family or backend == f"{family}_sim":
-            return family
-    return None
+#: The only keys a per-user overlay may set. Machine wiring (data_root, state_sync)
+#: belongs to the shared lab config; the instrument follows the DEVICE via its
+#: cooldown registry's current setup — a user only names the sample they work on.
+USER_ALLOWED_KEYS = ("device", "default_tags", "parameters_file")
 
 
 def _load_parameter_defaults(path_setting: str | None) -> tuple[dict[str, dict], Path | None]:
@@ -164,10 +138,10 @@ def _load_user_overlay() -> tuple[dict, Path | None]:
     if unknown:
         raise ValueError(
             f"{path}: key(s) {', '.join(map(repr, unknown))} are not allowed in a user overlay "
-            f"(allowed: {', '.join(USER_ALLOWED_KEYS)}). Machine wiring like data_root/"
-            f"device_name/state_path belongs to the shared lab config."
+            f"(allowed: {', '.join(USER_ALLOWED_KEYS)}). Machine wiring belongs to the shared "
+            f"lab config; the instrument follows the device's cooldown registry."
         )
-    for key in ("backend", "parameters_file"):
+    for key in ("device", "parameters_file"):
         if key in raw and not isinstance(raw[key], str):
             raise ValueError(f"{path}: {key!r} must be a string, got {type(raw[key]).__name__}")
     tags = raw.get("default_tags")
@@ -181,13 +155,10 @@ class LabConfig:
     """Parsed lab configuration (see module docstring for the file format)."""
 
     data_root: Path | None = None
-    device_name: str = "device"
-    state_path: Path | None = None
-    backend: str = "simulated"  # scripts dispatch on this: simulated | qblox | qm
+    device: str | None = None  # the resolved SAMPLE (user overlay > [lab]); None = demo fallback
     state_sync: str = "pull"
     default_tags: list[str] = field(default_factory=list)
     parameter_defaults: dict[str, dict] = field(default_factory=dict)  # [experiment] tables from parameters.toml
-    extras: dict = field(default_factory=dict)  # non-[lab] tables, passed through
     source: Path | None = None  # which file was loaded (None = built-in defaults)
     parameters_source: Path | None = None  # which parameters file was loaded (None = none found)
     user_source: Path | None = None  # which per-user overlay was applied (None = none)
@@ -212,61 +183,54 @@ def load(path: str | Path | None = None) -> LabConfig:
                 raw = tomllib.load(f)
             lab = raw.pop("lab", {})
             # Per-user overlay (personal keys only; applies only ON TOP of a found base
-            # config — with no base config a backend switch could run a real instrument
-            # unsaved). The overlaid backend is set BEFORE vendor resolution, so the
-            # vendor table — and with it the sample — follows the chosen instrument.
+            # config). The user names the SAMPLE they work on; which instrument that
+            # sample hangs on comes from its cooldown registry's current setup.
             user, user_source = _load_user_overlay()
-            if "backend" in user:
-                lab["backend"] = user["backend"]
-            backend = lab.get("backend", "simulated")
-            # Per-backend overrides: the vendor table of the ACTIVE backend may name
-            # the sample mounted on that instrument (device = the physical sample),
-            # so switching backend switches device — see the module docstring.
-            family = _backend_family(backend)
-            vendor = raw.get(family, {}) if family else {}
-            device_name = vendor.get("device_name", lab.get("device_name", "device"))
-            state_path = vendor.get("state_path", lab.get("state_path"))
-            # Standing parameter defaults: [lab] parameters_file, overridable per vendor
-            # table (two samples want two parameter sets), else ~/.scqo/parameters.toml.
-            # The user's own choice beats both (user > vendor > lab).
-            params_file = vendor.get("parameters_file", lab.get("parameters_file"))
-            if "parameters_file" in user:
-                params_file = user["parameters_file"]
+            device = user.get("device", lab.get("device"))
+            # Standing parameter defaults: user's own file beats the [lab] one.
+            params_file = user.get("parameters_file", lab.get("parameters_file"))
             parameter_defaults, parameters_source = _load_parameter_defaults(params_file)
-            # Tags: shared (cooldown etc.) first, the user's project tags appended, deduped.
+            # Tags: shared (lab-wide) first, the user's project tags appended, deduped.
             default_tags = list(lab.get("default_tags", []))
             if user.get("default_tags"):
                 default_tags = list(dict.fromkeys([*default_tags, *user["default_tags"]]))
             # expanduser: lets a config say data_root = "~/qpu_data" (macOS/Linux idiom)
             return LabConfig(
                 data_root=Path(lab["data_root"]).expanduser() if lab.get("data_root") else None,
-                device_name=device_name,
-                state_path=Path(state_path).expanduser() if state_path else None,
-                backend=backend,
+                device=device,
                 state_sync=lab.get("state_sync", "pull"),
                 default_tags=default_tags,
                 parameter_defaults=parameter_defaults,
-                extras=raw,
                 source=candidate,
                 parameters_source=parameters_source,
                 user_source=user_source,
             )
     # No config.toml at all: the per-user parameters file still applies — standing
-    # experiment preferences are independent of the backend wiring.
+    # experiment preferences are independent of the machine wiring.
     parameter_defaults, parameters_source = _load_parameter_defaults(None)
     return LabConfig(parameter_defaults=parameter_defaults, parameters_source=parameters_source)
 
 
-def make_session(backend: Backend, cfg: LabConfig) -> Session:
-    """Build a Session wired to the lab config (datastore, state file, default tags)."""
+def make_session(backend: Backend, cfg: LabConfig, *, backend_label: str) -> Session:
+    """Build a Session wired to the lab config (datastore, state file, default tags).
+
+    ``backend_label`` is the RESOLVED setup's backend (provenance stamped on every
+    run). The scqo state file is pure convention — ``<data_root>/<device>/
+    scqo_state.json`` — and persistence needs BOTH a data_root and a device; the
+    device-less demo fallback saves nothing. ``simulated`` forces ``state_sync=
+    "push"``: an in-memory demo device has no vendor truth to pull, so without push
+    its calibrations would silently reset every session.
+    """
+    saved = cfg.data_root is not None and cfg.device is not None
+    state_path = str(Path(cfg.data_root) / cfg.device / "scqo_state.json") if saved else None
     return Session(
         backend,
-        state_path=str(cfg.state_path) if cfg.state_path else None,
-        data_root=cfg.data_root,
-        device_name=cfg.device_name,
-        state_sync=cfg.state_sync,  # type: ignore[arg-type]
+        state_path=state_path,
+        data_root=cfg.data_root if saved else None,
+        device_name=cfg.device or "device",
+        state_sync="push" if backend_label == "simulated" else cfg.state_sync,  # type: ignore[arg-type]
         default_tags=cfg.default_tags,
         parameter_defaults=cfg.parameter_defaults,
         parameter_defaults_source=str(cfg.parameters_source) if cfg.parameters_source else None,
-        backend_label=cfg.backend,  # provenance: "qblox_sim" vs "qblox" vs "simulated" ...
+        backend_label=backend_label,
     )

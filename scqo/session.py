@@ -52,9 +52,8 @@ class Session:
         backend_label: str | None = None,
     ) -> None:
         self.backend = backend
-        #: provenance label recorded on every run. The class name alone is ambiguous:
-        #: SimulatedBackend serves both the demo device AND the virtual twin, so the
-        #: lab config's backend mode (e.g. "qblox_sim") is passed through here.
+        #: provenance label recorded on every run — the resolved setup's backend
+        #: ("qblox" / "qm" / "simulated"); the class name alone would be ambiguous.
         self.backend_label = backend_label or type(backend).__name__
         self._persist = state_path is not None
         #: authoritative SCQO config + history over the backend's vendor device. With

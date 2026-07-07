@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
             f'Or install the extras into THIS env:  uv pip install -e "{repo}[viewer]"'
         )
 
-    app = create_app(root, device_name=cfg.device_name, state_path=cfg.state_path)
+    app = create_app(root, device_name=cfg.device or "device")
     shown = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     print(f"SCQO run viewer: http://{shown}:{args.port}  (Ctrl+C to stop)")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

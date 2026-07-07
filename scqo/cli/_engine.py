@@ -29,8 +29,7 @@ def _schema_epilog(experiment: str, config_path: str | None) -> str:
     from scqo import catalog, load_lab_config
 
     cfg = load_lab_config(config_path)
-    if cfg.backend == "simulated":
-        ensure_demo_experiments()  # driver-less envs: --help still shows the schema
+    ensure_demo_experiments()  # register-if-absent: driver-less --help still shows schemas
     entry = next((e for e in catalog() if e["name"] == experiment), None)
     if entry is None:
         return ""

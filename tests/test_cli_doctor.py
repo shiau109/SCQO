@@ -26,46 +26,64 @@ def _doctor(tmp_path: Path, config_body: str | None) -> subprocess.CompletedProc
     )
 
 
+def _lab_body(tmp_path: Path, device: str = "simdev") -> str:
+    return f"[lab]\ndevice = \"{device}\"\ndata_root = '{(tmp_path / 'data').as_posix()}'\n"
+
+
 def test_healthy_simulated_setup_passes(tmp_path):
     data_root = tmp_path / "data"
     (data_root / "simdev").mkdir(parents=True)
     (data_root / "simdev" / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-07-01\n\n[[cd1.mapping]]\nsince = 2026-07-01\n"q0.drive" = "c0.m2.o0"\n',
+        '[cd1]\nstart = 2026-07-01\n\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "simulated"\n'
+        '"q0.drive" = "c0.m2.o0"\n',
         encoding="utf-8",
     )
-    proc = _doctor(
-        tmp_path,
-        f"[lab]\nbackend = \"simulated\"\ndevice_name = \"simdev\"\ndata_root = '{data_root.as_posix()}'\n",
-    )
+    proc = _doctor(tmp_path, _lab_body(tmp_path))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all checks passed" in proc.stdout
-    assert "cd1 ACTIVE" in proc.stdout
+    assert "cd1 ACTIVE" in proc.stdout and "backend=simulated" in proc.stdout
     assert "12 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
 
 
-def test_broken_cooldowns_registry_fails(tmp_path):
-    data_root = tmp_path / "data"
-    (data_root / "simdev").mkdir(parents=True)
-    (data_root / "simdev" / "cooldowns.toml").write_text("not [valid toml", encoding="utf-8")
-    proc = _doctor(
-        tmp_path,
-        f"[lab]\nbackend = \"simulated\"\ndevice_name = \"simdev\"\ndata_root = '{data_root.as_posix()}'\n",
-    )
+def test_missing_registry_or_setup_fails(tmp_path):
+    (tmp_path / "data").mkdir()
+    proc = _doctor(tmp_path, _lab_body(tmp_path))  # device set, no cooldowns.toml
     assert proc.returncode == 1
     assert "[FAIL] cooldowns" in proc.stdout
+    assert "scqo cooldown start" in proc.stdout  # names the fix
 
 
-def test_missing_driver_fails_with_venv_hint(tmp_path):
-    from importlib.metadata import entry_points
-
-    if any(ep.name == "qblox" for ep in entry_points(group="scqo.backends")):
-        import pytest
-
-        pytest.skip("qblox driver installed in this env")
-    proc = _doctor(tmp_path, '[lab]\nbackend = "qblox"\n')
+def test_missing_instrument_config_files_fail(tmp_path):
+    data_root = tmp_path / "data"
+    folder = data_root / "chipA" / "qblox_cd1"
+    folder.mkdir(parents=True)  # exists but EMPTY: canonical vendor files absent
+    (data_root / "chipA" / "cooldowns.toml").write_text(
+        '[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "qblox"\n'
+        f"instrument_config = '{folder.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    proc = _doctor(tmp_path, _lab_body(tmp_path, device="chipA"))
     assert proc.returncode == 1
-    assert "[FAIL] backend" in proc.stdout
-    assert ".venv-qblox" in proc.stdout
+    assert "[FAIL] instr config" in proc.stdout
+    assert "dut_config.json" in proc.stdout
+
+
+def test_shared_folder_across_devices_warns(tmp_path):
+    data_root = tmp_path / "data"
+    shared = data_root / "sharedcfg"
+    shared.mkdir(parents=True)
+    for name in ("state.json", "wiring.json"):
+        (shared / name).write_text("{}", encoding="utf-8")
+    for dev in ("chipA", "chipB"):
+        (data_root / dev).mkdir()
+        (data_root / dev / "cooldowns.toml").write_text(
+            '[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "qm"\n'
+            f"instrument_config = '{shared.as_posix()}'\n",
+            encoding="utf-8",
+        )
+    proc = _doctor(tmp_path, _lab_body(tmp_path, device="chipA"))
+    assert "[WARN] shared config" in proc.stdout
+    assert "chipA" in proc.stdout and "chipB" in proc.stdout
 
 
 def test_no_config_warns_but_passes(tmp_path):
@@ -80,7 +98,7 @@ def test_malformed_user_overlay_is_caught_not_crashed(tmp_path):
     user.write_text("not [valid toml", encoding="utf-8")
     env = {**os.environ, "SCQO_USER_CONFIG": str(user)}
     config = tmp_path / "config.toml"
-    config.write_text('[lab]\nbackend = "simulated"\n', encoding="utf-8")
+    config.write_text("[lab]\n", encoding="utf-8")
     env["SCQO_CONFIG"] = str(config)
     proc = subprocess.run(
         [sys.executable, "-m", "scqo.cli", "doctor"],

@@ -20,10 +20,9 @@ from ..config import FIELDS
 from ..datastore import (
     DataStore,
     active_cooldown,
-    current_mapping,
+    current_setup,
     load_cooldowns,
     load_device_registry,
-    load_instrument_registry,
 )
 
 #: quantities never tracked as device state (instrument-dependent; recorded decision)
@@ -40,7 +39,6 @@ TREND_QUANTITIES = (
 def create_app(
     data_root: str | Path,
     device_name: str = "device",
-    state_path: str | Path | None = None,
 ) -> FastAPI:
     store = DataStore(data_root, device_name=device_name)
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -172,9 +170,7 @@ def create_app(
 
     def _state_file_for(device: str) -> Path | None:
         """The device's scqo state JSON: the configured path for the default device,
-        the ``<data_root>/<device>/scqo_state.json`` convention for any other."""
-        if device == device_name and state_path:
-            return Path(state_path)
+        the ``<data_root>/<device>/scqo_state.json`` convention (THE rule since v0.5)."""
         candidate = store.data_root / device / "scqo_state.json"
         return candidate if candidate.is_file() else None
 
@@ -196,7 +192,7 @@ def create_app(
         # so the first qubit's keys are NOT a valid header.)
         observed = {f for fields in (state or {}).values() for f in fields}
         state_fields = [f for f in FIELDS if f in observed] + sorted(observed - set(FIELDS))
-        # Cooldown cycles + current wiring (device -> cycle -> mapping era). The
+        # Cooldown cycles + current setup (device -> cycle -> setup era). The
         # registry validates loudly at RUN time; the viewer must render regardless.
         cooldown_error = ""
         try:
@@ -204,16 +200,9 @@ def create_app(
         except ValueError as err:
             cycles, cooldown_error = {}, str(err)
         active = active_cooldown(cycles)
-        wiring = current_mapping(active[1]) if active else None
-        wiring_ports = {k: v for k, v in (wiring or {}).items() if k not in ("since", "note")}
-        # Instrument cards: mounted_on (devices.toml) + every instrument the current
-        # wiring references ("cluster0.module2.out0" -> "cluster0").
-        instruments = load_instrument_registry(store.data_root)
-        referenced = {str(v).split(".")[0] for v in wiring_ports.values()}
-        mounted_on = (registry.get(dev) or {}).get("mounted_on")
-        if mounted_on:
-            referenced.add(mounted_on)
-        instrument_cards = {k: instruments[k] for k in sorted(referenced) if k in instruments}
+        setup = current_setup(active[1]) if active else None
+        setup_ports = {k: v for k, v in (setup or {}).items()
+                       if k not in ("since", "note", "backend", "instrument_config")}
         return templates.TemplateResponse(
             request,
             "device.html",
@@ -222,9 +211,8 @@ def create_app(
              "history": history, "state_path": str(sfile or ""),
              "device": dev, "devices": store.distinct_devices(),
              "registry": registry.get(dev) or {},
-             "instrument_cards": instrument_cards,
              "cycles": cycles, "active_cycle": active[0] if active else None,
-             "wiring": wiring, "wiring_ports": wiring_ports,
+             "setup": setup, "setup_ports": setup_ports,
              "cooldown_error": cooldown_error},
         )
 

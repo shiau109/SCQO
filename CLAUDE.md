@@ -80,8 +80,9 @@ scqo/
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
   cli/            # the `scqo` command (run/calibrate/find/tag/device/devices/cooldown/
-                  #   sample/sync-launchers): ONE engine, any-directory; backends resolve
-                  #   via the scqo.backends entry-point group; simulated is built in
+                  #   sample/doctor/sync-launchers): ONE engine, any-directory; the
+                  #   device's current cooldown setup picks the backend, resolved via
+                  #   the scqo.backends entry-point group; simulated is built in
                   #   (_backends.ensure_demo_experiments fills the catalog driver-less)
   experiments/
     resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
@@ -114,11 +115,13 @@ history records the `run_id` that caused each device update. State authority:
 calibrates, e.g. qualibrate on QM); `"push"` restores the saved SCQO config into the vendor
 (only for devices SCQO fully owns).
 
-**Multi-device rule (decided 2026-07-05):** `device_name` = the physical SAMPLE (chip),
+**Multi-device rule (decided 2026-07-05):** the device = the physical SAMPLE (chip),
 never the instrument; the instrument is provenance (every run/fit stamps `backend`).
 ONE data_root + ONE index for all samples (`find_runs(device=...)` / `--device` filter;
-per-sample DBs are rejected). With two instruments carrying two samples, the lab config's
-`[qblox]`/`[qm]` tables override `device_name`/`state_path` per backend (`scqo.labconfig`).
+per-sample DBs are rejected). Since v0.5.0 each user selects the sample (`device` in
+user.toml); which instrument carries it — and where its vendor config folder lives —
+is a fact of the device's current cooldown setup (`[[<cycle>.setup]]` in its
+cooldowns.toml), never a config key.
 Instrument-independent sample facts live in the optional human-edited registry
 `<data_root>/devices.toml` (`datastore.load_device_registry`; rendered by the viewer).
 Instrument-DEPENDENT measured values (thermal population etc.) stay in run records with
@@ -278,3 +281,37 @@ name; scqat pins independently, >= v0.1.4) with the manager checklist in RELEASI
 Also: missing-driver error distinguishes wrong-venv from stale-install; the test suite
 is isolated from the runner's real ~/.scqo files (suite-wide conftest fixture); viewer
 tests skip where python-multipart is absent (the QM lock env).
+
+**2026-07-08 — device-centric configuration (v0.5.0; LOCAL ONLY, not yet
+tagged/pushed — no RELEASES.toml entry until the user publishes).** Users select the
+SAMPLE; the registry knows the instrument. Resolution chain: `device` (user.toml >
+`[lab]`; none = built-in simulated demo, unsaved) → the device's cooldown registry →
+ACTIVE cycle → current `[[<cycle>.setup]]` era (latest `since` ≤ today; same date =
+later block in the file wins) → `setup["backend"]` → `scqo.backends` factory, NEW
+signature **`build_backend(cfg, setup)`**. Every missing link is a SystemExit naming
+the exact `scqo cooldown start` fix. Fresh-start: retired keys are simply not read
+(no migration shims — nothing published carried them).
+- **`[[.mapping]]` renamed `[[.setup]]`** and now owns the WHOLE setup: `since` +
+  `backend` (∈ `SETUP_BACKENDS` = qblox|qm|simulated) + `instrument_config` (folder
+  holding ALL vendor config files under canonical names — qblox: `dut_config.json` +
+  `hw_config.json`; qm: `state.json` + `wiring.json`; required for real backends,
+  FORBIDDEN for simulated) + note + port map. LOUD validation in `load_cooldowns`:
+  ≥1 setup per cycle, field rules, within-cycle folder uniqueness (normcase+resolve,
+  path written back resolved); folder EXISTENCE is checked only by factories +
+  doctor, so analysis machines still read registries.
+- **Retired**: `[qblox]`/`[qm]` vendor tables, `[lab]` backend/device_name/state_path,
+  `instruments.toml` (+ its loader — the config folder IS the connection truth), twin
+  modes (`qblox_sim`/`qm_sim`). `state_path` is pure convention
+  `<data_root>/<device>/scqo_state.json`. user.toml keys: `device`/default_tags/
+  parameters_file. `make_session(backend, cfg, *, backend_label)` forces
+  state_sync="push" for simulated (persistence footgun killed); persistence requires
+  data_root AND device; `backend_label` = the resolved setup's backend (provenance).
+- **Index schema v5**: `wiring_since` → `setup_since` (auto-reindex on version
+  mismatch). Post-`cooldown end` runs REFUSE until the next `scqo cooldown start`
+  (was: stamped ""). CLI: `cooldown start` gains `--backend`/`--instrument-config`
+  and writes a real first `[[setup]]` block (+ stderr WARN if canonical files
+  absent); `sample new` prints the no-shared-edit checklist; `devices` is a DEVICE
+  menu; `doctor` checks setup fields, canonical files, and warns on cross-device
+  shared ACTIVE config folders. Real-config test fixtures:
+  `tests/demo_instr_config/` (OPX_OPX1000, QBlox_Scheduler); drivers run
+  parse-grade tests against them (skip-guarded, side-by-side checkout).

@@ -53,12 +53,14 @@ def lab(tmp_path_factory):
     """A datastore with three runs (res spec, ramsey, t1), a SECOND sample sharing the
     same data_root (multi-device paths), and a viewer client over it all."""
     root = tmp_path_factory.mktemp("data")
-    state = root / "scqo_state.json"
-    # Cycle registry BEFORE the runs, so they are stamped with cycle + wiring era.
+    # State file at the <data_root>/<device>/ convention (THE rule since v0.5).
     (root / "devV").mkdir()
+    state = root / "devV" / "scqo_state.json"
+    # Cycle registry BEFORE the runs, so they are stamped with cycle + setup era.
     (root / "devV" / "cooldowns.toml").write_text(
         '[cdV]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
-        '[[cdV.mapping]]\nsince = 2026-07-01\n"q0.readout" = "opx1.fem1.in0"\n',
+        '[[cdV.setup]]\nsince = 2026-07-01\nbackend = "simulated"\n'
+        '"q0.readout" = "opx1.fem1.in0"\n',
         encoding="utf-8",
     )
     sess = Session(
@@ -78,15 +80,11 @@ def lab(tmp_path_factory):
     )
     r_z = sess_z.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["zcool"])
     (root / "devices.toml").write_text(
-        '[chipZ]\ndescription = "second sample on the other fridge"\nmounted_on = "opx1"\n',
-        encoding="utf-8",
-    )
-    (root / "instruments.toml").write_text(
-        '[opx1]\nkind = "qm_opx1000"\naddress = "10.21.19.50"\n',
+        '[chipZ]\ndescription = "second sample on the other fridge"\n',
         encoding="utf-8",
     )
 
-    client = TestClient(create_app(root, device_name="devV", state_path=state))
+    client = TestClient(create_app(root, device_name="devV"))
     return {"client": client, "root": root, "res": r_res, "ram": r_ram, "t1": r_t1, "chipz": r_z}
 
 
@@ -186,14 +184,13 @@ def test_runs_page_cooldown_filter_and_column(lab):
     assert c.get("/", params={"cooldown": "nope"}).text.count("/run/") == 0
 
 
-def test_device_page_shows_cycle_and_wiring(lab):
+def test_device_page_shows_cycle_and_setup(lab):
     page = lab["client"].get("/device").text
     assert "Cooldown cycles" in page
     assert "cdV" in page and "(active)" in page
     assert "PCB v3" in page  # packaging is a cycle fact
-    assert "opx1.fem1.in0" in page  # current wiring table
-    assert "Instrument: opx1" in page  # wiring-referenced instrument card joined
-    assert "10.21.19.50" in page
+    assert "backend <b>simulated</b>" in page  # the current setup's backend
+    assert "opx1.fem1.in0" in page  # its port table
 
 
 def test_multi_device_filter_and_device_page(lab):
@@ -203,13 +200,10 @@ def test_multi_device_filter_and_device_page(lab):
     only_z = c.get("/", params={"device": "chipZ"}).text
     assert rid in only_z and lab["res"]["run_id"] not in only_z
 
-    page = c.get("/device", params={"device": "chipZ"}).text
-    assert "Device: chipZ" in page
-    assert "second sample on the other fridge" in page  # devices.toml card rendered
-    assert rid in page  # history via the <data_root>/<device>/scqo_state.json convention
-    # mounted_on -> instruments.toml join: the instrument card renders connection facts
-    assert "Instrument: opx1" in page
-    assert "10.21.19.50" in page
+    page_z = c.get("/device", params={"device": "chipZ"}).text
+    assert "Device: chipZ" in page_z
+    assert "second sample on the other fridge" in page_z  # devices.toml card rendered
+    assert rid in page_z  # history via the <data_root>/<device>/scqo_state.json convention
 
 
 def test_main_initializes_fresh_data_root_but_rejects_typos(tmp_path, monkeypatch):

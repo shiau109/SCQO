@@ -45,12 +45,12 @@ from pydantic import BaseModel, Field
 
 from .config import _current_operator
 
-SCHEMA_VERSION = 4  # v4: cooldown + wiring_since columns (cycle/wiring-era provenance)
+SCHEMA_VERSION = 5  # v5: setup_since column (renamed from wiring_since; setup = the era record)
 RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
-INSTRUMENTS_FILE = "instruments.toml"  # optional instrument registry (see load_instrument_registry)
 COOLDOWNS_FILE = "cooldowns.toml"  # per device: <data_root>/<device>/cooldowns.toml (see load_cooldowns)
+SETUP_BACKENDS = ("qblox", "qm", "simulated")  # legal [[<cycle>.setup]] backend values
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS runs (
   backend        TEXT NOT NULL,
   operator       TEXT NOT NULL DEFAULT '',
   cooldown       TEXT NOT NULL DEFAULT '',
-  wiring_since   TEXT NOT NULL DEFAULT '',
+  setup_since    TEXT NOT NULL DEFAULT '',
   qubits         TEXT NOT NULL,
   outcome        TEXT NOT NULL,
   outcomes       TEXT NOT NULL,
@@ -96,7 +96,7 @@ class RunRecord(BaseModel):
     backend: str
     operator: str = ""  # OS login of whoever ran it (multi-user SSH provenance)
     cooldown: str = ""  # active cooldown-cycle id when the run started ("" = none declared)
-    wiring_since: str = ""  # `since` date of the wiring mapping in effect ("" = none)
+    setup_since: str = ""  # `since` date of the setup (era) in effect ("" = none)
     qubits: list[str]
     started_at: str  # ISO-8601 local time with UTC offset (matches the folder dates)
     ended_at: str
@@ -199,16 +199,17 @@ class DataStore:
         raise RuntimeError(f"could not allocate a unique run dir for {stamp}-{experiment}")
 
     def run_stamps(self) -> tuple[str, str]:
-        """(cooldown id, wiring ``since``) a run started now should carry — the run's
-        environment provenance: device -> cycle -> wiring era. ("", "") when no cycle
-        registry / no open cycle / no applicable mapping exists."""
+        """(cooldown id, setup ``since``) a run started now should carry — the run's
+        environment provenance: device -> cycle -> setup era. ("", "") when no cycle
+        registry / no open cycle exists — tolerant by design: library Sessions
+        (notebooks) bypass the CLI's loud resolution chain, which is the enforcer."""
         cycles = load_cooldowns(self.data_root, self.device_name)
         active = active_cooldown(cycles)
         if active is None:
             return "", ""
         cid, cycle = active
-        mapping = current_mapping(cycle)
-        return cid, str(mapping["since"])[:10] if mapping else ""
+        setup = current_setup(cycle)
+        return cid, str(setup["since"])[:10] if setup else ""
 
     def persist_run(
         self,
@@ -240,7 +241,7 @@ class DataStore:
         _write_json(run_dir / "device_after.json", device_after)
 
         outcomes = {q: str(o) for q, o in result.get("outcomes", {}).items()}
-        cooldown, wiring_since = self.run_stamps()
+        cooldown, setup_since = self.run_stamps()
         record = RunRecord(
             run_id=run_id,
             experiment=experiment,
@@ -248,7 +249,7 @@ class DataStore:
             backend=backend,
             operator=_current_operator(),
             cooldown=cooldown,
-            wiring_since=wiring_since,
+            setup_since=setup_since,
             qubits=list(params_dump.get("qubits", [])),
             started_at=started_at,
             ended_at=ended_at,
@@ -461,7 +462,7 @@ class DataStore:
     def _upsert(db: sqlite3.Connection, record: RunRecord, parameters: dict, fit: dict) -> None:
         db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, ended_at, experiment, device,"
-            " backend, operator, cooldown, wiring_since, qubits, outcome, outcomes, fit, tags,"
+            " backend, operator, cooldown, setup_since, qubits, outcome, outcomes, fit, tags,"
             " note, error, parameters, updated_device, path, schema_version)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -473,7 +474,7 @@ class DataStore:
                 record.backend,
                 record.operator,
                 record.cooldown,
-                record.wiring_since,
+                record.setup_since,
                 json.dumps(record.qubits),
                 record.outcome,
                 json.dumps(record.outcomes),
@@ -538,15 +539,24 @@ def load_device_registry(data_root: str | Path) -> dict:
 def load_cooldowns(data_root: str | Path, device: str) -> dict:
     """The device's cooldown-cycle registry ``<data_root>/<device>/cooldowns.toml``.
 
-    One table per cycle (start, fridge, packaging, note; ``end`` absent = ACTIVE) with
-    ``[[<id>.mapping]]`` snapshots — each a FULL device-port -> "instrument.port" map
-    with a ``since`` date (reserved keys: since, note). Packaging is fixed per cycle;
-    any port change (broken channel on the same instrument, or a whole-instrument
-    swap) = a new snapshot.
+    One table per cycle (start, fridge, packaging, note; ``end`` absent = ACTIVE),
+    each holding ``[[<id>.setup]]`` era records. A setup carries the WHOLE
+    measurement setup of its era: ``since`` (required date), ``backend`` (required,
+    one of :data:`SETUP_BACKENDS`), ``instrument_config`` (folder holding ALL vendor
+    config files under canonical names — required for real backends, forbidden for
+    "simulated"), optional ``note``, and every other key = device port ->
+    "instrument.port". ANY change — a port, or the whole instrument — is a NEW setup.
 
-    Validation is LOUD — this file stamps every run: corrupt TOML, a non-table cycle,
-    more than one open cycle, or a mapping without ``since`` raise ValueError naming
-    the file. An absent file returns {} (runs stamp cooldown="").
+    Validation is LOUD — this file stamps and drives every run: corrupt TOML, a
+    non-table cycle, more than one open cycle, a cycle with NO setups, a setup
+    missing ``since``/``backend``, an unknown backend, a missing/forbidden
+    ``instrument_config``, or two setups in one cycle sharing a folder (live state
+    written back by runs — sharing corrupts it) all raise ValueError naming the file.
+    ``instrument_config`` is expanduser'd, resolved (relative paths against the
+    registry's folder) and written back normalized, so every consumer sees one form.
+    Folder EXISTENCE is deliberately NOT checked here — analysis machines must read
+    registries whose instrument paths don't exist locally; the driver factory and
+    ``scqo doctor`` check existence. An absent file returns {}.
     """
     path = Path(data_root) / device / COOLDOWNS_FILE
     if not path.is_file():
@@ -563,9 +573,38 @@ def load_cooldowns(data_root: str | Path, device: str) -> dict:
     for cid, cycle in cycles.items():
         if not isinstance(cycle, dict):
             raise ValueError(f"{path}: top-level keys must be cycle tables like [cd8]; {cid!r} is not")
-        for mapping in cycle.get("mapping", []):
-            if "since" not in mapping:
-                raise ValueError(f"{path}: every [[{cid}.mapping]] snapshot needs a 'since' date")
+        setups = cycle.get("setup", [])
+        if not setups:
+            raise ValueError(f"{path}: cycle {cid!r} has no [[{cid}.setup]] — every cycle "
+                             "records at least its initial setup (backend + instrument_config)")
+        folders: set[str] = set()
+        for setup in setups:
+            if "since" not in setup:
+                raise ValueError(f"{path}: every [[{cid}.setup]] needs a 'since' date")
+            backend = setup.get("backend")
+            if backend not in SETUP_BACKENDS:
+                raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: 'backend' must be "
+                                 f"one of {', '.join(SETUP_BACKENDS)}, got {backend!r}")
+            folder = setup.get("instrument_config")
+            if backend == "simulated":
+                if folder is not None:
+                    raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: 'simulated' "
+                                     "takes no instrument_config (the demo device is built in)")
+                continue
+            if not folder:
+                raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: backend "
+                                 f"{backend!r} needs 'instrument_config' (folder with the vendor "
+                                 "config files under canonical names)")
+            resolved = Path(folder).expanduser()
+            if not resolved.is_absolute():
+                resolved = path.parent / resolved
+            normalized = os.path.normcase(str(resolved.resolve()))
+            if normalized in folders:
+                raise ValueError(f"{path}: two setups in cycle {cid!r} point at the same "
+                                 f"instrument_config folder ({folder!r}) — each era writes live "
+                                 "state back; sharing a folder corrupts it")
+            folders.add(normalized)
+            setup["instrument_config"] = str(resolved.resolve())  # one form for all consumers
     open_cycles = [cid for cid, cycle in cycles.items() if "end" not in cycle]
     if len(open_cycles) > 1:
         raise ValueError(
@@ -582,36 +621,23 @@ def active_cooldown(cycles: dict) -> tuple[str, dict] | None:
     return None
 
 
-def current_mapping(cycle: dict) -> dict | None:
-    """The wiring snapshot in effect: latest ``since`` <= today (None if none yet).
+def current_setup(cycle: dict) -> dict | None:
+    """The setup (era record) in effect: latest ``since`` <= today (None if none yet).
 
-    Snapshots are FULL maps, so no delta reconstruction — the latest applicable one
-    IS the current wiring. Future-dated snapshots (pre-staged edits) are ignored.
+    Setups are FULL records (backend + instrument_config + port map), so no delta
+    reconstruction — the latest applicable one IS the current setup. Equal dates
+    break to the LATER block in the file (a same-day fix supersedes the morning's
+    entry). Future-dated setups (pre-staged edits) are ignored.
     """
     today = datetime.now().date().isoformat()
-    applicable = [m for m in cycle.get("mapping", []) if str(m["since"])[:10] <= today]
-    if not applicable:
-        return None
-    return max(applicable, key=lambda m: str(m["since"]))
+    best = None
+    for setup in cycle.get("setup", []):
+        since = str(setup["since"])[:10]
+        if since <= today and (best is None or since >= str(best["since"])[:10]):
+            best = setup
+    return best
 
 
-def load_instrument_registry(data_root: str | Path) -> dict:
-    """The optional instrument registry ``<data_root>/instruments.toml`` -> dict.
-
-    One TOML table per instrument — the keys that wiring mappings and devices.toml's
-    ``mounted_on`` reference::
-
-        [cluster0]
-        kind = "qblox_cluster"
-        address = "192.168.0.2"
-        connection = "ethernet"
-        note = "left rack"
-
-    Human-edited documentation the viewer and the discovery script render; the vendor
-    configs (hw_config.json, QUAM state) remain the executable truth that actually
-    drives hardware — this registry documents, it never drives.
-    """
-    return _load_toml_registry(Path(data_root) / INSTRUMENTS_FILE)
 
 
 if __name__ == "__main__":  # python -m scqo <data_root>

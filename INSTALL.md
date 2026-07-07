@@ -120,84 +120,48 @@ machine actually drives a cluster; finding/loading/viewing saved data never need
 
 ## 2. The lab config: `~\.scqo\config.toml`
 
-This one small file tells every script where data goes, which device you are on,
-and which backend runs. Create it at `~\.scqo\config.toml` (Windows:
-`C:\Users\<you>\.scqo\config.toml`; macOS: `/Users/<you>/.scqo/config.toml`).
-Save it as **UTF-8 without BOM** — Python's `tomllib` rejects UTF-16 and BOM'd
-files. Normal editors do this by default; PowerShell 5.1's `Out-File`/`Set-Content
--Encoding UTF8` writes a BOM, so when scripting the file use
-`[IO.File]::WriteAllText($path, $text)` instead.
-
-**Backend modes** — pick how real the setup is:
-
-| `backend =` | device tree | data | writebacks persist to |
-|---|---|---|---|
-| `"simulated"` | built-in demo qubits | synthetic | scqo state file (use `state_sync="push"`) |
-| `"qblox_sim"` | **your REAL dut config** (working copy) | synthetic | the working `dut_config.json` |
-| `"qm_sim"` | **your REAL QUAM state** (working copy) | synthetic | the working `state.json` |
-| `"qblox"` / `"qm"` | real instrument | real | vendor config (QM: keep `state_sync="pull"`) |
-
-The `*_sim` modes are the **virtual twin**: real qubit names and calibration values as
-starting points, no hardware needed — the recommended practice mode for students. Set
-them up once by copying your vendor config into a working folder (originals stay
-pristine), e.g. `copy dut_config_AS_QRC.json D:\qpu_data\SQ_demo\qblox_state\dut_config.json`.
-
-Windows (virtual-twin example):
+Since v0.5.0 this file is TINY: it says where the data lives — everything else
+follows the DEVICE. Which instrument a sample hangs on, and where that instrument's
+vendor config files live, is recorded per era in the sample's own cooldown registry
+(`<data_root>\<device>\cooldowns.toml`, below); the scqo state file is pure
+convention (`<data_root>\<device>\scqo_state.json` — no key for it). Create the
+config at `~\.scqo\config.toml` (Windows: `C:\Users\<you>\.scqo\config.toml`;
+macOS: `/Users/<you>/.scqo/config.toml`). Save it as **UTF-8 without BOM** —
+Python's `tomllib` rejects UTF-16 and BOM'd files. Normal editors do this by
+default; PowerShell 5.1's `Out-File`/`Set-Content -Encoding UTF8` writes a BOM, so
+when scripting the file use `[IO.File]::WriteAllText($path, $text)` instead.
 
 ```toml
 [lab]
-data_root   = 'D:\qpu_data'                          # all measurement data lands here
-device_name = "SQ_demo"                              # the SAMPLE (chip) name — never the instrument
-state_path  = 'D:\qpu_data\SQ_demo\scqo_state.json'  # change history (provenance)
-backend     = "qblox_sim"                            # REAL device tree, synthetic data
-default_tags = ["cooldown1"]                         # stamped on EVERY run; edit each cooldown
-
-[qblox]
-config_dir = 'D:\qpu_data\SQ_demo\qblox_state'       # working copy of dut_config.json (+ hw_config.json for "qblox")
-
-# QM virtual twin instead: backend = "qm_sim" plus
-# [qm]
-# state_dir = 'D:\qpu_data\SQ_demo\qm_state'         # working copy of state.json + wiring.json
+data_root   = 'D:\qpu_data'      # all measurement data + registries land here
+device      = "chipA"            # OPTIONAL lab-default sample (omit on multi-user servers)
+default_tags = ["projX"]         # optional; stamped on every run
+# state_sync = "pull"            # optional; real backends only ("simulated" always persists)
 ```
 
-**Two instruments, two samples, one PC:** each vendor table may override
-`device_name`/`state_path` with the sample mounted on *that* instrument — switching
-`backend` then switches the sample automatically, so runs can never land under the
-wrong device:
+(macOS/Linux: `data_root = "~/qpu_data"` — `~` is expanded.)
 
-```toml
-[qblox]
-config_dir  = 'D:\qpu_data\chipA\qblox_state'
-device_name = "chipA"
-state_path  = 'D:\qpu_data\chipA\scqo_state.json'
+**Two backend realities** (which one runs is decided by the device's current setup,
+not by this file):
 
-[qm]
-state_dir   = 'D:\qpu_data\chipB\qm_state'
-device_name = "chipB"
-state_path  = 'D:\qpu_data\chipB\scqo_state.json'
-```
-
-**QUAM state authority (QM):** `[qm] state_dir` names THE state a session uses in
-**both** `qm_sim` and real `qm` modes (since v0.1.2 — before that, real mode silently
-resolved through `~/.qualibrate`, the hidden second authority that broke the server's
-first real run). A machine measuring the real instrument points it at the LIVE state
-folder; a tier-2 dev machine doing a real prove-out points it at a **fresh copy of
-the server's live state** (scp it over first) — `state_sync = "pull"` keeps
-writebacks inside the copy, so the canonical state is never touched.
+| setup `backend =` | device tree | data | notes |
+|---|---|---|---|
+| `"simulated"` | built-in demo qubits (q0/q1) | synthetic | the practice mode; state always persists |
+| `"qblox"` / `"qm"` | real instrument | real | needs the driver repo's venv; QM keeps `state_sync="pull"` |
 
 Optionally describe each sample in `<data_root>\devices.toml` (one table per chip:
-description, design values, where it is mounted — instrument-independent facts only);
-the viewer's Device page shows the matching card. All samples share ONE `data_root`
-and ONE index — filter with `--device` / the viewer's device dropdown.
+description, design values — instrument-independent facts only); the viewer's Device
+page shows the matching card. All samples share ONE `data_root` and ONE index —
+filter with `--device` / the viewer's device dropdown.
 
 **Moving a sample to the other instrument** (e.g. chipA from Qblox to the OPX1000)
 needs **no data action at all** — the folder, index, history and trends follow the
-sample name; runs before/after the move stay distinguishable by their `backend`.
-The operator's checklist:
+sample name; runs before/after the move stay distinguishable by their `backend` and
+setup era. The operator's checklist:
 
-1. Config: carry the sample in the NEW instrument's table (`[qm] device_name =
-   "chipA"` + its `state_path`), set `backend = "qm"`; update `mounted_on` in
-   `devices.toml`; new fridge insert = new cooldown → edit `default_tags`.
+1. Record the change in chipA's cooldown registry: a new `[[<cycle>.setup]]` block
+   (new insertion = new cycle via `scqo cooldown start`) with `backend = "qm"` and
+   the new `instrument_config` folder.
 2. Build the new vendor config as usual (wiring/attenuation are new-fridge facts).
    **Seed the frequencies from the sample's last known values**: open the viewer's
    Device page (it reads saved snapshots, so it works after the old instrument is
@@ -205,28 +169,16 @@ The operator's checklist:
    properties and transfer well.
 3. Do **NOT** transfer `pi_amp` / `readout_amp` — they encode the setup (line
    attenuation, output gain). Re-derive them with the standard bring-up:
-   `python scripts\calibrate.py` on the new instrument.
+   `scqo calibrate` on the new instrument.
 4. Keep **qubit names identical across instruments** — `q1` must mean the same
    physical qubit in `dut_config.json` AND in the QUAM `state.json`. Names belong to
    the sample; different names would split its trends and history.
 
-macOS / Linux (`~` is expanded for you; plain-simulated example):
-
-```toml
-[lab]
-data_root   = "~/qpu_data"
-device_name = "SQ_demo"
-state_path  = "~/qpu_data/SQ_demo/scqo_state.json"
-backend     = "simulated"
-state_sync  = "push"
-default_tags = ["cooldown1"]
-```
-
-State persistence: in the `*_sim` twin modes the working vendor config **is** the
-device state — it updates on every successful run, so calibrations persist across
-invocations with the default `state_sync = "pull"`. Only the plain `"simulated"` demo
-needs `state_sync = "push"` to persist, since its device is created fresh in memory
-each time. On QM control PCs `"pull"` is mandatory — see LCHQMDriver's CLAUDE.md.
+State persistence: `"simulated"` setups always persist (push is forced — an
+in-memory demo device has no vendor truth to pull). Real backends default to
+`state_sync = "pull"`: the vendor config is the truth at startup and scqo pushes
+only values it freshly measures. On QM control PCs `"pull"` is mandatory — see
+LCHQMDriver's CLAUDE.md.
 
 Other notes:
 - A temporary alternative config can be selected per shell
@@ -256,10 +208,8 @@ qubits = ["q1"]          # even required knobs may get a standing default
   `python scripts\run_experiment.py resonator_spectroscopy` — and
   `calibrate.py` runs every sequence step with these effective defaults too.
 - `--help` on any launcher marks file-sourced values, e.g. `default=15e6 [parameters.toml]`.
-- Working on several projects? Point `parameters_file` in `[lab]` at a different
-  file to swap the whole set. Two samples on two instruments? Each vendor table
-  (`[qblox]`/`[qm]`) may override `parameters_file` with that sample's own set —
-  exactly like `device_name`/`state_path` above.
+- Working on several projects? Point `parameters_file` in `[lab]` — or in your
+  personal `user.toml` (next subsection) — at a different file to swap the whole set.
 - Same encoding rule as the config: **UTF-8 without BOM**.
 - Failure rules match the config's: a *named* `parameters_file` that is missing, or a
   file that does not parse, **fails loudly** (this file changes what gets measured);
@@ -281,47 +231,44 @@ On a multi-account server with ONE machine-wide shared config (`SCQO_CONFIG`), e
 account may keep a small personal overlay — flat keys, no tables:
 
 ```toml
-backend = "qm"                    # which instrument I measure — the SAMPLE follows it
+device = "chipA"                  # which SAMPLE I work on — the instrument follows it
 default_tags = ["projA"]          # appended to the shared tags, deduped
 # parameters_file = "~/projB.toml"     # OPTIONAL — only to use a DIFFERENT file;
 #                                      # your ~\.scqo\parameters.toml applies automatically
 ```
 
-Note the relationship to the parameters section above: your own
-`~\.scqo\parameters.toml` needs **no** line here — it is found automatically.
-`parameters_file` exists for swapping in a different set (e.g. per project) and then
-beats the vendor table and `[lab]`.
+You pick the **sample**, nothing else: which instrument carries it right now — and
+where that instrument's config files live — is the manager's fact, recorded in the
+device's own cooldown registry (next subsection). Note the relationship to the
+parameters section above: your own `~\.scqo\parameters.toml` needs **no** line here —
+it is found automatically. `parameters_file` exists for swapping in a different set
+(e.g. per project) and then beats `[lab]`.
 
-Only these three keys are allowed — anything else (data_root, device_name,
-state_path...) is machine wiring and fails loudly: a user cannot repoint where data
-lands or which sample an instrument carries. The overlay applies only on top of a
+Only these three keys are allowed — anything else (data_root, backend,
+state_sync...) is machine wiring and fails loudly: a user cannot repoint where data
+lands or which instrument a run drives. The overlay applies only on top of a
 FOUND base config, never to the built-in defaults. `$SCQO_USER_CONFIG` selects a
 different overlay file, or disables the overlay with `none` (scripts/tests use this).
-See which instruments you can select — and the exact line to write — with
-`python scripts\devices.py` (touches no instrument).
+See which devices you can select — and the exact line to write — with
+`scqo devices` (touches no instrument).
 
-### Registries: instruments, cooldown cycles, wiring
+### Registries: samples and cooldown cycles
 
-Three optional hand-edited TOML files complete the lab picture. The principle:
+Two hand-edited TOML files complete the lab picture. The principle:
 **every fact lives at the level that owns it** — and every run is stamped with its
-full environment (cycle id + wiring era + operator + backend).
+full environment (cycle id + setup era + operator + backend).
 
-`<data_root>\instruments.toml` — one table per instrument (connection facts the
-wiring mappings and `devices.toml`'s `mounted_on` reference; documentation only —
-the vendor configs remain what actually drives hardware):
-
-```toml
-[cluster0]
-kind = "qblox_cluster"
-address = "192.168.0.2"
-connection = "ethernet"
-```
+`<data_root>\devices.toml` — optional; one table per sample (instrument-independent
+facts only: description, design values). The viewer's Device page shows the matching
+card; display-only, a typo warns and is ignored.
 
 `<data_root>\<device>\cooldowns.toml` — the device's cycle registry: one table per
-cooldown (packaging is FIXED per cycle — you cannot repackage cold), with dated FULL
-wiring snapshots underneath. Add a new `[[<id>.mapping]]` block whenever ANY port
-changes — a broken channel moving on the same instrument counts, and so does swapping
-the whole instrument:
+cooldown (packaging is FIXED per cycle — you cannot repackage cold), with dated
+`[[<id>.setup]]` era records underneath. A **setup** is the whole measurement
+arrangement: which backend drives the sample, where that backend's config files
+live, and the device-port → instrument-port map. Hand-add a new block whenever ANY
+of it changes — a broken channel moving on the same instrument counts, and so does
+swapping the whole instrument:
 
 ```toml
 [cd8]
@@ -330,46 +277,71 @@ fridge = "BlueforsA"
 packaging = "PCB v3, Al box"
 # end = 2026-08-01                # absent = this cycle is ACTIVE
 
-[[cd8.mapping]]
+[[cd8.setup]]
 since = 2026-07-06
+backend = "qblox"                                    # qblox | qm | simulated
+instrument_config = 'D:\qpu_data\chipA\qblox_cd8'    # folder with ALL vendor config files
 "q1.drive"   = "cluster0.module2.out0"
 "q1.readout" = "cluster0.module6.in0"
 
-[[cd8.mapping]]                    # same instrument, one dead channel — still a change
+[[cd8.setup]]                      # same instrument, one dead channel — still a new setup
 since = 2026-07-15
 note = "module2 out0 dead"
+backend = "qblox"
+instrument_config = 'D:\qpu_data\chipA\qblox_cd8'
 "q1.drive"   = "cluster0.module3.out1"
 "q1.readout" = "cluster0.module6.in0"
 ```
 
-Manage cycles with `scqo cooldown` — works from any directory
-(no args = validate + show; `start <id>` / `end` do safe minimal file edits;
-mapping snapshots are hand-edited).
-Every run is then auto-stamped with the active cycle and wiring era — query with
-`scqo find --cooldown cd8`, filter in the viewer, and stop hand-editing a
-cooldown tag into `default_tags`. Failure rules: `instruments.toml`/`devices.toml`
-are display-only (a typo warns and is ignored); `cooldowns.toml` STAMPS RUNS, so a
-broken file fails loudly at run start — before any instrument time is spent.
+The rules (validated LOUDLY at run start — this file stamps runs AND selects the
+instrument, so a broken one fails before any instrument time is spent):
 
-**Upgrading from v0.2.x or older (fresh-start policy):** existing data was declared
-disposable — there is no migration. The index rebuilds itself (schema check); delete
-`<device>\scqo_state.json` if present (it reseeds from the vendor config; history
-starts fresh); old run folders may stay (reindex skips anything unreadable).
+- **Every cycle needs at least one setup** — `scqo cooldown start` writes the first.
+- `since` and `backend` are required. The setup in effect is the latest `since` not
+  in the future (same date twice: the later block in the file wins).
+- `instrument_config` is required for real backends and **forbidden** for
+  `"simulated"` (the built-in demo has nothing to configure). It names a folder
+  holding ALL the vendor's config files under their **canonical names** —
+  qblox: `dut_config.json` + `hw_config.json`; qm: `state.json` + `wiring.json`.
+  A relative path resolves against the registry's own folder; suggested layout:
+  `<data_root>\<device>\<backend>_<cycle>\`.
+- **Two setups must NEVER point at the same folder** — a config folder carries live
+  state, and two eras writing one folder corrupt both. Duplicates within a cycle are
+  refused outright; `scqo doctor` additionally warns when the ACTIVE cycles of two
+  different devices share one.
+
+Manage cycles with `scqo cooldown` — works from any directory (no args = validate +
+show the current setup; `start <id> --backend ... [--instrument-config <folder>]` /
+`end` do safe minimal file edits; later setup blocks are hand-edited). Every run is
+then auto-stamped with the active cycle and setup era — query with
+`scqo find --cooldown cd8`, filter in the viewer, and stop hand-editing a cooldown
+tag into `default_tags`. After `scqo cooldown end`, runs on that device **refuse**
+until the next `scqo cooldown start` — an ended cycle has no setup to resolve.
+
+**Upgrading to v0.5.0 (fresh-start policy, no migration):** the shared config shrinks
+to §2's example — `[lab] backend`/`device_name`/`state_path` and the `[qblox]`/`[qm]`
+tables are simply no longer read; `user.toml` selects a `device` instead of a
+`backend`; `[[<id>.mapping]]` blocks become `[[<id>.setup]]` and gain `backend` (+
+`instrument_config` for real backends); `instruments.toml` is retired (delete it —
+the config folder is the connection truth). The run index rebuilds itself (schema
+check); old runs reindex with an empty setup era.
 
 ### Adding a new sample
 
-One manual edit, two optional entries, everything else auto-creates.
-`scqo sample new <name> --backend qblox --instrument cluster0` (any directory) prints
-all of it paste-ready and creates the data folder (it never edits shared files):
+Nothing shared to edit — a sample IS its data folder plus its own cooldown registry.
+`scqo sample new <name>` (any directory) creates the data folder and prints every
+remaining step paste-ready (it never edits shared files):
 
-1. **Manual (manager)**: the shared config's vendor table (`[qblox]`/`[qm]`
-   `device_name` + `state_path` — the sample follows that instrument), or `[lab]
-   device_name` for simulated. Twin modes also need the vendor-config working copy.
-2. **Optional registries**: a `devices.toml` entry (sample facts, `mounted_on`) and —
-   once per *instrument*, not per sample — an `instruments.toml` entry.
-3. **Automatic on first use**: `<data_root>\<name>\` run folders, `scqo_state.json`,
-   the index row, viewer pages; `cooldowns.toml` via `scqo cooldown start cd1 ...`
-   (hand-add its `[[cd1.mapping]]` wiring snapshot). Verify with `scqo devices`.
+1. **Manager, at insertion**: start the first cycle —
+   `scqo cooldown start cd1 --backend qblox --instrument-config <folder>` (or
+   `--backend simulated` for practice, no folder) — then copy the vendor config
+   files into that folder under the canonical names and hand-add the port lines to
+   the written `[[cd1.setup]]` block.
+2. **Optional**: a `devices.toml` entry (description/design facts for the viewer).
+3. **Users**: `device = "<name>"` in `~\.scqo\user.toml` — that is the whole
+   selection. Everything else auto-creates on first use: `<data_root>\<name>\` run
+   folders, `scqo_state.json`, the index row, viewer pages. Verify with
+   `scqo devices`.
 
 ### Factory reset (make a machine "new" again)
 
@@ -394,8 +366,8 @@ keep OFF the NAS first** — then delete each account's `~\.scqo\` personal file
 Keep (or recreate) the machine-wide `SCQO_CONFIG` shared config file, `git fetch
 --tags && git checkout <new tag>` in each repo, and per the fresh-start rule delete
 `scqo_state.json` (it reseeds from the vendor configs). Re-seed the registries
-(`instruments.toml`, `devices.toml`, per-device `cooldowns.toml`) before the first
-measurement so runs are stamped from day one.
+(`devices.toml`, per-device `cooldowns.toml` via `scqo cooldown start`) before the
+first measurement so runs are stamped from day one.
 
 ### Developer quickstart (local, no hardware)
 
@@ -422,29 +394,26 @@ writes at the server's data — §5):
 
    ```toml
    [lab]
-   data_root   = 'D:\qpu_data_dev'                          # scratch, yours alone
-   device_name = "simdev"
-   state_path  = 'D:\qpu_data_dev\simdev\scqo_state.json'
-   backend     = "simulated"                                # demo qubits, synthetic data
-   state_sync  = "push"                                     # simulated needs push to persist
+   data_root = 'D:\qpu_data_dev'    # scratch, yours alone
+   device    = "simdev"             # the practice sample you are about to declare
    ```
 
-   (Swap to the virtual twin — `qblox_sim`/`qm_sim` + a copied vendor config, table
-   above — when you want your REAL device tree with synthetic data.)
-4. **Optionally seed the registries** to exercise the full provenance chain:
-   `D:\qpu_data_dev\instruments.toml`, `devices.toml`, and a first cycle:
+   (With no config at all everything still runs — simulated, nothing saved.)
+4. **Start the sample's first cycle** — required: with a device selected, every run
+   must resolve a setup (which backend drives the sample) and be stamped with it:
 
    ```powershell
-   scqo cooldown start cd1 --fridge dev --packaging "sim"
+   scqo cooldown start cd1 --backend simulated --fridge dev --packaging "sim"
    ```
 
-   (then hand-add a `[[cd1.mapping]]` block). Every run is now stamped with cycle +
-   wiring era + operator.
+   Every run is now stamped with cycle + setup era + operator, and `simulated`
+   setups always persist their state (push is forced — §2).
 5. **Verify offline**: `cd D:\github\SCQO; python -m pytest -q` (§3 — all green, no
    instrument).
 6. **First run + look at it** (any directory — the `scqo` command needs no repo):
 
    ```powershell
+   scqo doctor                             # health check — everyone's first move
    scqo devices                            # the menu — what can I select?
    scqo run resonator_spectroscopy         # first saved, stamped run
    scqo find --limit 5
@@ -508,7 +477,7 @@ instruments ── lab server (a normal PC; runs a TAGGED, stable version)
 
 tier-1 laptop     browser -> http://<server>:8080 ; ssh <user>@<server> to measure
 analysis laptop   view env (section 1) + own config.toml, data_root = the NAS copy
-tier-2/3 dev PC   full local setup as in section 1 (sim/twin backends, contrib sandbox)
+tier-2/3 dev PC   full local setup as in section 1 (simulated setups, contrib sandbox)
 ```
 
 The rules that make this safe:
@@ -517,7 +486,7 @@ The rules that make this safe:
   SQLite's WAL mode does not work on network shares. The NAS holds a *mirror*
   refreshed by a scheduled task; the folders are the truth (that's what the backup
   protects) and the index rebuilds anywhere, so it doesn't even need mirroring.
-- **One authoritative config per server** (instrument → sample mapping). With one
+- **One authoritative config per server** (the canonical `data_root`). With one
   login account per student, per-user `~\.scqo\config.toml` silently leaves every
   OTHER account on built-in defaults (simulated, unsaved!) — put the file at a shared
   path and select it machine-wide instead (admin, once):
@@ -528,13 +497,13 @@ The rules that make this safe:
   `~\.scqo\parameters.toml` (section 2); setting it would pin ONE parameter set for
   every account — and a missing path fails loudly for all of them.
   **The sanctioned per-user layer on top of the shared config is `~\.scqo\user.toml`**
-  (section 2): each account picks its own `backend` (= instrument = device),
-  `default_tags` and `parameters_file` there — and nothing else.
-  **Recommended server policy: OMIT `backend` from the shared config** (the built-in
-  default is `simulated`), so an account that has not yet chosen an instrument in its
-  `user.toml` cannot touch hardware by accident — `scqo devices` prints the exact
-  line to write. On single-user dev machines, setting `backend` directly in your own
-  `config.toml` remains the normal, sufficient form.
+  (section 2): each account picks its own `device` (the sample), `default_tags` and
+  `parameters_file` there — and nothing else.
+  **Recommended server policy: OMIT `device` from the shared config**, so an account
+  that has not yet chosen a sample in its `user.toml` gets the simulated demo
+  (nothing saved) and cannot touch hardware by accident — `scqo devices` prints the
+  exact line to write. On single-user dev machines, setting `device` directly in
+  your own `config.toml` remains the normal, sufficient form.
 - Simultaneous users are supported and tested (`tests/test_index_scale.py`), but
   **one measurement at a time per instrument** remains a social convention — the
   instruments themselves cannot run two programs at once.
@@ -636,12 +605,13 @@ read-only command.
 | `ModuleNotFoundError: scqo` | no venv activated — Windows: `.venv-view\Scripts\Activate.ps1`; macOS/Linux: `source .venv-view/bin/activate` |
 | `scqo: command not found` / not recognized | no venv activated, or scqo upgraded across v0.4.0 without re-running the section-1 install line (the command registers at install time). `Get-Command scqo` shows which venv's command you're getting |
 | viewer: `missing package: uvicorn` (or fastapi/jinja2) | **wrong venv activated** — the viewer lives in every section-1 env; check the prompt says `(view)`, `(qblox)` or `(.venv-qm)`, not something stale |
-| `backend 'qblox' needs the 'qblox' driver, which is not installed...` | right command, wrong venv (the view env has no instrument drivers by design) — the message names the venv to activate |
+| `device ... is on backend 'qblox' ... driver is not registered in this environment` | right command, wrong venv (the view env has no instrument drivers by design), or a stale editable install — the message distinguishes both and names the venv / the install line to re-run |
 | `ModuleNotFoundError: lchqb` / `qblox_scheduler` from a run script | you're in the view env (by design it has no instrument libs) — activate `.venv-qblox` to measure |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (intentional loud failure — better than silently unsaved) |
 | `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2. A personal `user.toml` does NOT rescue this: the overlay needs a base config |
-| `... not allowed in a user overlay` | your `~\.scqo\user.toml` sets a machine-wiring key — only `backend` / `default_tags` / `parameters_file` are personal (section 2) |
-| `invalid cooldown registry ...` at run start | `cooldowns.toml` is broken or has two open cycles — it stamps runs, so it fails BEFORE instrument time is spent; `cooldown.py` (no args) is the validator |
+| `... not allowed in a user overlay` | your `~\.scqo\user.toml` sets a machine-wiring key — only `device` / `default_tags` / `parameters_file` are personal (section 2) |
+| `invalid cooldown registry ...` at run start | `cooldowns.toml` is broken (two open cycles, a cycle without a `[[.setup]]` block, a real-backend setup without `instrument_config`, two setups sharing a folder...) — it stamps runs AND selects the instrument, so it fails BEFORE instrument time is spent; `scqo cooldown` (no args) is the validator |
+| `device ... has no cooldown registry yet` / `no ACTIVE cooldown cycle` at run start | intentional refusal: with a device selected, every run must resolve a setup — the message names the exact `scqo cooldown start` line. The same refusal appears after `scqo cooldown end` until the next cycle starts |
 | self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) |
 | `Repository not found` when cloning | the repo is (still) private and the active GitHub credential cannot see it — GitHub reports 404, not 403, to unauthorized users; sign in with an account that has access |
 | self-test: `Unexpected attribute 'lo_mode'` / `'__package_versions__'` (or similar) | the vendor state file was written by a NEWER quam/vendor lib than this env's pin — delete the unknown null attributes from the **working copy** (originals untouched), or bump the lock deliberately after re-validation |

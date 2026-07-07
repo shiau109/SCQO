@@ -15,8 +15,14 @@ from pathlib import Path
 
 
 def _run_cli(tmp_path: Path, *args: str, parameters_toml: str | None = None) -> subprocess.CompletedProcess:
-    """Run `scqo <args>` against a temp lab config (simulated, persisted)."""
-    lines = ["[lab]", 'backend = "simulated"', f"data_root = '{(tmp_path / 'data').as_posix()}'"]
+    """Run `scqo <args>` against a temp lab: device simdev on a simulated setup."""
+    data_root = tmp_path / "data"
+    (data_root / "simdev").mkdir(parents=True, exist_ok=True)
+    reg = data_root / "simdev" / "cooldowns.toml"
+    if not reg.is_file():
+        reg.write_text('[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\n'
+                       'backend = "simulated"\n', encoding="utf-8")
+    lines = ["[lab]", 'device = "simdev"', f"data_root = '{data_root.as_posix()}'"]
     if parameters_toml is not None:
         params = tmp_path / "parameters.toml"
         params.write_text(parameters_toml, encoding="utf-8")

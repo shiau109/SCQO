@@ -1,7 +1,4 @@
-"""`scqo sample` — the add-a-sample scaffold (prints snippets, never edits shared files).
-
-Absorbs LCHQBDriver/tests/test_sample_scaffold.py.
-"""
+"""`scqo sample` — the add-a-sample scaffold (v0.5.0: no shared-config edit at all)."""
 
 from __future__ import annotations
 
@@ -22,44 +19,24 @@ def _run(tmp_path: Path, config: Path | None, *args: str) -> subprocess.Complete
 
 
 def _config(tmp_path: Path) -> Path:
-    data_root = tmp_path / "data"
-    data_root.mkdir()
-    (data_root / "instruments.toml").write_text(
-        '[cluster0]\nkind = "qblox_cluster"\naddress = "192.168.0.2"\n', encoding="utf-8"
-    )
+    (tmp_path / "data").mkdir()
     config = tmp_path / "config.toml"
-    config.write_text(
-        f"[lab]\nbackend = \"simulated\"\ndevice_name = \"demo\"\ndata_root = '{data_root.as_posix()}'\n",
-        encoding="utf-8",
-    )
+    config.write_text(f"[lab]\ndata_root = '{(tmp_path / 'data').as_posix()}'\n", encoding="utf-8")
     return config
 
 
-def test_scaffold_prints_snippets_and_creates_folder(tmp_path):
+def test_scaffold_prints_steps_and_creates_folder(tmp_path):
     config = _config(tmp_path)
-    proc = _run(tmp_path, config, "new", "chipC", "--backend", "qblox", "--instrument", "cluster0",
-                "--description", "3-qubit test chip")
+    proc = _run(tmp_path, config, "new", "chipC", "--description", "3-qubit test chip")
     assert proc.returncode == 0, proc.stderr
     out = proc.stdout
-    assert "[qblox]" in out and '"chipC"' in out  # paste-ready vendor table
-    assert "chipC/scqo_state.json" in out
+    assert "scqo cooldown start cd1 --backend" in out  # the ONE manual manager step
     assert "[chipC]" in out and "3-qubit test chip" in out  # devices.toml block
-    assert 'mounted_on = "cluster0"' in out
-    # known instrument -> NO instruments.toml scaffold section
-    assert "is not\n   registered yet" not in out
-    assert "scqo cooldown start" in out  # next steps use the console command
+    assert 'device = "chipC"' in out  # the user.toml selection line
+    assert "config.toml" not in out.split("created")[1]  # NO shared-config paste anymore
     assert (tmp_path / "data" / "chipC").is_dir()  # the one write
-
-    # the shared files were NOT touched (governance)
+    # shared config untouched (governance)
     assert "chipC" not in config.read_text(encoding="utf-8")
-    assert "chipC" not in (tmp_path / "data" / "instruments.toml").read_text(encoding="utf-8")
-
-
-def test_unknown_instrument_gets_registry_snippet(tmp_path):
-    proc = _run(tmp_path, _config(tmp_path), "new", "chipD", "--backend", "qm", "--instrument", "fridgeX")
-    assert proc.returncode == 0, proc.stderr
-    assert "[qm]" in proc.stdout and "state_dir" in proc.stdout
-    assert "[fridgeX]" in proc.stdout  # unknown instrument -> instruments.toml scaffold
 
 
 def test_existing_name_warns(tmp_path):
@@ -72,7 +49,7 @@ def test_existing_name_warns(tmp_path):
 
 def test_requires_data_root_and_checklist_works(tmp_path):
     config = tmp_path / "config.toml"
-    config.write_text('[lab]\nbackend = "simulated"\n', encoding="utf-8")
+    config.write_text("[lab]\n", encoding="utf-8")
     proc = _run(tmp_path, config, "new", "chipC")
     assert proc.returncode != 0
     assert "data_root" in proc.stderr
@@ -80,3 +57,4 @@ def test_requires_data_root_and_checklist_works(tmp_path):
     checklist = _run(tmp_path, config)  # no command -> the self-documenting checklist
     assert checklist.returncode == 0
     assert "MANUAL" in checklist.stdout and "AUTOMATIC" in checklist.stdout
+    assert "cooldown start" in checklist.stdout

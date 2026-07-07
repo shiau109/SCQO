@@ -18,9 +18,10 @@ cluster, `.venv-qm` on the OPX1000. Cooldowns are no longer a tag you maintain:
 the manager registers each cycle (`scqo cooldown`), and every run you take is
 auto-stamped with it — findable via `scqo find --cooldown`.
 
-Everything below works identically on the simulated backend, the **virtual twin** of
-your real chip (`qblox_sim`/`qm_sim` — the recommended practice mode), and real
-hardware: the backend choice lives in the config, not in the commands.
+Everything below works identically on the simulated backend (the practice mode) and
+on real hardware: you select a **device** (the sample), and which instrument carries
+it right now is a fact of its current cooldown setup — recorded by the manager,
+never typed into a command.
 
 ## 1. The system in one picture
 
@@ -32,7 +33,7 @@ you (script / notebook / later: GUI or AI agent)
         │
    Experiment  = probe (instrument half)  +  estimator (analysis half, scqat)
         │
-   Backend     = Simulated | virtual twin | Qblox (LCHQBDriver) | QM (LCHQMDriver)
+   Backend     = Simulated | Qblox (LCHQBDriver) | QM (LCHQMDriver)
         │
    DataStore   = every run saved to a folder + searchable SQLite index
 ```
@@ -232,8 +233,9 @@ like this:
 
 Your account carries your own settings — no shared file to fight over:
 
-- `~/.scqo/user.toml` — pick YOUR instrument (`backend = "qm"`; the sample follows
-  it) and your project tags. Only personal keys are allowed.
+- `~/.scqo/user.toml` — pick YOUR sample (`device = "chipA"`; the instrument
+  follows it via the device's cooldown registry) and your project tags. Only
+  personal keys are allowed.
 - `~/.scqo/parameters.toml` — your standing experiment parameters (three-tier rule
   in section 2). Applies automatically — no user.toml line needed; the optional
   `parameters_file` key in user.toml exists only to swap in a DIFFERENT file.
@@ -248,7 +250,7 @@ appears (clean strays with `Get-Process notepad | Stop-Process`). Use one of:
    ```powershell
    type ~\.scqo\user.toml                     # read
    [IO.File]::WriteAllText("$env:USERPROFILE\.scqo\user.toml", @'
-   backend = "qblox"
+   device = "chipA"
    default_tags = ["projA"]
    '@)
    ```
@@ -260,8 +262,8 @@ appears (clean strays with `Get-Process notepad | Stop-Process`). Use one of:
    `scp parameters.toml <you>@<server>:.scqo/`.
 3. **VS Code Remote-SSH** if you edit these often — a real editor saving directly
    on the server, correct encoding by default.
-- Don't know what's available? `scqo devices` prints every configured
-  backend with its sample, instrument address, active cooldown and wiring — plus the
+- Don't know what's available? `scqo devices` prints every known sample with its
+  active cooldown cycle and current setup (backend, config folder, ports) — plus the
   exact user.toml line to select it. It touches no instrument, so it is always safe.
 
 ```
@@ -304,7 +306,7 @@ to the contrib sandbox (section 8) — never straight into SCQO or a driver repo
 from scqo import DataStore, load_lab_config
 
 cfg = load_lab_config()
-store = DataStore(cfg.data_root, device_name=cfg.device_name)
+store = DataStore(cfg.data_root, device_name=cfg.device)
 
 store.find_runs(experiment="resonator_spectroscopy", qubit="q1", tag="cooldown1")
 run = store.load_run("20260704-225450-SQ_demo-resonator_spectroscopy-01")  # record + params + figures
@@ -324,7 +326,7 @@ backend = SimulatedBackend(InMemoryDevice({          # or QbloxBackend / QMBacke
     "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.20},
     "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18},
 }))
-sess = make_session(backend, cfg)
+sess = make_session(backend, cfg, backend_label="simulated")   # the label stamps each run's provenance
 
 result = sess.run("resonator_spectroscopy", {"qubits": ["q1"]})
 sess.find_runs(experiment="resonator_spectroscopy", qubit="q1")  # list of dicts, newest first

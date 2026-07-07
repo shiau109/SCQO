@@ -1,4 +1,4 @@
-"""Session building for the CLI: built-in simulated backend + driver discovery.
+"""Session building for the CLI: device -> cycle -> setup -> backend.
 
 Real instruments are served by DRIVER packages that register a factory under the
 ``scqo.backends`` entry-point group (name = the backend family)::
@@ -6,9 +6,11 @@ Real instruments are served by DRIVER packages that register a factory under the
     [project.entry-points."scqo.backends"]
     qblox = "lchqb.scqo_backend:build_backend"
 
-A factory is ``build_backend(cfg: LabConfig) -> Backend`` and serves both the real
-and the ``_sim`` (virtual twin) mode of its family. ``simulated`` (demo qubits,
-synthetic data) is built in here, so query commands and CI need no driver at all.
+A factory is ``build_backend(cfg: LabConfig, setup: dict) -> Backend`` — ``setup``
+is the device's current era record from its cooldown registry (backend, the
+``instrument_config`` folder holding the vendor config files, the port map).
+``simulated`` (demo qubits, synthetic data) is built in here, so query commands,
+practice runs and CI need no driver at all.
 """
 
 from __future__ import annotations
@@ -66,39 +68,61 @@ def ensure_demo_experiments() -> None:
                                                              "__doc__": cls.__doc__}))
 
 
-def build_session(config_path: str | None = None) -> tuple[Session, LabConfig]:
-    """Load the lab config and return a wired Session (datastore, state file, tags).
+def _demo_session(cfg: LabConfig) -> tuple[Session, LabConfig]:
+    from scqo.testing import InMemoryDevice, SimulatedBackend
 
-    ``simulated`` runs on the built-in demo device; any other backend resolves its
-    family's factory from the ``scqo.backends`` entry-point group — a missing driver
-    fails loudly naming the repo and venv that provide it.
+    ensure_demo_experiments()
+    backend: Backend = SimulatedBackend(InMemoryDevice(DEMO_QUBITS))
+    return make_session(backend, cfg, backend_label="simulated"), cfg
+
+
+def build_session(config_path: str | None = None) -> tuple[Session, LabConfig]:
+    """Resolve device -> active cycle -> current setup -> backend; return a Session.
+
+    The user names only the SAMPLE (``device`` in user.toml, else the [lab] default);
+    the sample's cooldown registry says which instrument carries it right now and
+    where that instrument's vendor config lives. No device anywhere = the built-in
+    simulated demo (nothing saved). Every missing link fails loudly naming the exact
+    manager command that creates it.
     """
     cfg = load_lab_config(config_path)
-    if cfg.backend == "simulated":
-        from scqo.testing import InMemoryDevice, SimulatedBackend
-
-        ensure_demo_experiments()
-        backend: Backend = SimulatedBackend(InMemoryDevice(DEMO_QUBITS))
-        return make_session(backend, cfg), cfg
-
-    from scqo.labconfig import _backend_family
-
-    family = _backend_family(cfg.backend)
-    if family is None:
+    if cfg.device is None:
+        return _demo_session(cfg)
+    if cfg.data_root is None:
         raise SystemExit(
-            f"unsupported backend {cfg.backend!r} in {cfg.source or 'defaults'} "
-            "(known: simulated; qblox/qblox_sim — LCHQBDriver; qm/qm_sim — LCHQMDriver)"
+            f"device {cfg.device!r} is selected but no data_root is configured in "
+            f"{cfg.source or 'the lab config'} — the device's cooldown registry lives under it"
         )
+
+    from scqo.datastore import active_cooldown, current_setup, load_cooldowns
+
+    cycles = load_cooldowns(cfg.data_root, cfg.device)  # loud on a broken registry
+    fix = (f"scqo cooldown start cd1 --backend <qblox|qm|simulated> "
+           f"[--instrument-config <folder>]   (device {cfg.device!r})")
+    if not cycles:
+        raise SystemExit(f"device {cfg.device!r} has no cooldown registry yet — the manager runs:\n  {fix}")
+    active = active_cooldown(cycles)
+    if active is None:
+        raise SystemExit(f"device {cfg.device!r} has no ACTIVE cooldown cycle — start the next one:\n  {fix}")
+    setup = current_setup(active[1])
+    if setup is None:
+        raise SystemExit(
+            f"cycle {active[0]!r} of {cfg.device!r} has no setup in effect yet (all are "
+            f"future-dated) — fix the [[{active[0]}.setup]] 'since' dates in its cooldowns.toml"
+        )
+
+    family = setup["backend"]
+    if family == "simulated":
+        return _demo_session(cfg)
     for ep in entry_points(group="scqo.backends"):
         if ep.name == family:
-            backend = ep.load()(cfg)  # a factory ImportError propagates with its real traceback
-            return make_session(backend, cfg), cfg
+            backend = ep.load()(cfg, setup)  # a factory ImportError propagates with its traceback
+            return make_session(backend, cfg, backend_label=family), cfg
     provider, venv = SERVED_BY[family]
     raise SystemExit(
-        f"backend {cfg.backend!r} needs the {family!r} driver, which is not registered in this "
-        f"environment.\n"
+        f"device {cfg.device!r} is on backend {family!r} (cycle {active[0]}, setup since "
+        f"{setup['since']}), and that driver is not registered in this environment.\n"
         f"- wrong venv? activate D:\\github\\{venv} (the one that has {provider})\n"
-        f"- already in {venv}? then {provider} predates v0.4.0 or was never reinstalled: entry\n"
-        f"  points register at INSTALL time — update the repo and re-run its "
-        f"`uv pip install -e` line (INSTALL §1/§5)"
+        f"- already in {venv}? then {provider} was never (re)installed here: entry points\n"
+        f"  register at INSTALL time — re-run its `uv pip install -e` line (INSTALL §1/§5)"
     )
