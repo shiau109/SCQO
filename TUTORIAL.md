@@ -9,8 +9,10 @@ never edit anything in the repos.
 whoever set up the PC): a venv activated and a lab config in place (your own
 `~\.scqo\config.toml`, or the server's shared one). **Which venv? One rule:** activate
 **view** to look at data — the run-viewer, browsing, `find_runs.py`, `tag_run.py`
-(`.venv-view\Scripts\Activate.ps1`, prompt `(view)`; macOS/Linux
-`source .venv-view/bin/activate`) — and an instrument env only to measure:
+(`D:\github\.venv-view\Scripts\Activate.ps1`, prompt `(view)`; macOS/Linux
+`source ~/github/.venv-view/bin/activate` — the venvs live NEXT TO the repos, not
+inside them, so use the full path or run from the repos' parent folder) — and an
+instrument env only to measure:
 `.venv-qblox` for `run_experiment.py`/`calibrate.py`/`device.py` on the Qblox
 cluster, `.venv-qm` on the OPX1000. Cooldowns are no longer a tag you maintain:
 the manager registers each cycle (`cooldown.py`), and every run you take is

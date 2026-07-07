@@ -401,9 +401,12 @@ writes at the server's data — §5):
    scripts and the viewer below):
 
    ```powershell
-   .venv-qblox\Scripts\Activate.ps1        # macOS/Linux: source .venv-qblox/bin/activate
+   D:\github\.venv-qblox\Scripts\Activate.ps1   # macOS/Linux: source ~/github/.venv-qblox/bin/activate
    ```
 
+   The venvs live NEXT TO the repos (in their parent folder), not inside them — a
+   bare `.venv-qblox\Scripts\Activate.ps1` only works from that parent folder, and
+   from inside a repo PowerShell shows a misleading "cannot load module" error.
    Every later `python ...` in this quickstart assumes the prompt shows `(qblox)`.
 3. **Write `~\.scqo\config.toml`** — smallest working dev config (UTF-8 no BOM):
 
