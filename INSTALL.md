@@ -333,8 +333,10 @@ note = "module2 out0 dead"
 "q1.readout" = "cluster0.module6.in0"
 ```
 
-Manage cycles with `python scripts\cooldown.py` (no args = validate + show;
-`start <id>` / `end` do safe minimal file edits; mapping snapshots are hand-edited).
+Manage cycles with `python scripts\cooldown.py` — run from a DRIVER repo
+(`cd D:\github\LCHQBDriver` or `LCHQMDriver`; SCQO itself has no `scripts\`) —
+(no args = validate + show; `start <id>` / `end` do safe minimal file edits;
+mapping snapshots are hand-edited).
 Every run is then auto-stamped with the active cycle and wiring era — query with
 `find_runs.py --cooldown cd8`, filter in the viewer, and stop hand-editing a
 cooldown tag into `default_tags`. Failure rules: `instruments.toml`/`devices.toml`
@@ -348,7 +350,8 @@ starts fresh); old run folders may stay (reindex skips anything unreadable).
 
 ### Adding a new sample
 
-One manual edit, two optional entries, everything else auto-creates.
+One manual edit, two optional entries, everything else auto-creates. From a DRIVER
+repo (`cd D:\github\LCHQBDriver` — the student scripts live there, not in SCQO):
 `python scripts\sample.py new <name> --backend qblox --instrument cluster0` prints all
 of it paste-ready and creates the data folder (it never edits shared files):
 
@@ -422,16 +425,22 @@ writes at the server's data — §5):
    (Swap to the virtual twin — `qblox_sim`/`qm_sim` + a copied vendor config, table
    above — when you want your REAL device tree with synthetic data.)
 4. **Optionally seed the registries** to exercise the full provenance chain:
-   `D:\qpu_data_dev\instruments.toml`, `devices.toml`, and a first cycle via
-   `python scripts\cooldown.py start cd1 --fridge dev --packaging "sim"` (then
-   hand-add a `[[cd1.mapping]]` block). Every run is now stamped with cycle +
-   wiring era + operator.
-5. **Verify offline**: `cd SCQO && python -m pytest -q` (§3 — all green, no
-   instrument).
-6. **First run + look at it**:
+   `D:\qpu_data_dev\instruments.toml`, `devices.toml`, and a first cycle — **the
+   student scripts live in the DRIVER repos, not SCQO**, so:
 
    ```powershell
-   cd ..\LCHQBDriver          # (or LCHQMDriver; scripts are mirrored)
+   cd D:\github\LCHQBDriver   # (or LCHQMDriver; scripts are mirrored)
+   python scripts\cooldown.py start cd1 --fridge dev --packaging "sim"
+   ```
+
+   (then hand-add a `[[cd1.mapping]]` block). Every run is now stamped with cycle +
+   wiring era + operator.
+5. **Verify offline**: `cd D:\github\SCQO; python -m pytest -q` (§3 — all green, no
+   instrument).
+6. **First run + look at it** (back in the driver repo):
+
+   ```powershell
+   cd D:\github\LCHQBDriver
    python scripts\devices.py                                  # the menu — what can I select?
    python scripts\run_experiment.py resonator_spectroscopy    # first saved, stamped run
    python scripts\find_runs.py --limit 5
