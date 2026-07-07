@@ -396,7 +396,15 @@ writes at the server's data — §5):
 1. **Clone side-by-side** into one folder (§1 block: SCQO, scqat, and the driver
    repo(s) you develop against).
 2. **Create the venvs** (§1 commands): `view` always; `qblox`/`qm` only if you drive
-   that stack.
+   that stack — **then activate the one the rest of this quickstart runs in**
+   (`.venv-qblox` also contains the full view stack, so it covers the pytest, the
+   scripts and the viewer below):
+
+   ```powershell
+   .venv-qblox\Scripts\Activate.ps1        # macOS/Linux: source .venv-qblox/bin/activate
+   ```
+
+   Every later `python ...` in this quickstart assumes the prompt shows `(qblox)`.
 3. **Write `~\.scqo\config.toml`** — smallest working dev config (UTF-8 no BOM):
 
    ```toml
