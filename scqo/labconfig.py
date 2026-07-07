@@ -59,7 +59,9 @@ only (flat, no tables)::
 
     backend = "qm"                    # which instrument I measure — the sample follows
     default_tags = ["projA"]          # appended to the shared tags, deduped
-    parameters_file = "~/my_params.toml"   # beats the vendor table and [lab]
+    # parameters_file = "~/projB.toml"     # OPTIONAL — only to use a DIFFERENT file;
+    #                                      # ~/.scqo/parameters.toml applies automatically
+    #                                      # (when set, it beats the vendor table and [lab])
 
 Any other key is rejected loudly: machine wiring (data_root, device_name, state_path,
 state_sync, vendor tables) belongs to the shared lab config. The overlay applies only

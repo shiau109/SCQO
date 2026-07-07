@@ -233,9 +233,10 @@ like this:
 Your account carries your own settings — no shared file to fight over:
 
 - `~/.scqo/user.toml` — pick YOUR instrument (`backend = "qm"`; the sample follows
-  it), your project tags, your parameters file. Only these personal keys are allowed.
+  it) and your project tags. Only personal keys are allowed.
 - `~/.scqo/parameters.toml` — your standing experiment parameters (three-tier rule
-  in section 2).
+  in section 2). Applies automatically — no user.toml line needed; the optional
+  `parameters_file` key in user.toml exists only to swap in a DIFFERENT file.
 - Don't know what's available? `scqo devices` prints every configured
   backend with its sample, instrument address, active cooldown and wiring — plus the
   exact user.toml line to select it. It touches no instrument, so it is always safe.

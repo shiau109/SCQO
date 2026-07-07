@@ -283,8 +283,14 @@ account may keep a small personal overlay — flat keys, no tables:
 ```toml
 backend = "qm"                    # which instrument I measure — the SAMPLE follows it
 default_tags = ["projA"]          # appended to the shared tags, deduped
-parameters_file = "~/my_params.toml"   # beats the vendor table and [lab]
+# parameters_file = "~/projB.toml"     # OPTIONAL — only to use a DIFFERENT file;
+#                                      # your ~\.scqo\parameters.toml applies automatically
 ```
+
+Note the relationship to the parameters section above: your own
+`~\.scqo\parameters.toml` needs **no** line here — it is found automatically.
+`parameters_file` exists for swapping in a different set (e.g. per project) and then
+beats the vendor table and `[lab]`.
 
 Only these three keys are allowed — anything else (data_root, device_name,
 state_path...) is machine wiring and fails loudly: a user cannot repoint where data
