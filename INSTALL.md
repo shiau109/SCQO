@@ -346,6 +346,32 @@ disposable — there is no migration. The index rebuilds itself (schema check); 
 `<device>\scqo_state.json` if present (it reseeds from the vendor config; history
 starts fresh); old run folders may stay (reindex skips anything unreadable).
 
+### Factory reset (make a machine "new" again)
+
+To reinstall as if on a clean computer, delete the machine's scqo state — repos and
+venvs may stay (they are code, not state):
+
+**Dev PC:** close any running viewer/datasette, then delete your per-user files and
+your scratch data root; unset the env vars if you ever set them:
+
+```powershell
+Remove-Item -Recurse -Force "$env:USERPROFILE\.scqo"        # config/parameters/user toml
+Remove-Item -Recurse -Force 'D:\local_test_data'            # your scratch data_root
+Remove-Item Env:SCQO_CONFIG, Env:SCQO_USER_CONFIG -ErrorAction SilentlyContinue
+```
+
+Afterwards every script prints `# lab config: built-in defaults (simulated, nothing
+saved)` — the new-machine state; continue with the Developer quickstart below.
+
+**Lab server:** stop the viewer; delete the live data_root — **WARNING: the NAS
+mirror propagates deletions on its next scheduled sync; copy anything you want to
+keep OFF the NAS first** — then delete each account's `~\.scqo\` personal files.
+Keep (or recreate) the machine-wide `SCQO_CONFIG` shared config file, `git fetch
+--tags && git checkout <new tag>` in each repo, and per the fresh-start rule delete
+`scqo_state.json` (it reseeds from the vendor configs). Re-seed the registries
+(`instruments.toml`, `devices.toml`, per-device `cooldowns.toml`) before the first
+measurement so runs are stamped from day one.
+
 ### Developer quickstart (local, no hardware)
 
 The whole system on your own machine in six steps — a Tier-2/3 dev deployment with a
