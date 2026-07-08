@@ -366,7 +366,7 @@ and the cooldown registry, and tells you what is wrong and how to fix it.
 | `ModuleNotFoundError` / `lab config not found` / nothing gets saved | setup problem — see [INSTALL.md](INSTALL.md) §1–§2 and the §6 symptom table |
 | `scqo: command not found` (or the term is not recognized) | no venv activated — or scqo was upgraded without re-running the INSTALL §1 `uv pip install -e` line (the command registers at install time) |
 | `notepad ...` over SSH does nothing | GUI apps have no display in an SSH session (the process starts invisibly on the server) — use the §5 editing methods (here-string / scp / VS Code Remote-SSH) |
-| `backend 'qblox' needs the 'qblox' driver...` | right command, wrong venv — the message names the venv to activate |
+| `device ... is on backend 'qblox' ... driver is not registered in this environment` | right command, wrong venv — the message names the venv to activate (or, if you ARE in it, the install line to re-run) |
 | A run shows `datastore_error` | measurement succeeded; only saving failed (disk full/locked). Fix the disk, rerun |
 | `invalid parameter-defaults file ...` (even on `--help`) | your `parameters.toml` has a syntax error — it affects measurements, so it never fails silently. Fix the named file |
 | `find_runs` misses runs you can see on disk | index stale → `python -m scqo <data_root>` |

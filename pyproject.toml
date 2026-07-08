@@ -11,7 +11,8 @@ dependencies = [
     "numpy>=1.26",
     "scqat",            # the shared analysis engine: estimators + fitters (import-light; lazy-imported in estimate())
                         # needs scqat tag v0.1.4+ (punchout outlier test is baseline-normalized for the |IQ|-scaled sim,
-                        # SCQO 586af0e); not expressible as >=0.1.4 while scqat's package metadata is stuck at 0.1.0
+                        # SCQO 586af0e); scqat metadata caught up at v0.1.5, but the lab installs scqat editable at the
+                        # RELEASES.toml-pinned tag, so no version pin here — the manifest is the authority
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]

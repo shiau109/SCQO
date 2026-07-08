@@ -21,8 +21,8 @@ actually running a measurement.**
 
 | venv | prompt | contents | activate when you… |
 |---|---|---|---|
-| `D:\github\.venv-view` | `(view)` | scqo `[viewer]` + scqat + datasette + pytest — **no instrument libraries** | look at data (the common case): run-viewer, SQL browser, `find_runs.py`, `tag_run.py`. Works identically on an analysis-only laptop/Mac. |
-| `D:\github\.venv-qblox` | `(qblox)` | the view stack + LCHQBDriver + `qblox-scheduler==1.0.0b4` (hardware-proven) + scqo-contrib | measure on the Qblox cluster: `run_experiment.py`, `calibrate.py`, `device.py` |
+| `D:\github\.venv-view` | `(view)` | scqo `[viewer]` + scqat + datasette + pytest — **no instrument libraries** | look at data (the common case): run-viewer, SQL browser, `scqo find`, `scqo tag`. Works identically on an analysis-only laptop/Mac. |
+| `D:\github\.venv-qblox` | `(qblox)` | the view stack + LCHQBDriver + `qblox-scheduler==1.0.0b4` (hardware-proven) + scqo-contrib | measure on the Qblox cluster: `scqo run`, `scqo calibrate`, `scqo device` |
 | `D:\github\.venv-qm` | `(.venv-qm)` | pinned QM stack, py3.11 (`LCHQMDriver\requirements-qm.lock.txt`) + scqo/scqat/LCHQMDriver editables | measure on the OPX1000 or use qualibrate — `qm.bat` activates it for you |
 
 All three import scqo/scqat from the same editable checkouts, so they never drift on
@@ -457,12 +457,12 @@ cd D:\github\LCHQMDriver
 python scripts\check_real_config.py D:\qpu_data\SQ_demo\QM_OPX1000_config
 ```
 
-Expected output: 5 numbered steps, each OK, ending in
-`PASS - scqo works against this real config`. A qubit whose state is uncalibrated
-(fields `None`) is skipped automatically; on the Qblox device the coupler (`c12`) is
-excluded by the `q*` default — pass `--qubits` to choose explicitly. Both lab configs
-passed on 2026-07-04 (and this test caught three real integration bugs before any
-hardware time was spent — that's its job).
+Expected output: 5 numbered steps, each OK, ending in a `PASS - scqo works against
+this real ...` line. The QM script skips qubits whose state is uncalibrated (fields
+`None`) automatically; on the Qblox device non-`q*` elements like the coupler
+(`c12`) are excluded by the `q*` default — pass `--qubits` to choose explicitly.
+Both lab configs passed on 2026-07-04 (and this test caught three real integration
+bugs before any hardware time was spent — that's its job).
 
 ## 5. Lab deployment — server + NAS + zero-install laptops
 
@@ -604,13 +604,13 @@ read-only command.
 |---|---|
 | `ModuleNotFoundError: scqo` | no venv activated — Windows: `.venv-view\Scripts\Activate.ps1`; macOS/Linux: `source .venv-view/bin/activate` |
 | `scqo: command not found` / not recognized | no venv activated, or scqo upgraded across v0.4.0 without re-running the section-1 install line (the command registers at install time). `Get-Command scqo` shows which venv's command you're getting |
-| viewer: `missing package: uvicorn` (or fastapi/jinja2) | **wrong venv activated** — the viewer lives in every section-1 env; check the prompt says `(view)`, `(qblox)` or `(.venv-qm)`, not something stale |
+| viewer: `missing package: uvicorn` (or fastapi/jinja2), or a `python-multipart` RuntimeError | **wrong venv activated** — run the viewer from `(view)` or `(qblox)`. The `(.venv-qm)` lock env deliberately omits `python-multipart`, so the viewer's tag-edit route cannot start there |
 | `device ... is on backend 'qblox' ... driver is not registered in this environment` | right command, wrong venv (the view env has no instrument drivers by design), or a stale editable install — the message distinguishes both and names the venv / the install line to re-run |
 | `ModuleNotFoundError: lchqb` / `qblox_scheduler` from a run script | you're in the view env (by design it has no instrument libs) — activate `.venv-qblox` to measure |
 | `lab config not found` | your `--config`/`$SCQO_CONFIG` path is wrong (intentional loud failure — better than silently unsaved) |
 | `# lab config: built-in defaults ...` in the catalog header | no `~\.scqo\config.toml` yet: runs work but are **not saved** — do section 2. A personal `user.toml` does NOT rescue this: the overlay needs a base config |
 | `... not allowed in a user overlay` | your `~\.scqo\user.toml` sets a machine-wiring key — only `device` / `default_tags` / `parameters_file` are personal (section 2) |
-| `invalid cooldown registry ...` at run start | `cooldowns.toml` is broken (two open cycles, a cycle without a `[[.setup]]` block, a real-backend setup without `instrument_config`, two setups sharing a folder...) — it stamps runs AND selects the instrument, so it fails BEFORE instrument time is spent; `scqo cooldown` (no args) is the validator |
+| `invalid cooldown registry ...` (corrupt TOML) or `<path>\cooldowns.toml: cycle ...` at run start | `cooldowns.toml` is broken (unparseable file, two open cycles, a cycle without a `[[.setup]]` block, a real-backend setup without `instrument_config`, two setups sharing a folder...) — it stamps runs AND selects the instrument, so it fails BEFORE instrument time is spent; `scqo cooldown` (no args) is the validator |
 | `device ... has no cooldown registry yet` / `no ACTIVE cooldown cycle` at run start | intentional refusal: with a device selected, every run must resolve a setup — the message names the exact `scqo cooldown start` line. The same refusal appears after `scqo cooldown end` until the next cycle starts |
 | self-test: `missing package: qblox_scheduler` | install the driver into this env (section 1, second install line) |
 | `Repository not found` when cloning | the repo is (still) private and the active GitHub credential cannot see it — GitHub reports 404, not 403, to unauthorized users; sign in with an account that has access |

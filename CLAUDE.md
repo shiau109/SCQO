@@ -282,8 +282,8 @@ Also: missing-driver error distinguishes wrong-venv from stale-install; the test
 is isolated from the runner's real ~/.scqo files (suite-wide conftest fixture); viewer
 tests skip where python-multipart is absent (the QM lock env).
 
-**2026-07-08 — device-centric configuration (v0.5.0; LOCAL ONLY, not yet
-tagged/pushed — no RELEASES.toml entry until the user publishes).** Users select the
+**2026-07-08 — device-centric configuration (v0.5.0; published same day: combo tag
+across the four repos + RELEASES.toml entry, scqat pinned v0.1.5).** Users select the
 SAMPLE; the registry knows the instrument. Resolution chain: `device` (user.toml >
 `[lab]`; none = built-in simulated demo, unsaved) → the device's cooldown registry →
 ACTIVE cycle → current `[[<cycle>.setup]]` era (latest `since` ≤ today; same date =
