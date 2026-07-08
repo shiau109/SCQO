@@ -398,19 +398,27 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
     with pytest.raises(ValueError, match="instrument_config"):  # required for real backends
         load_cooldowns(tmp_path, "devA")
 
-    # two setups sharing one folder — even via different spellings — corrupt live state
+    # two setups sharing one folder — even via different spellings — corrupt live state.
+    # A './' segment collapses on every OS; the case-folded spelling is Windows-only
+    # (case-insensitive paths) — on POSIX two casings ARE different folders and must pass.
+    import os
+
     shared = tmp_path / "SharedCfg"
     shared.mkdir()
-    _write_cooldowns(
-        tmp_path, "devA",
-        "[cd1]\nstart = 2026-01-01\n"
-        f'[[cd1.setup]]\nsince = 2026-01-01\nbackend = "qblox"\n'
-        f"instrument_config = '{shared.as_posix()}'\n"
-        f'[[cd1.setup]]\nsince = 2026-01-05\nbackend = "qblox"\n'
-        f"instrument_config = '{str(shared).lower()}'\n",
-    )
-    with pytest.raises(ValueError, match="same"):
-        load_cooldowns(tmp_path, "devA")
+    spellings = [f"{tmp_path.as_posix()}/./SharedCfg"]
+    if os.name == "nt":
+        spellings.append(str(shared).lower())
+    for second in spellings:
+        _write_cooldowns(
+            tmp_path, "devA",
+            "[cd1]\nstart = 2026-01-01\n"
+            f'[[cd1.setup]]\nsince = 2026-01-01\nbackend = "qblox"\n'
+            f"instrument_config = '{shared.as_posix()}'\n"
+            f'[[cd1.setup]]\nsince = 2026-01-05\nbackend = "qblox"\n'
+            f"instrument_config = '{second}'\n",
+        )
+        with pytest.raises(ValueError, match="same"):
+            load_cooldowns(tmp_path, "devA")
 
     path = _write_cooldowns(tmp_path, "devA", "not [valid toml")
     with pytest.raises(ValueError, match="cooldowns.toml"):
