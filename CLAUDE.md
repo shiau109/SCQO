@@ -84,9 +84,9 @@ scqo/
   datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
-  cli/            # the `scqo` command (run/calibrate/find/accept/tag/device/devices/
-                  #   cooldown/sample/doctor/sync-launchers): ONE engine, any-directory;
-                  #   the device's current cooldown setup picks the backend, resolved via
+  cli/            # the `scqo` command (run/calibrate/find/accept/tag/state/user/
+                  #   device/doctor): ONE engine, any-directory;
+                  #   the device's SELECTED named setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; simulated is built in
                   #   (_backends.ensure_demo_experiments fills the catalog driver-less)
   experiments/
@@ -123,10 +123,10 @@ calibrates, e.g. qualibrate on QM); `"push"` restores the saved SCQO config into
 **Multi-device rule (decided 2026-07-05):** the device = the physical SAMPLE (chip),
 never the instrument; the instrument is provenance (every run/fit stamps `backend`).
 ONE data_root + ONE index for all samples (`find_runs(device=...)` / `--device` filter;
-per-sample DBs are rejected). Since v0.5.0 each user selects the sample (`device` in
-user.toml); which instrument carries it — and where its vendor config folder lives —
-is a fact of the device's current cooldown setup (`[[<cycle>.setup]]` in its
-cooldowns.toml), never a config key.
+per-sample DBs are rejected). Each user selects the sample and setup (`device`/`setup`
+in user.toml; `scqo user`); which instrument carries it — and where its vendor config
+folder lives — is a fact of the SELECTED named setup of the device's ACTIVE cooldown
+cycle (`[<cycle>.setup.<name>]` in its cooldowns.toml, v0.7.0), never a config key.
 Instrument-independent sample facts live in the optional human-edited registry
 `<data_root>/devices.toml` (`datastore.load_device_registry`; rendered by the viewer).
 Instrument-DEPENDENT measured values (thermal population etc.) stay in run records with
@@ -152,7 +152,7 @@ scratch data_root — never write to the server's data over the network.
 Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
 
 ### Experiment governance (3 tiers) + promotion checklist
-1. **Students** run the driver scripts (`run_experiment.py` / `find_runs.py`) with
+1. **Students** use the `scqo` command (`scqo run` / `scqo find` / `scqo user`) with
    `~/.scqo/config.toml`; they change nothing in the governed repos.
 2. **Advanced users** prototype new experiments + estimators in the sandbox repo
    `D:\github\scqo-contrib` (github.com/shiau109/scqo-contrib; entry-point group
@@ -166,9 +166,8 @@ Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
    - [ ] Ran repeatedly via contrib with findable data; results reviewed via `find_runs`.
    - [ ] `description` is catalog-quality (an AI reads it to decide).
    - [ ] Physics half moved to `scqo/experiments/`; driver `probe()` subclasses registered
-         under the core `scqo.experiments` group; contrib copy deleted.
-   - [ ] Launcher stubs regenerated in each driver (`python scripts/experiments/_sync.py`)
-         so the new experiment is directly runnable.
+         under the core `scqo.experiments` group; contrib copy deleted. (It is then
+         directly runnable via `scqo run <name>` — launcher stubs were retired in v0.7.0.)
 
 ### Reference backends
 - `D:\github\LCHQMDriver` — Quantum Machines (qm-qua / quam / qualibrate).
@@ -378,3 +377,45 @@ picker (`_review.review_interactively`) turns every guard into a warning + [y/N]
 show the diff — no flag knowledge needed at a TTY; `--force`/`--reapply` remain
 the script form (batch semantics byte-identical). `_apply` returns applied ITEMS
 (status alone can't tell after a failed reapply).
+
+**2026-07-12 — named user-selectable setups + CLI regrouping (v0.7.0, fresh
+start: no data migration, no aliases).** Within one cooldown cycle a device may
+now declare SEVERAL setups (different backend, or same instrument with another
+config folder) and each user picks theirs. `cooldowns.toml` setups became NAMED
+sub-tables `[<cycle>.setup.<name>]` carrying EXACTLY backend/instrument_config/
+note — `since` dates (resolution was date-based) and port-map pairs (display-only
+everywhere; wiring lives in the vendor config folder) are RETIRED, unknown keys
+and the old `[[.setup]]` array form refuse loudly. Names ^[A-Za-z0-9_-]+$, one
+folder per setup per cycle, and a name is IMMUTABLE for its cycle (rename =
+declare a new setup). Zero-setup cycles are legal: `scqo device cooldown start`
+opens an EMPTY cycle (no --backend/--instrument-config; setup blocks are
+hand-added), runs refuse naming the fix. Selection: user.toml gains `setup`
+(user overlay ONLY, never [lab]); single-setup cycle auto-selects; several →
+refuse listing names. Resolution lives in `datastore.resolve_setup` +
+`_backends.resolve_device_setup` (canonical refusal texts, shared by
+build_session and `scqo user`'s "runs would refuse:" preview). The resolved
+name threads build_session → make_session(setup_name=) → Session.setup_name →
+DataStore(setup=) → run_stamps() → RunRecord.setup (index v7, auto-reindex;
+`setup_since` gone) → the accept era guard (compares (cooldown, setup name);
+bound name deliberately NOT re-validated at persist time — truthful provenance,
+never raise after the measurement). `find_runs(setup=)` / `scqo find --setup` /
+viewer runs-page setup filter+column; device page shows ALL setups of the
+ACTIVE cycle (wiring panel gone). CLI: `scqo state` = the old `scqo device`
+view (flags unchanged); NEW `scqo user` (no-args diagnosis view exits 0;
+--device/--setup validate against the registry then WRITE user.toml — the
+first-ever user.toml writer, targeted line edit + .toml.bak + re-parse,
+$SCQO_USER_CONFIG honored, "none" refuses; stale setup auto-cleared on device
+switch); `scqo device` = admin group (list = per-setup menu rows / add =
+old `sample new` / cooldown start|end), old `devices`/`sample`/`cooldown`
+commands removed. Drivers: factory contract unchanged (reads only
+backend+instrument_config). The driver scripts/ WRAPPER LAYER is fully retired
+(user decision, no users yet = the chance to clean): the command wrappers
+(run_experiment/calibrate/find_runs/tag_run/device/devices/cooldown/sample), the
+`_lab`/`_cli` import shims, the auto-generated `scripts/experiments/` launcher
+stubs AND the `scqo sync-launchers` subcommand are all DELETED — `scqo run
+<name>` is the one way to run an experiment; driver scripts/ keeps only real
+per-repo content (check_real_config.py + LCHQB's ai_loop_demo.py — the one
+worked Session-API example, importing `from scqo.cli import build_session`
+directly; its run_resonator_spectroscopy.py example was deleted too, redundant
+with `scqo run`). Never add wrappers or per-command stubs again.
+Combo tag v0.7.0 all four repos, scqat pin v0.1.5.

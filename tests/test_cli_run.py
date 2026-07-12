@@ -20,7 +20,7 @@ def _run_cli(tmp_path: Path, *args: str, parameters_toml: str | None = None) -> 
     (data_root / "simdev").mkdir(parents=True, exist_ok=True)
     reg = data_root / "simdev" / "cooldowns.toml"
     if not reg.is_file():
-        reg.write_text('[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\n'
+        reg.write_text('[cd1]\nstart = 2026-07-01\n[cd1.setup.main]\n'
                        'backend = "simulated"\n', encoding="utf-8")
     lines = ["[lab]", 'device = "simdev"', f"data_root = '{data_root.as_posix()}'"]
     if parameters_toml is not None:
@@ -114,7 +114,7 @@ def test_default_run_suggests_then_accept_by_run_id(tmp_path):
     assert summary["pending_left"] == 0
 
     # the change history carries the ORIGINATING run id
-    history = _run_cli(tmp_path, "device", "--history")
+    history = _run_cli(tmp_path, "state", "--history")
     assert result["run_id"] in history.stdout and "readout_freq" in history.stdout
 
     # nothing left to decide
@@ -127,7 +127,7 @@ def test_run_accept_flag_applies_immediately(tmp_path):
     assert proc.returncode == 0, proc.stderr
     result = _result(proc)
     assert {s["status"] for s in result["suggestions"]} == {"accepted"}
-    history = _run_cli(tmp_path, "device", "--history")
+    history = _run_cli(tmp_path, "state", "--history")
     assert result["run_id"] in history.stdout
 
 
@@ -141,7 +141,7 @@ def test_reject_needs_no_backend(tmp_path):
     assert summary["rejected"] == [{"qubit": "q0", "field": "t1_s"}]
     assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
     # the T1 was never applied: the physical table stays empty
-    physical = _run_cli(tmp_path, "device", "--physical")
+    physical = _run_cli(tmp_path, "state", "--physical")
     assert "no physical parameters recorded yet" in physical.stdout
 
 
@@ -162,28 +162,28 @@ def test_reapply_rolls_back_from_the_cli(tmp_path):
     assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
     assert summary["applied"][0]["after"] == value_a
 
-    history = _run_cli(tmp_path, "device", "--history")
+    history = _run_cli(tmp_path, "state", "--history")
     assert history.stdout.count(run_a) == 2  # first accept + the rollback
 
 
 def test_accepted_physics_shows_in_device_physical(tmp_path):
     proc = _run_cli(tmp_path, "run", "qubit_relaxation", "--qubits", "q0", "--accept")
     assert proc.returncode == 0, proc.stderr
-    physical = _run_cli(tmp_path, "device", "--physical")
+    physical = _run_cli(tmp_path, "state", "--physical")
     assert "t1_s" in physical.stdout and "q0" in physical.stdout
-    history = _run_cli(tmp_path, "device", "--physical", "--history")
+    history = _run_cli(tmp_path, "state", "--physical", "--history")
     assert "t1_s" in history.stdout and _result(proc)["run_id"] in history.stdout
 
 
 def test_device_sources_traces_current_values(tmp_path):
-    """`scqo device --sources`: every current value names the run that set it,
+    """`scqo state --sources`: every current value names the run that set it,
     across BOTH stores; a hand-edited state file shows as externally changed."""
     proc_a = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
     run_a = _result(proc_a)["run_id"]
     proc_t1 = _run_cli(tmp_path, "run", "qubit_relaxation", "--qubits", "q0", "--accept")
     run_t1 = _result(proc_t1)["run_id"]
 
-    src = _run_cli(tmp_path, "device", "--sources")
+    src = _run_cli(tmp_path, "state", "--sources")
     assert src.returncode == 0, src.stderr
     readout_row = next(line for line in src.stdout.splitlines() if "readout_freq" in line)
     assert run_a in readout_row
@@ -193,7 +193,7 @@ def test_device_sources_traces_current_values(tmp_path):
     # after a rollback the credit follows the value back to the first run
     _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
     _run_cli(tmp_path, "accept", run_a, "--reapply", "--comment", "rollback")
-    src2 = _run_cli(tmp_path, "device", "--sources")
+    src2 = _run_cli(tmp_path, "state", "--sources")
     assert run_a in next(line for line in src2.stdout.splitlines() if "readout_freq" in line)
 
     # strict match: a hand-edited value credits no run
@@ -201,9 +201,9 @@ def test_device_sources_traces_current_values(tmp_path):
     data = json.loads(state_path.read_text(encoding="utf-8"))
     data["config"]["q0"]["readout_freq"] = 9.9e9  # another tool wrote the config
     state_path.write_text(json.dumps(data), encoding="utf-8")
-    src3 = _run_cli(tmp_path, "device", "--sources")
+    src3 = _run_cli(tmp_path, "state", "--sources")
     readout_row3 = next(line for line in src3.stdout.splitlines() if "readout_freq" in line)
     assert "(externally changed)" in readout_row3 and run_a not in readout_row3
 
     # --sources is one table over both stores; combining is a usage error
-    assert _run_cli(tmp_path, "device", "--sources", "--physical").returncode == 2
+    assert _run_cli(tmp_path, "state", "--sources", "--physical").returncode == 2

@@ -20,7 +20,6 @@ from ..config import FIELDS
 from ..datastore import (
     DataStore,
     active_cooldown,
-    current_setup,
     load_cooldowns,
     load_device_registry,
 )
@@ -81,6 +80,7 @@ def create_app(
         device: str = "",
         operator: str = "",
         cooldown: str = "",
+        setup: str = "",
         pending: str = "",
         limit: int = 50,
     ):
@@ -94,6 +94,7 @@ def create_app(
             device=device or None,
             operator=operator or None,
             cooldown=cooldown or None,
+            setup=setup or None,
             pending=True if pending else None,
             limit=limit,
         )
@@ -115,7 +116,8 @@ def create_app(
                 "filters": {"experiment": experiment, "qubit": qubit, "tag": tag,
                             "outcome": outcome, "since": since, "until": until,
                             "device": device, "operator": operator,
-                            "cooldown": cooldown, "pending": pending, "limit": limit},
+                            "cooldown": cooldown, "setup": setup,
+                            "pending": pending, "limit": limit},
                 "data_root": str(store.data_root),
             },
         )
@@ -254,17 +256,16 @@ def create_app(
         physical_fields = [f for f in PHYSICAL_FIELDS if f in observed_phys] + sorted(
             observed_phys - set(PHYSICAL_FIELDS)
         )
-        # Cooldown cycles + current setup (device -> cycle -> setup era). The
-        # registry validates loudly at RUN time; the viewer must render regardless.
+        # Cooldown cycles + the ACTIVE cycle's named setups. The registry validates
+        # loudly at RUN time; the viewer must render regardless. No user context
+        # here, so ALL setups are shown — never "the selected one".
         cooldown_error = ""
         try:
             cycles = load_cooldowns(store.data_root, dev)
         except ValueError as err:
             cycles, cooldown_error = {}, str(err)
         active = active_cooldown(cycles)
-        setup = current_setup(active[1]) if active else None
-        setup_ports = {k: v for k, v in (setup or {}).items()
-                       if k not in ("since", "note", "backend", "instrument_config")}
+        setups = active[1].get("setup", {}) if active else {}
         return templates.TemplateResponse(
             request,
             "device.html",
@@ -278,7 +279,7 @@ def create_app(
              "device": dev, "devices": store.distinct_devices(),
              "registry": registry.get(dev) or {},
              "cycles": cycles, "active_cycle": active[0] if active else None,
-             "setup": setup, "setup_ports": setup_ports,
+             "setups": setups,
              "cooldown_error": cooldown_error},
         )
 

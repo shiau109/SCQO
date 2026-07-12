@@ -56,11 +56,18 @@ class Session:
         parameter_defaults: dict[str, dict[str, Any]] | None = None,
         parameter_defaults_source: str | None = None,
         backend_label: str | None = None,
+        setup_name: str | None = None,
+        cooldown_id: str | None = None,
     ) -> None:
         self.backend = backend
         #: provenance label recorded on every run — the resolved setup's backend
         #: ("qblox" / "qm" / "simulated"); the class name alone would be ambiguous.
         self.backend_label = backend_label or type(backend).__name__
+        #: NAMED setup (+ its cooldown cycle) this session was resolved to — the era
+        #: identity stamped verbatim on every run; "" for notebook Sessions that never
+        #: went through build_session — they stamp the cycle's only setup, or "".
+        self.setup_name = setup_name or ""
+        self.cooldown_id = cooldown_id or ""
         self._persist = state_path is not None
         #: authoritative SCQO config + history over the backend's vendor device. With
         #: ``state_sync="pull"`` (default) the vendor wins at startup and only history is
@@ -79,7 +86,11 @@ class Session:
             physical_path = None
         self.physical = PhysicalStore(physical_path)
         #: run datastore (folders + rebuildable SQLite index); None disables persistence.
-        self.datastore = DataStore(data_root, device_name=device_name) if data_root is not None else None
+        self.datastore = (
+            DataStore(data_root, device_name=device_name,
+                      setup=self.setup_name or None, cooldown=self.cooldown_id or None)
+            if data_root is not None else None
+        )
         self.default_tags = list(default_tags or [])
         #: standing per-experiment parameter defaults (``~/.scqo/parameters.toml`` via
         #: make_session), merged UNDER the caller's params in run(): code < file < caller.
@@ -330,8 +341,8 @@ class Session:
         ``indices`` are 0-based positions in the stored list (partial accept is
         first-class). Two guards protect a deferred apply unless ``force``:
 
-        * **era guard** — the run's (cooldown, setup era) must match the device's
-          current one: a value measured under different wiring may not transfer;
+        * **era guard** — the run's (cooldown, setup name) must match the device's
+          current one: a value measured under a different setup may not transfer;
         * **staleness guard** — each item's ``before`` must equal the store's CURRENT
           value: if something else updated the field since, the item is skipped and
           reported under ``stale``.
@@ -366,7 +377,7 @@ class Session:
         selected = select_suggestions(suggestions, qubits=qubits, fields=fields,
                                       indices=indices, include_decided=reapply or dry_run)
 
-        run_era = (record.get("cooldown", ""), record.get("setup_since", ""))
+        run_era = (record.get("cooldown", ""), record.get("setup", ""))
         if dry_run or not force:  # under force the registry is deliberately not consulted
             current_era = store.run_stamps()
             era = {"run": list(run_era), "current": list(current_era),
@@ -512,8 +523,10 @@ class Session:
     # ------------------------------------------------------------------ datastore
     def find_runs(self, **filters: Any) -> list[dict]:
         """Query saved runs (newest first). Filters: experiment, qubit, tag, since,
-        until, outcome, device, pending, limit. Returns [] when no ``data_root`` is
-        configured. ``pending=True`` = runs with undecided suggested updates."""
+        until, outcome, device, operator, cooldown, setup, pending, limit. Returns []
+        when no ``data_root`` is configured. ``pending=True`` = runs with undecided
+        suggested updates; ``setup`` filters by setup NAME (unique per cycle only —
+        combine with ``cooldown``)."""
         if self.datastore is None:
             return []
         return self.datastore.find_runs(**filters)

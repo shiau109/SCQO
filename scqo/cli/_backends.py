@@ -1,4 +1,4 @@
-"""Session building for the CLI: device -> cycle -> setup -> backend.
+"""Session building for the CLI: device -> cycle -> named setup -> backend.
 
 Real instruments are served by DRIVER packages that register a factory under the
 ``scqo.backends`` entry-point group (name = the backend family)::
@@ -7,8 +7,8 @@ Real instruments are served by DRIVER packages that register a factory under the
     qblox = "lchqb.scqo_backend:build_backend"
 
 A factory is ``build_backend(cfg: LabConfig, setup: dict) -> Backend`` — ``setup``
-is the device's current era record from its cooldown registry (backend, the
-``instrument_config`` folder holding the vendor config files, the port map).
+is the device's SELECTED named setup record from its cooldown registry (``backend``,
+the ``instrument_config`` folder holding the vendor config files, optional ``note``).
 ``simulated`` (demo qubits, synthetic data) is built in here, so query commands,
 practice runs and CI need no driver at all.
 """
@@ -16,6 +16,7 @@ practice runs and CI need no driver at all.
 from __future__ import annotations
 
 from importlib.metadata import entry_points
+from pathlib import Path
 
 from scqo import LabConfig, Session, load_lab_config, make_session
 from scqo.backend import Backend
@@ -68,60 +69,122 @@ def ensure_demo_experiments() -> None:
                                                              "__doc__": cls.__doc__}))
 
 
-def _demo_session(cfg: LabConfig) -> tuple[Session, LabConfig]:
+def _demo_session(cfg: LabConfig, setup_name: str = "",
+                  cooldown_id: str = "") -> tuple[Session, LabConfig]:
     from scqo.testing import InMemoryDevice, SimulatedBackend
 
     ensure_demo_experiments()
     backend: Backend = SimulatedBackend(InMemoryDevice(DEMO_QUBITS))
-    return make_session(backend, cfg, backend_label="simulated"), cfg
+    return make_session(backend, cfg, backend_label="simulated",
+                        setup_name=setup_name, cooldown_id=cooldown_id), cfg
 
 
-def build_session(config_path: str | None = None) -> tuple[Session, LabConfig]:
-    """Resolve device -> active cycle -> current setup -> backend; return a Session.
+def resolve_device_setup(cfg: LabConfig) -> tuple[str, str, dict] | None:
+    """Resolve cfg's device -> ACTIVE cycle -> named setup, touching NO instrument.
 
-    The user names only the SAMPLE (``device`` in user.toml, else the [lab] default);
-    the sample's cooldown registry says which instrument carries it right now and
-    where that instrument's vendor config lives. No device anywhere = the built-in
-    simulated demo (nothing saved). Every missing link fails loudly naming the exact
-    manager command that creates it.
+    Returns ``(cycle_id, setup_name, setup)``, or None for the device-less demo
+    fallback. Raises SystemExit with the canonical refusal text on every missing
+    link — ``build_session`` runs, and ``scqo user`` displays, the SAME messages.
     """
-    cfg = load_lab_config(config_path)
     if cfg.device is None:
-        return _demo_session(cfg)
+        if cfg.setup:
+            raise SystemExit(
+                f"setup {cfg.setup!r} is selected in {cfg.user_source or 'the user overlay'} "
+                "but no device is — a setup belongs to a device's cooldown cycle. Select the "
+                "device first:\n  scqo user --device <name> [--setup <name>]"
+            )
+        return None
     if cfg.data_root is None:
         raise SystemExit(
             f"device {cfg.device!r} is selected but no data_root is configured in "
             f"{cfg.source or 'the lab config'} — the device's cooldown registry lives under it"
         )
 
-    from scqo.datastore import active_cooldown, current_setup, load_cooldowns
+    from scqo.datastore import (
+        COOLDOWNS_FILE,
+        SetupResolutionError,
+        active_cooldown,
+        load_cooldowns,
+        resolve_setup,
+    )
 
-    cycles = load_cooldowns(cfg.data_root, cfg.device)  # loud on a broken registry
-    fix = (f"scqo cooldown start cd1 --backend <qblox|qm|simulated> "
-           f"[--instrument-config <folder>]   (device {cfg.device!r})")
+    try:
+        cycles = load_cooldowns(cfg.data_root, cfg.device)
+    except ValueError as err:  # broken registry: still loud, still the same text everywhere
+        raise SystemExit(str(err)) from None
+    registry = Path(cfg.data_root) / cfg.device / COOLDOWNS_FILE
+    start_fix = (f"scqo device cooldown start cd1 [--fridge <name> --packaging <text>]"
+                 f"   (device {cfg.device!r})")
     if not cycles:
-        raise SystemExit(f"device {cfg.device!r} has no cooldown registry yet — the manager runs:\n  {fix}")
+        raise SystemExit(
+            f"device {cfg.device!r} has no cooldown registry yet — the manager runs:\n"
+            f"  {start_fix}\n"
+            f"then hand-adds a [cd1.setup.<name>] block (backend + instrument_config) to\n"
+            f"  {registry}"
+        )
     active = active_cooldown(cycles)
     if active is None:
-        raise SystemExit(f"device {cfg.device!r} has no ACTIVE cooldown cycle — start the next one:\n  {fix}")
-    setup = current_setup(active[1])
-    if setup is None:
         raise SystemExit(
-            f"cycle {active[0]!r} of {cfg.device!r} has no setup in effect yet (all are "
-            f"future-dated) — fix the [[{active[0]}.setup]] 'since' dates in its cooldowns.toml"
+            f"device {cfg.device!r} has no ACTIVE cooldown cycle — start the next one:\n  {start_fix}"
         )
+    cid, cycle = active
+    try:
+        name, setup = resolve_setup(cycle, cfg.setup or None)
+    except SetupResolutionError as err:
+        if err.reason == "none":
+            raise SystemExit(
+                f"cycle {cid!r} of device {cfg.device!r} has no setups yet — runs need one.\n"
+                f"Hand-add a named setup block to {registry}\n"
+                f"(the manager creates the folder and copies the vendor config files in under\n"
+                f"canonical names first):\n\n"
+                f"  [{cid}.setup.<name>]\n"
+                f'  backend = "qblox"                # qblox | qm | simulated\n'
+                f"  instrument_config = '<folder>'   # omit for simulated"
+            ) from None
+        if err.reason == "ambiguous":
+            raise SystemExit(
+                f"cycle {cid!r} of device {cfg.device!r} has {len(err.available)} setups and "
+                f"none is selected: {', '.join(err.available)}\n"
+                f"pick the one you measure with (written to your user.toml):\n"
+                f"  scqo user --setup <name>"
+            ) from None
+        raise SystemExit(  # reason == "unknown": a stale/mistyped selection
+            f"setup {cfg.setup!r} (selected in {cfg.user_source or 'the user overlay'}) does "
+            f"not exist in the ACTIVE cycle {cid!r} of device {cfg.device!r} — available: "
+            f"{', '.join(err.available) or 'none'}\n"
+            f"fix:  scqo user --setup <name>    (or scqo user --clear-setup for auto-selection)"
+        ) from None
+    return cid, name, setup
+
+
+def build_session(config_path: str | None = None) -> tuple[Session, LabConfig]:
+    """Resolve device -> active cycle -> named setup -> backend; return a Session.
+
+    The user names the SAMPLE (``device`` in user.toml, else the [lab] default) and,
+    when the sample's ACTIVE cycle has several setups, WHICH one they measure with
+    (``setup`` in user.toml, ``scqo user --setup``); a single-setup cycle auto-selects.
+    The selected setup says which instrument carries the sample right now and where
+    that instrument's vendor config lives. No device anywhere = the built-in simulated
+    demo (nothing saved). Every missing link fails loudly naming the exact fix.
+    """
+    cfg = load_lab_config(config_path)
+    resolved = resolve_device_setup(cfg)
+    if resolved is None:
+        return _demo_session(cfg)
+    cid, name, setup = resolved
 
     family = setup["backend"]
     if family == "simulated":
-        return _demo_session(cfg)
+        return _demo_session(cfg, setup_name=name, cooldown_id=cid)
     for ep in entry_points(group="scqo.backends"):
         if ep.name == family:
             backend = ep.load()(cfg, setup)  # a factory ImportError propagates with its traceback
-            return make_session(backend, cfg, backend_label=family), cfg
+            return make_session(backend, cfg, backend_label=family,
+                                setup_name=name, cooldown_id=cid), cfg
     provider, venv = SERVED_BY[family]
     raise SystemExit(
-        f"device {cfg.device!r} is on backend {family!r} (cycle {active[0]}, setup since "
-        f"{setup['since']}), and that driver is not registered in this environment.\n"
+        f"device {cfg.device!r} is on backend {family!r} (cycle {cid}, setup {name!r}), "
+        f"and that driver is not registered in this environment.\n"
         f"- wrong venv? activate D:\\github\\{venv} (the one that has {provider})\n"
         f"- already in {venv}? then {provider} was never (re)installed here: entry points\n"
         f"  register at INSTALL time — re-run its `uv pip install -e` line (INSTALL §1/§5)"

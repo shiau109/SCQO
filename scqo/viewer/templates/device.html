@@ -38,21 +38,23 @@ measured values stay in runs with their backend recorded.</p>
   </tr>
   {% endfor %}
 </table>
-{% if setup %}
-<p class="muted">Current setup of <b>{{ active_cycle }}</b> (since {{ setup.since }}{% if setup.note %} — {{ setup.note }}{% endif %}):
-backend <b>{{ setup.backend }}</b>{% if setup.instrument_config %}, config <code>{{ setup.instrument_config }}</code>{% endif %}</p>
-{% if setup_ports %}
+{% if setups %}
+<p class="muted">Setups of <b>{{ active_cycle }}</b> — ALL of them (the viewer has no user context;
+each account picks its own with <code>scqo user --setup &lt;name&gt;</code>):</p>
 <table>
-  <tr><th>device port</th><th>instrument port</th></tr>
-  {% for port, target in setup_ports.items() %}
-  <tr><td>{{ port }}</td><td>{{ target }}</td></tr>
+  <tr><th>setup</th><th>backend</th><th>instrument config</th><th>note</th></tr>
+  {% for name, s in setups.items() %}
+  <tr>
+    <td><b>{{ name }}</b></td>
+    <td>{{ s.backend }}</td>
+    <td>{% if s.instrument_config %}<code>{{ s.instrument_config }}</code>{% else %}(built-in){% endif %}</td>
+    <td>{{ s.note or "-" }}</td>
+  </tr>
   {% endfor %}
 </table>
-{% else %}
-<p class="muted">No ports recorded yet — hand-add them to the [[{{ active_cycle }}.setup]] block.</p>
-{% endif %}
 {% elif active_cycle %}
-<p class="muted">{{ active_cycle }} has no setup in effect — check the [[{{ active_cycle }}.setup]] 'since' dates.</p>
+<p class="muted">{{ active_cycle }} has no setups yet — hand-add [{{ active_cycle }}.setup.&lt;name&gt;]
+blocks (backend + instrument_config) to <code>cooldowns.toml</code>; runs refuse until one exists.</p>
 {% endif %}
 {% endif %}
 

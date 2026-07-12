@@ -122,8 +122,8 @@ def _confirm(prompt: str) -> bool:
 
 
 def _fmt_era(era) -> str:
-    cd, since = (list(era or []) + ["", ""])[:2]
-    return f"({cd}, {since})" if (cd or since) else "(none declared)"
+    cd, setup = (list(era or []) + ["", ""])[:2]
+    return f"({cd}, {setup})" if (cd or setup) else "(none declared)"
 
 
 def review_interactively(

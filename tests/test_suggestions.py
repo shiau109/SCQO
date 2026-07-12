@@ -279,7 +279,7 @@ def test_accept_cooldown_era_guard(tmp_path):
     ddir = tmp_path / "data" / "devA"
     ddir.mkdir(parents=True, exist_ok=True)
     (ddir / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n',
+        '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n',
         encoding="utf-8",
     )  # the device moved to a declared cycle -> era mismatch with the run
 
@@ -378,7 +378,7 @@ def test_reapply_still_respects_era_guard(tmp_path):
     ddir = tmp_path / "data" / "devA"
     ddir.mkdir(parents=True, exist_ok=True)
     (ddir / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n',
+        '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n',
         encoding="utf-8",
     )  # device moved to a declared cycle: values may not transfer
 
@@ -412,13 +412,14 @@ def test_accept_dry_run_reports_guards_without_applying(tmp_path):
     ddir = tmp_path / "data" / "devA"
     ddir.mkdir(parents=True, exist_ok=True)
     (ddir / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n',
+        '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n',
         encoding="utf-8",
     )  # era mismatch with the run's ("", "") stamps
 
     plan = sess.accept(run_id, dry_run=True)  # must NOT raise despite the mismatch
     assert plan["era"]["match"] is False
-    assert plan["era"]["run"] == ["", ""] and plan["era"]["current"][0] == "cd1"
+    assert plan["era"]["run"] == ["", ""]
+    assert plan["era"]["current"] == ["cd1", "sim"]  # the single setup's NAME, auto-resolved
     by_field = {item["field"]: item for item in plan["items"]}
     assert by_field["drive_freq"]["stale"] is True
     assert by_field["drive_freq"]["current"] == 4.1e9
@@ -542,7 +543,7 @@ def test_review_era_mismatch_asks_once_and_no_aborts(tmp_path, monkeypatch):
     ddir = tmp_path / "data" / "devA"
     ddir.mkdir(parents=True, exist_ok=True)
     (ddir / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n',
+        '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n',
         encoding="utf-8",
     )
     state_before = sess.device_state()

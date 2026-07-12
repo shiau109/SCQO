@@ -57,11 +57,11 @@ def lab(tmp_path_factory):
     # State file at the <data_root>/<device>/ convention (THE rule since v0.5).
     (root / "devV").mkdir()
     state = root / "devV" / "scqo_state.json"
-    # Cycle registry BEFORE the runs, so they are stamped with cycle + setup era.
+    # Cycle registry BEFORE the runs, so they are stamped with cycle + setup name
+    # (a single-setup cycle auto-resolves for an unbound session — notebook parity).
     (root / "devV" / "cooldowns.toml").write_text(
         '[cdV]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
-        '[[cdV.setup]]\nsince = 2026-07-01\nbackend = "simulated"\n'
-        '"q0.readout" = "opx1.fem1.in0"\n',
+        '[cdV.setup.sim_main]\nbackend = "simulated"\n',
         encoding="utf-8",
     )
     sess = Session(
@@ -219,13 +219,31 @@ def test_runs_page_cooldown_filter_and_column(lab):
     assert c.get("/", params={"cooldown": "nope"}).text.count("/run/") == 0
 
 
+def test_runs_page_setup_filter_and_column(lab):
+    """Runs stamped with a setup NAME show it in the setup column; ?setup= filters."""
+    c = lab["client"]
+    page = c.get("/").text
+    assert "<th>setup</th>" in page
+    # devV's single-setup cycle auto-stamped its runs with the name
+    assert "<td>sim_main</td>" in _row_chunk(page, lab["res"]["run_id"])
+    # chipZ has no registry -> its run carries no setup name
+    assert "sim_main" not in _row_chunk(page, lab["chipz"]["run_id"])
+
+    filtered = c.get("/", params={"setup": "sim_main"}).text
+    assert lab["res"]["run_id"] in filtered and lab["ram"]["run_id"] in filtered
+    assert lab["chipz"]["run_id"] not in filtered
+    assert c.get("/", params={"setup": "nope"}).text.count("/run/") == 0
+
+
 def test_device_page_shows_cycle_and_setup(lab):
     page = lab["client"].get("/device").text
     assert "Cooldown cycles" in page
     assert "cdV" in page and "(active)" in page
     assert "PCB v3" in page  # packaging is a cycle fact
-    assert "backend <b>simulated</b>" in page  # the current setup's backend
-    assert "opx1.fem1.in0" in page  # its port table
+    # the ACTIVE cycle's named-setups table: name + backend rendered
+    assert "<b>sim_main</b>" in page
+    assert "simulated" in page
+    assert "(built-in)" in page  # simulated setups carry no instrument_config
 
 
 def test_multi_device_filter_and_device_page(lab):

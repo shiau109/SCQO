@@ -1,10 +1,11 @@
 """Lab configuration — so students run scripts without editing any repo.
 
 One tiny TOML file tells every command where data goes; everything ELSE follows the
-DEVICE: which instrument a sample hangs on, and where its vendor config lives, is
-recorded per era in the sample's cooldown registry
-(``<data_root>/<device>/cooldowns.toml`` — see ``scqo.datastore.load_cooldowns``),
-and the scqo state file is pure convention (``<data_root>/<device>/scqo_state.json``).
+DEVICE: which instrument a sample hangs on, and where its vendor config lives, is a
+NAMED setup of the sample's ACTIVE cooldown cycle
+(``<data_root>/<device>/cooldowns.toml`` — see ``scqo.datastore.load_cooldowns``;
+users pick one with ``scqo user --setup``), and the scqo state file is pure
+convention (``<data_root>/<device>/scqo_state.json``).
 Resolution order for the config file:
 
 1. an explicit path passed to :func:`load`;
@@ -40,7 +41,9 @@ kept untouched; a typo'd KEY inside a table surfaces when that experiment runs.
 (``$SCQO_CONFIG``), each account may keep ``~/.scqo/user.toml`` with PERSONAL keys
 only (flat, no tables)::
 
-    device = "chipA"                  # which SAMPLE I work on — the setup follows it
+    device = "chipA"                  # which SAMPLE I work on
+    setup = "qblox_main"              # which setup of its ACTIVE cycle (scqo user --setup;
+    #                                 # omit when the cycle has only one — it auto-selects)
     default_tags = ["projA"]          # appended to the shared tags, deduped
     # parameters_file = "~/projB.toml"     # OPTIONAL — only to use a DIFFERENT file;
     #                                      # ~/.scqo/parameters.toml applies automatically
@@ -72,9 +75,10 @@ USER_DEFAULT_PATH = Path.home() / ".scqo" / "user.toml"
 ENV_VAR = "SCQO_CONFIG"
 USER_ENV_VAR = "SCQO_USER_CONFIG"
 #: The only keys a per-user overlay may set. Machine wiring (data_root, state_sync)
-#: belongs to the shared lab config; the instrument follows the DEVICE via its
-#: cooldown registry's current setup — a user only names the sample they work on.
-USER_ALLOWED_KEYS = ("device", "default_tags", "parameters_file")
+#: belongs to the shared lab config; the instrument follows the DEVICE via the
+#: selected setup of its ACTIVE cooldown cycle — a user names the sample they work
+#: on and (when the cycle has several) which of its setups they measure with.
+USER_ALLOWED_KEYS = ("device", "setup", "default_tags", "parameters_file")
 
 
 def _load_parameter_defaults(path_setting: str | None) -> tuple[dict[str, dict], Path | None]:
@@ -141,7 +145,7 @@ def _load_user_overlay() -> tuple[dict, Path | None]:
             f"(allowed: {', '.join(USER_ALLOWED_KEYS)}). Machine wiring belongs to the shared "
             f"lab config; the instrument follows the device's cooldown registry."
         )
-    for key in ("device", "parameters_file"):
+    for key in ("device", "setup", "parameters_file"):
         if key in raw and not isinstance(raw[key], str):
             raise ValueError(f"{path}: {key!r} must be a string, got {type(raw[key]).__name__}")
     tags = raw.get("default_tags")
@@ -156,6 +160,10 @@ class LabConfig:
 
     data_root: Path | None = None
     device: str | None = None  # the resolved SAMPLE (user overlay > [lab]); None = demo fallback
+    # The user's setup selection within the device's ACTIVE cycle (user overlay ONLY —
+    # a shared [lab] default setup would silently steer every account's instrument;
+    # single-setup cycles auto-select, so the common case needs no selection at all).
+    setup: str | None = None
     state_sync: str = "pull"
     default_tags: list[str] = field(default_factory=list)
     parameter_defaults: dict[str, dict] = field(default_factory=dict)  # [experiment] tables from parameters.toml
@@ -187,6 +195,7 @@ def load(path: str | Path | None = None) -> LabConfig:
             # sample hangs on comes from its cooldown registry's current setup.
             user, user_source = _load_user_overlay()
             device = user.get("device", lab.get("device"))
+            setup = user.get("setup")  # deliberately NOT read from [lab] — see LabConfig
             # Standing parameter defaults: user's own file beats the [lab] one.
             params_file = user.get("parameters_file", lab.get("parameters_file"))
             parameter_defaults, parameters_source = _load_parameter_defaults(params_file)
@@ -198,6 +207,7 @@ def load(path: str | Path | None = None) -> LabConfig:
             return LabConfig(
                 data_root=Path(lab["data_root"]).expanduser() if lab.get("data_root") else None,
                 device=device,
+                setup=setup,
                 state_sync=lab.get("state_sync", "pull"),
                 default_tags=default_tags,
                 parameter_defaults=parameter_defaults,
@@ -211,11 +221,13 @@ def load(path: str | Path | None = None) -> LabConfig:
     return LabConfig(parameter_defaults=parameter_defaults, parameters_source=parameters_source)
 
 
-def make_session(backend: Backend, cfg: LabConfig, *, backend_label: str) -> Session:
+def make_session(backend: Backend, cfg: LabConfig, *, backend_label: str,
+                 setup_name: str = "", cooldown_id: str = "") -> Session:
     """Build a Session wired to the lab config (datastore, state file, default tags).
 
-    ``backend_label`` is the RESOLVED setup's backend (provenance stamped on every
-    run). The scqo state file is pure convention — ``<data_root>/<device>/
+    ``backend_label`` is the RESOLVED setup's backend; ``setup_name`` + ``cooldown_id``
+    are the RESOLVED era (named setup + its cycle) stamped verbatim on every run.
+    The scqo state file is pure convention — ``<data_root>/<device>/
     scqo_state.json`` — and persistence needs BOTH a data_root and a device; the
     device-less demo fallback saves nothing. ``simulated`` forces ``state_sync=
     "push"``: an in-memory demo device has no vendor truth to pull, so without push
@@ -233,4 +245,6 @@ def make_session(backend: Backend, cfg: LabConfig, *, backend_label: str) -> Ses
         parameter_defaults=cfg.parameter_defaults,
         parameter_defaults_source=str(cfg.parameters_source) if cfg.parameters_source else None,
         backend_label=backend_label,
+        setup_name=setup_name,
+        cooldown_id=cooldown_id,
     )

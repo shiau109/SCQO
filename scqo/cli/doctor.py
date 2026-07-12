@@ -24,12 +24,18 @@ _EXPECTED_FILES = {"qblox": ("dut_config.json", "hw_config.json"),
 
 
 def _setup_checks(cfg, backends: dict) -> list[tuple[str, str, str]]:
-    """Device -> cycle -> setup -> backend/folder checks (the run-time chain)."""
-    from scqo.datastore import active_cooldown, current_setup, load_cooldowns
+    """Device -> cycle -> selected setup -> backend/folder checks (the run-time chain)."""
+    from scqo.datastore import (
+        SetupResolutionError,
+        active_cooldown,
+        load_cooldowns,
+        resolve_setup,
+    )
 
     from ._backends import SERVED_BY
 
-    fix = f"scqo cooldown start cd1 --backend <qblox|qm|simulated> [--instrument-config <folder>]"
+    fix = ("scqo device cooldown start cd1 [--fridge <name>] — then hand-add "
+           "[cd1.setup.<name>] blocks (backend + instrument_config)")
     try:
         cycles = load_cooldowns(cfg.data_root, cfg.device)
     except ValueError as err:
@@ -42,41 +48,64 @@ def _setup_checks(cfg, backends: dict) -> list[tuple[str, str, str]]:
         return [(FAIL, "cooldowns", f"{len(cycles)} cycle(s), none ACTIVE — runs will refuse; "
                                     f"start the next one: {fix}")]
     cid, cycle = active
-    setup = current_setup(cycle)
-    if setup is None:
-        return [(FAIL, "cooldowns", f"cycle {cid!r} has no setup in effect (future-dated "
-                                    f"'since'?) — fix its [[{cid}.setup]] blocks")]
-    ports = sum(1 for k in setup if k not in ("since", "note", "backend", "instrument_config"))
-    out = [(OK, "cooldowns", f"{cfg.device}: {cid} ACTIVE — setup since {setup['since']}, "
-                             f"backend={setup['backend']}, {ports} port(s)")]
+    try:
+        name, setup = resolve_setup(cycle, cfg.setup or None)
+    except SetupResolutionError as err:
+        if err.reason == "none":
+            return [(FAIL, "cooldowns", f"cycle {cid!r} ACTIVE but has NO setups — runs will "
+                                        f"refuse; hand-add [{cid}.setup.<name>] blocks "
+                                        "(backend + instrument_config) to its cooldowns.toml")]
+        if err.reason == "ambiguous":
+            return [(FAIL, "cooldowns", f"cycle {cid!r} has {len(err.available)} setups and none "
+                                        f"is selected — runs will refuse for this account; pick "
+                                        f"one: scqo user --setup <name> "
+                                        f"(available: {', '.join(err.available)})")]
+        return [(FAIL, "cooldowns", f"selected setup {cfg.setup!r} is not in ACTIVE cycle "
+                                    f"{cid!r} (available: {', '.join(err.available) or 'none'}) "
+                                    "— scqo user --setup <name>")]
+    how = "selected" if cfg.setup else "auto"
+    out = [(OK, "cooldowns", f"{cfg.device}: {cid} ACTIVE — setup {name!r} ({how}), "
+                             f"backend={setup['backend']}")]
 
     backend = setup["backend"]
     if backend == "simulated":
         out.append((OK, "backend", "'simulated' — built into scqo (demo qubits, synthetic data)"))
-        return out
-    folder = Path(setup["instrument_config"])
-    if not folder.is_dir():
-        out.append((FAIL, "instr config", f"{folder} does not exist on this machine"))
     else:
-        missing = [n for n in _EXPECTED_FILES[backend] if not (folder / n).is_file()]
-        if missing:
-            out.append((FAIL, "instr config", f"{folder}: missing {', '.join(missing)} — copy the "
-                                              "vendor files there under canonical names"))
+        folder = Path(setup["instrument_config"])
+        if not folder.is_dir():
+            out.append((FAIL, "instr config", f"{folder} does not exist on this machine"))
         else:
-            out.append((OK, "instr config", str(folder)))
-    if backend in backends:
-        out.append((OK, "backend", f"{backend!r} -> {backends[backend]} (entry point)"))
-    else:
-        provider, venv = SERVED_BY[backend]
-        out.append((FAIL, "backend", f"{backend!r} driver not registered here — wrong venv "
-                                     f"(activate D:\\github\\{venv}) or {provider} needs "
-                                     "`uv pip install -e` (entry points register at INSTALL time)"))
+            missing = [n for n in _EXPECTED_FILES[backend] if not (folder / n).is_file()]
+            if missing:
+                out.append((FAIL, "instr config", f"{folder}: missing {', '.join(missing)} — copy "
+                                                  "the vendor files there under canonical names"))
+            else:
+                out.append((OK, "instr config", str(folder)))
+        if backend in backends:
+            out.append((OK, "backend", f"{backend!r} -> {backends[backend]} (entry point)"))
+        else:
+            provider, venv = SERVED_BY[backend]
+            out.append((FAIL, "backend", f"{backend!r} driver not registered here — wrong venv "
+                                         f"(activate D:\\github\\{venv}) or {provider} needs "
+                                         "`uv pip install -e` (entry points register at INSTALL time)"))
+    # The OTHER setups of the cycle (any account may select them): folder existence only.
+    for other, s in cycle.get("setup", {}).items():
+        if other == name or s["backend"] == "simulated":
+            continue
+        f = Path(s["instrument_config"])
+        if not f.is_dir():
+            out.append((WARN, "instr config", f"setup {other!r}: {f} does not exist on this "
+                                              "machine (fine unless someone selects it here)"))
     return out
 
 
 def _shared_folder_scan(data_root) -> list[tuple[str, str, str]]:
-    """WARN when the ACTIVE cycles of two devices share an instrument_config folder."""
-    from scqo.datastore import COOLDOWNS_FILE, active_cooldown, current_setup, load_cooldowns
+    """WARN when ACTIVE-cycle setups of two devices share an instrument_config folder.
+
+    ALL setups of each ACTIVE cycle are scanned (any account may select any of them);
+    within-cycle sharing is already refused by load_cooldowns.
+    """
+    from scqo.datastore import COOLDOWNS_FILE, active_cooldown, load_cooldowns
 
     seen: dict[str, str] = {}
     warnings = []
@@ -87,17 +116,20 @@ def _shared_folder_scan(data_root) -> list[tuple[str, str, str]]:
         except ValueError:
             continue  # its own doctor run reports this; don't fail the scan
         active = active_cooldown(cycles)
-        setup = current_setup(active[1]) if active else None
-        folder = (setup or {}).get("instrument_config")
-        if not folder:
+        if active is None:
             continue
-        key = os.path.normcase(folder)
-        if key in seen:
-            warnings.append((WARN, "shared config", f"devices {seen[key]!r} and {device!r} have "
-                                                    f"ACTIVE setups on the SAME folder {folder} — "
-                                                    "their writebacks will corrupt each other"))
-        else:
-            seen[key] = device
+        for name, setup in active[1].get("setup", {}).items():
+            folder = setup.get("instrument_config")
+            if not folder:
+                continue
+            key = os.path.normcase(folder)
+            mine = f"{device}:{name}"
+            if key in seen:
+                warnings.append((WARN, "shared config",
+                                 f"setups {seen[key]} and {mine} are ACTIVE on the SAME folder "
+                                 f"{folder} — their writebacks will corrupt each other"))
+            else:
+                seen[key] = mine
     return warnings
 
 
@@ -132,9 +164,15 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
         checks.append((OK, "parameters",
                        f"{cfg.parameters_source} ({len(cfg.parameter_defaults)} experiment table(s))"
                        if cfg.parameters_source else "none (code defaults)"))
-        checks.append((OK, "device", cfg.device) if cfg.device else
-                      (WARN, "device", 'none selected — built-in simulated demo, NOTHING SAVED; '
-                                       'set `device = "<name>"` in ~/.scqo/user.toml'))
+        if cfg.device:
+            checks.append((OK, "device", cfg.device))
+        elif cfg.setup:  # a setup selection with no device refuses every run
+            checks.append((FAIL, "device", f"setup {cfg.setup!r} is selected but no device is — "
+                                           "runs will refuse; scqo user --device <name> "
+                                           "(or scqo user --clear-setup)"))
+        else:
+            checks.append((WARN, "device", "none selected — built-in simulated demo, NOTHING "
+                                           "SAVED; select one: scqo user --device <name>"))
 
         if cfg.data_root is None:
             checks.append((WARN, "data_root", "not configured — runs are NOT saved"))

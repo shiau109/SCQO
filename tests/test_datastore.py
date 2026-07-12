@@ -356,9 +356,9 @@ def _write_cooldowns(data_root: Path, device: str, text: str) -> Path:
 
 
 def test_cooldown_registry_loader(tmp_path):
-    """device -> cycle (packaging fixed) -> dated FULL setup records; the current
-    setup is the latest applicable one of the open cycle."""
-    from scqo.datastore import active_cooldown, current_setup, load_cooldowns
+    """device -> cycle (packaging fixed) -> NAMED setup tables; the name is the
+    setup's identity — one when the cycle has exactly one, by name otherwise."""
+    from scqo.datastore import active_cooldown, load_cooldowns, resolve_setup
 
     assert load_cooldowns(tmp_path, "devA") == {}  # absent -> no cycles, no stamps
 
@@ -367,24 +367,47 @@ def test_cooldown_registry_loader(tmp_path):
     _write_cooldowns(
         tmp_path, "devA",
         "[cd1]\nstart = 2026-01-01\nend = 2026-02-01\n"
-        '[[cd1.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n\n'
+        '[cd1.setup.sim]\nbackend = "simulated"\n\n'
         '[cd2]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
-        f'[[cd2.setup]]\nsince = 2026-07-01\nbackend = "qblox"\n'
-        f"instrument_config = '{(tmp_path / 'cfgA').as_posix()}'\n"
-        '"q0.drive" = "cluster0.module2.out0"\n\n'
-        f'[[cd2.setup]]\nsince = 2026-07-03\nnote = "out0 dead"\nbackend = "qblox"\n'
-        f"instrument_config = '{(tmp_path / 'cfgB').as_posix()}'\n"
-        '"q0.drive" = "cluster0.module3.out1"\n',
+        '[cd2.setup.qblox_main]\nbackend = "qblox"\n'
+        f"instrument_config = '{(tmp_path / 'cfgA').as_posix()}'\n\n"
+        '[cd2.setup.qblox_spare]\nnote = "out0 dead"\nbackend = "qblox"\n'
+        f"instrument_config = '{(tmp_path / 'cfgB').as_posix()}'\n",
     )
     cycles = load_cooldowns(tmp_path, "devA")
     cid, cycle = active_cooldown(cycles)
     assert cid == "cd2"
     assert cycle["packaging"] == "PCB v3"
-    setup = current_setup(cycle)
-    assert str(setup["since"])[:10] == "2026-07-03"  # the latest applicable era
+    assert isinstance(cycle["setup"], dict)  # setups keyed by NAME
+    assert set(cycle["setup"]) == {"qblox_main", "qblox_spare"}
+
+    # single-setup cycle: resolve_setup picks the only one without a selection
+    name, setup = resolve_setup(cycles["cd1"])
+    assert name == "sim" and setup["backend"] == "simulated"
+
+    # multi-setup cycle: selection by name returns THAT setup
+    name, setup = resolve_setup(cycle, "qblox_spare")
+    assert name == "qblox_spare"
     assert setup["backend"] == "qblox"
+    assert setup["note"] == "out0 dead"
     assert setup["instrument_config"].endswith("cfgB")  # normalized, absolute
-    assert setup["q0.drive"] == "cluster0.module3.out1"  # full record = current wiring
+
+    # structured failures (reason + available drive the CLI's exact-fix messages)
+    import pytest
+
+    from scqo.datastore import SetupResolutionError
+
+    with pytest.raises(SetupResolutionError) as ei:
+        resolve_setup(cycle)  # several setups, no selection
+    assert ei.value.reason == "ambiguous"
+    assert ei.value.available == ["qblox_main", "qblox_spare"]
+    with pytest.raises(SetupResolutionError) as ei:
+        resolve_setup(cycle, "nope")
+    assert ei.value.reason == "unknown"
+    assert ei.value.available == ["qblox_main", "qblox_spare"]
+    with pytest.raises(SetupResolutionError) as ei:
+        resolve_setup({"setup": {}})  # empty cycle
+    assert ei.value.reason == "none" and ei.value.available == []
 
 
 def test_cooldown_registry_validation_is_loud(tmp_path):
@@ -393,41 +416,65 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
 
     from scqo.datastore import load_cooldowns
 
-    sim = '[[%s.setup]]\nsince = 2026-01-01\nbackend = "simulated"\n'
+    sim = '[%s.setup.sim]\nbackend = "simulated"\n'
     _write_cooldowns(tmp_path, "devA",
                      "[cd1]\nstart = 2026-01-01\n" + sim % "cd1"
                      + "\n[cd2]\nstart = 2026-07-01\n" + sim % "cd2")
     with pytest.raises(ValueError, match="more than one open cycle"):
         load_cooldowns(tmp_path, "devA")
 
+    # ZERO setups is legal at LOAD time since v0.7.0 (the manager hand-adds blocks
+    # later; runs refuse at session-build time, not here).
     _write_cooldowns(tmp_path, "devA", "[cd1]\nstart = 2026-01-01\n")
-    with pytest.raises(ValueError, match="no \\[\\[cd1.setup\\]\\]"):  # >= 1 setup required
-        load_cooldowns(tmp_path, "devA")
+    cycles = load_cooldowns(tmp_path, "devA")
+    assert cycles["cd1"].get("setup", {}) == {}
 
+    # the retired v0.6 [[<id>.setup]] ARRAY form must fail loudly, naming the fix
     _write_cooldowns(tmp_path, "devA",
                      '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nbackend = "simulated"\n')
-    with pytest.raises(ValueError, match="since"):
+    with pytest.raises(ValueError, match=r"retired \[\[cd1\.setup\]\] array form"):
+        load_cooldowns(tmp_path, "devA")
+
+    # 'since' dates are retired (the setup NAME is its identity)
+    _write_cooldowns(tmp_path, "devA",
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\n'
+                     'since = 2026-01-01\nbackend = "simulated"\n')
+    with pytest.raises(ValueError, match=r"unknown key\(s\): since"):
+        load_cooldowns(tmp_path, "devA")
+
+    # port-map pairs are retired (wiring lives in the vendor instrument_config folder)
+    _write_cooldowns(tmp_path, "devA",
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n'
+                     '"q0.drive" = "cluster0.module2.out0"\n')
+    with pytest.raises(ValueError, match=r"unknown key\(s\): q0\.drive"):
+        load_cooldowns(tmp_path, "devA")
+
+    # setup names travel as CLI args / index values / URL params — keep them plain
+    _write_cooldowns(tmp_path, "devA",
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup."my setup"]\nbackend = "simulated"\n')
+    with pytest.raises(ValueError, match="letters/digits"):
         load_cooldowns(tmp_path, "devA")
 
     _write_cooldowns(tmp_path, "devA",
-                     '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "opx"\n')
-    with pytest.raises(ValueError, match="backend"):
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.main]\nbackend = "opx"\n')
+    with pytest.raises(ValueError, match="'backend' must be one of"):
         load_cooldowns(tmp_path, "devA")
 
     _write_cooldowns(tmp_path, "devA",
-                     '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\n'
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\n'
                      'backend = "simulated"\ninstrument_config = "somewhere"\n')
-    with pytest.raises(ValueError, match="simulated"):  # forbidden for the demo backend
+    with pytest.raises(ValueError, match="takes no instrument_config"):  # forbidden for the demo backend
         load_cooldowns(tmp_path, "devA")
 
     _write_cooldowns(tmp_path, "devA",
-                     '[cd1]\nstart = 2026-01-01\n[[cd1.setup]]\nsince = 2026-01-01\nbackend = "qblox"\n')
-    with pytest.raises(ValueError, match="instrument_config"):  # required for real backends
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.main]\nbackend = "qblox"\n')
+    with pytest.raises(ValueError, match="needs 'instrument_config'"):  # required for real backends
         load_cooldowns(tmp_path, "devA")
 
-    # two setups sharing one folder — even via different spellings — corrupt live state.
-    # A './' segment collapses on every OS; the case-folded spelling is Windows-only
-    # (case-insensitive paths) — on POSIX two casings ARE different folders and must pass.
+    # two setups sharing one folder — even via different spellings — corrupt live state;
+    # the error must name BOTH setups. A './' segment collapses on every OS; the
+    # case-folded spelling is Windows-only (case-insensitive paths) — on POSIX two
+    # casings ARE different folders and must pass.
     import os
 
     shared = tmp_path / "SharedCfg"
@@ -439,12 +486,12 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
         _write_cooldowns(
             tmp_path, "devA",
             "[cd1]\nstart = 2026-01-01\n"
-            f'[[cd1.setup]]\nsince = 2026-01-01\nbackend = "qblox"\n'
+            '[cd1.setup.main]\nbackend = "qblox"\n'
             f"instrument_config = '{shared.as_posix()}'\n"
-            f'[[cd1.setup]]\nsince = 2026-01-05\nbackend = "qblox"\n'
+            '[cd1.setup.spare]\nbackend = "qblox"\n'
             f"instrument_config = '{second}'\n",
         )
-        with pytest.raises(ValueError, match="same"):
+        with pytest.raises(ValueError, match=r"'main' and 'spare'.*same"):
             load_cooldowns(tmp_path, "devA")
 
     path = _write_cooldowns(tmp_path, "devA", "not [valid toml")
@@ -453,45 +500,58 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
     assert path.is_file()  # never silently repaired
 
 
-def test_runs_stamp_cooldown_and_setup_era(tmp_path):
-    """Every run carries its full environment provenance: cycle id + the setup era
-    in effect — and a MID-CYCLE setup change moves the era for later runs."""
-    from datetime import date
-
-    from scqo import reindex
+def test_runs_stamp_cooldown_and_setup_name(tmp_path):
+    """Every run carries its full environment provenance: cycle id + the NAME of
+    the setup in effect. A single-setup cycle auto-stamps its only setup; once a
+    second setup appears, an UNBOUND session stamps "" and a bound one its name."""
+    from scqo import DataStore, reindex
 
     data_root = tmp_path / "data"
     _write_cooldowns(
         data_root, "devA",
         '[cd7]\nstart = 2026-01-05\npackaging = "PCB v2"\n\n'
-        '[[cd7.setup]]\nsince = 2026-01-05\nbackend = "simulated"\n"q0.drive" = "cluster0.module2.out0"\n',
+        '[cd7.setup.simA]\nbackend = "simulated"\n',
     )
+    # (a) single-setup cycle: a Session with NO setup_name auto-resolves the only one
     sess = _session(tmp_path)
     r1 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
     rec1 = json.loads((Path(r1["data_path"]) / "record.json").read_text(encoding="utf-8"))
     assert rec1["cooldown"] == "cd7"
-    assert rec1["setup_since"] == "2026-01-05"
+    assert rec1["setup"] == "simA"
 
-    # setup change mid-cycle (broken channel scenario): next run carries the NEW era
+    # (b) a second setup appears mid-cycle (broken channel scenario)
     path = data_root / "devA" / "cooldowns.toml"
-    today = date.today().isoformat()
     path.write_text(
         path.read_text(encoding="utf-8")
-        + f'\n[[cd7.setup]]\nsince = {today}\nnote = "out0 dead"\nbackend = "simulated"\n'
-        '"q0.drive" = "cluster0.module3.out1"\n',
+        + '\n[cd7.setup.simB]\nnote = "out0 dead"\nbackend = "simulated"\n',
         encoding="utf-8",
     )
+    # ...an UNBOUND session can no longer auto-pick: it stamps "" (tolerant; the
+    # CLI chain is the loud enforcer)
     r2 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
     rec2 = json.loads((Path(r2["data_path"]) / "record.json").read_text(encoding="utf-8"))
     assert rec2["cooldown"] == "cd7"
-    assert rec2["setup_since"] == today
+    assert rec2["setup"] == ""
 
-    # index filter + reindex survival (record.json is the truth)
-    assert {r["run_id"] for r in sess.find_runs(cooldown="cd7")} == {r1["run_id"], r2["run_id"]}
+    # ...a BOUND store/session stamps its name (bound once, not re-validated)
+    assert DataStore(data_root, device_name="devA", setup="simB").run_stamps() == ("cd7", "simB")
+    sess_b = _session(tmp_path, setup_name="simB")
+    r3 = sess_b.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    rec3 = json.loads((Path(r3["data_path"]) / "record.json").read_text(encoding="utf-8"))
+    assert rec3["cooldown"] == "cd7"
+    assert rec3["setup"] == "simB"
+
+    # (c) index filters + reindex survival (record.json is the truth; column 'setup')
+    all_ids = {r1["run_id"], r2["run_id"], r3["run_id"]}
+    assert {r["run_id"] for r in sess.find_runs(cooldown="cd7")} == all_ids
     assert sess.find_runs(cooldown="nope") == []
+    assert [r["run_id"] for r in sess.find_runs(setup="simB")] == [r3["run_id"]]
+    assert [r["run_id"] for r in sess.find_runs(setup="simA")] == [r1["run_id"]]
     (data_root / "index.sqlite").unlink()
     reindex(data_root)
-    assert len(sess.find_runs(cooldown="cd7")) == 2
+    assert len(sess.find_runs(cooldown="cd7")) == 3
+    assert [r["run_id"] for r in sess.find_runs(setup="simB")] == [r3["run_id"]]
+    assert sess.find_runs(setup="simB")[0]["setup"] == "simB"
 
 
 def test_run_without_registry_stamps_empty(tmp_path):
@@ -499,7 +559,7 @@ def test_run_without_registry_stamps_empty(tmp_path):
     sess = _session(tmp_path)
     r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
     rec = json.loads((Path(r["data_path"]) / "record.json").read_text(encoding="utf-8"))
-    assert rec["cooldown"] == "" and rec["setup_since"] == ""
+    assert rec["cooldown"] == "" and rec["setup"] == ""
 
 
 def test_broken_registry_fails_at_run_start(tmp_path):
@@ -512,3 +572,85 @@ def test_broken_registry_fails_at_run_start(tmp_path):
     sess = _session(tmp_path)
     with pytest.raises(ValueError, match="cooldowns.toml"):
         sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+
+
+def test_v6_index_auto_reindexes_to_v7(tmp_path):
+    """v0.6 records carry 'setup_since' (a retired date field) and no 'setup';
+    opening a v7 DataStore over a v6 index rebuilds from the folders: the old
+    field is dropped, the renamed column reads '' and meta says version 7."""
+    import sqlite3
+
+    from scqo import DataStore
+
+    sess = _session(tmp_path)
+    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+
+    # rewrite the record as a v6 one: setup_since present, setup absent
+    rec_path = Path(r["data_path"]) / "record.json"
+    record = json.loads(rec_path.read_text(encoding="utf-8"))
+    del record["setup"]
+    record["setup_since"] = "2026-01-05"
+    record["schema_version"] = 6
+    rec_path.write_text(json.dumps(record), encoding="utf-8")
+
+    db_path = tmp_path / "data" / "index.sqlite"
+    con = sqlite3.connect(db_path)
+    con.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+    con.commit()
+    con.close()
+
+    store = DataStore(tmp_path / "data")  # version mismatch -> automatic rebuild
+    (row,) = store.find_runs()
+    assert row["run_id"] == r["run_id"]
+    assert row["setup"] == ""  # renamed column; the old date value is not carried over
+    assert "setup_since" not in row
+    con = sqlite3.connect(db_path)
+    (version,) = con.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    con.close()
+    assert version == "7"
+
+
+def test_setup_validation_rejects_non_string_instrument_config(tmp_path):
+    """TOML parses unquoted dates/ints happily — the LOUD ValueError contract must
+    hold (a TypeError from Path() would escape every `except ValueError` consumer:
+    the CLI refusal text, the viewer device page, scqo doctor)."""
+    import pytest
+
+    from scqo.datastore import load_cooldowns
+
+    _write_cooldowns(tmp_path, "devT",
+                     "[cd1]\nstart = 2026-07-01\n"
+                     '[cd1.setup.qm_main]\nbackend = "qm"\ninstrument_config = 2026-07-12\n')
+    with pytest.raises(ValueError, match="quoted path string"):
+        load_cooldowns(tmp_path, "devT")
+
+
+def test_resolve_setup_selected_name_on_empty_cycle_is_reason_none():
+    """A stale selection on a ZERO-setup cycle must prescribe the hand-add fix
+    (reason 'none'), not 'unknown' — `scqo user --setup` cannot select anything."""
+    import pytest
+
+    from scqo.datastore import SetupResolutionError, resolve_setup
+
+    with pytest.raises(SetupResolutionError) as ei:
+        resolve_setup({"setup": {}}, "gone")
+    assert ei.value.reason == "none"
+
+
+def test_bound_era_pair_survives_a_mid_session_cycle_change(tmp_path):
+    """A store bound to (cd1, a) keeps stamping THAT pair even after the manager
+    ends cd1 and opens cd2 — mixing cd2 with setup 'a' would stamp an era that
+    never existed (and ("", "") would erase the bound setup)."""
+    from scqo.datastore import DataStore
+
+    _write_cooldowns(tmp_path, "devE",
+                     "[cd1]\nstart = 2026-07-01\n"
+                     '[cd1.setup.a]\nbackend = "simulated"\n')
+    store = DataStore(tmp_path, device_name="devE", setup="a", cooldown="cd1")
+    assert store.run_stamps() == ("cd1", "a")
+
+    _write_cooldowns(tmp_path, "devE",
+                     "[cd1]\nstart = 2026-07-01\nend = 2026-07-10\n"
+                     '[cd1.setup.a]\nbackend = "simulated"\n\n'
+                     "[cd2]\nstart = 2026-07-11\n")
+    assert store.run_stamps() == ("cd1", "a")  # the bound era, verbatim

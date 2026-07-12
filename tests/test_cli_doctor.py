@@ -34,14 +34,14 @@ def test_healthy_simulated_setup_passes(tmp_path):
     data_root = tmp_path / "data"
     (data_root / "simdev").mkdir(parents=True)
     (data_root / "simdev" / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-07-01\n\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "simulated"\n'
-        '"q0.drive" = "c0.m2.o0"\n',
+        '[cd1]\nstart = 2026-07-01\n\n[cd1.setup.sim_main]\nbackend = "simulated"\n',
         encoding="utf-8",
     )
     proc = _doctor(tmp_path, _lab_body(tmp_path))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "all checks passed" in proc.stdout
     assert "cd1 ACTIVE" in proc.stdout and "backend=simulated" in proc.stdout
+    assert "'sim_main' (auto)" in proc.stdout  # single-setup cycle auto-selects
     assert "12 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
 
 
@@ -50,7 +50,37 @@ def test_missing_registry_or_setup_fails(tmp_path):
     proc = _doctor(tmp_path, _lab_body(tmp_path))  # device set, no cooldowns.toml
     assert proc.returncode == 1
     assert "[FAIL] cooldowns" in proc.stdout
-    assert "scqo cooldown start" in proc.stdout  # names the fix
+    assert "scqo device cooldown start" in proc.stdout  # names the fix
+
+
+def test_zero_setup_cycle_fails(tmp_path):
+    data_root = tmp_path / "data"
+    (data_root / "simdev").mkdir(parents=True)
+    # An empty cycle is LEGAL at load time (v0.7.0), but runs would refuse — doctor FAILs.
+    (data_root / "simdev" / "cooldowns.toml").write_text(
+        "[cd1]\nstart = 2026-07-01\n", encoding="utf-8",
+    )
+    proc = _doctor(tmp_path, _lab_body(tmp_path))
+    assert proc.returncode == 1
+    assert "[FAIL] cooldowns" in proc.stdout
+    assert "has NO setups" in proc.stdout
+    assert "[cd1.setup.<name>]" in proc.stdout  # names the hand-edit fix
+
+
+def test_ambiguous_setup_without_selection_fails(tmp_path):
+    data_root = tmp_path / "data"
+    (data_root / "simdev").mkdir(parents=True)
+    (data_root / "simdev" / "cooldowns.toml").write_text(
+        '[cd1]\nstart = 2026-07-01\n\n'
+        '[cd1.setup.sim_a]\nbackend = "simulated"\n\n'
+        '[cd1.setup.sim_b]\nbackend = "simulated"\n',
+        encoding="utf-8",
+    )
+    proc = _doctor(tmp_path, _lab_body(tmp_path))  # SCQO_USER_CONFIG=none: no selection
+    assert proc.returncode == 1
+    assert "[FAIL] cooldowns" in proc.stdout
+    assert "scqo user --setup" in proc.stdout  # names the fix command
+    assert "sim_a" in proc.stdout and "sim_b" in proc.stdout  # and the choices
 
 
 def test_missing_instrument_config_files_fail(tmp_path):
@@ -58,7 +88,7 @@ def test_missing_instrument_config_files_fail(tmp_path):
     folder = data_root / "chipA" / "qblox_cd1"
     folder.mkdir(parents=True)  # exists but EMPTY: canonical vendor files absent
     (data_root / "chipA" / "cooldowns.toml").write_text(
-        '[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "qblox"\n'
+        '[cd1]\nstart = 2026-07-01\n\n[cd1.setup.qblox_main]\nbackend = "qblox"\n'
         f"instrument_config = '{folder.as_posix()}'\n",
         encoding="utf-8",
     )
@@ -77,13 +107,14 @@ def test_shared_folder_across_devices_warns(tmp_path):
     for dev in ("chipA", "chipB"):
         (data_root / dev).mkdir()
         (data_root / dev / "cooldowns.toml").write_text(
-            '[cd1]\nstart = 2026-07-01\n[[cd1.setup]]\nsince = 2026-07-01\nbackend = "qm"\n'
+            '[cd1]\nstart = 2026-07-01\n\n[cd1.setup.qm_main]\nbackend = "qm"\n'
             f"instrument_config = '{shared.as_posix()}'\n",
             encoding="utf-8",
         )
     proc = _doctor(tmp_path, _lab_body(tmp_path, device="chipA"))
     assert "[WARN] shared config" in proc.stdout
-    assert "chipA" in proc.stdout and "chipB" in proc.stdout
+    # the message names the device:setup pairs, not just the devices
+    assert "chipA:qm_main" in proc.stdout and "chipB:qm_main" in proc.stdout
 
 
 def test_no_config_warns_but_passes(tmp_path):

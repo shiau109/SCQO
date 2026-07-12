@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -45,12 +46,15 @@ from pydantic import BaseModel, Field
 
 from .config import _current_operator
 
-SCHEMA_VERSION = 6  # v6: suggestions + suggestions_pending columns (suggest/review/accept)
+SCHEMA_VERSION = 7  # v7: named setups — setup_since column/field renamed setup (the setup's NAME)
 RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
 COOLDOWNS_FILE = "cooldowns.toml"  # per device: <data_root>/<device>/cooldowns.toml (see load_cooldowns)
-SETUP_BACKENDS = ("qblox", "qm", "simulated")  # legal [[<cycle>.setup]] backend values
+SETUP_BACKENDS = ("qblox", "qm", "simulated")  # legal [<cycle>.setup.<name>] backend values
+SETUP_KEYS = ("backend", "instrument_config", "note")  # the ONLY keys a setup table may carry
+# Setup names travel as CLI arguments, index values and URL query params — keep them plain.
+_SETUP_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -62,7 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
   backend        TEXT NOT NULL,
   operator       TEXT NOT NULL DEFAULT '',
   cooldown       TEXT NOT NULL DEFAULT '',
-  setup_since    TEXT NOT NULL DEFAULT '',
+  setup          TEXT NOT NULL DEFAULT '',
   qubits         TEXT NOT NULL,
   outcome        TEXT NOT NULL,
   outcomes       TEXT NOT NULL,
@@ -98,7 +102,7 @@ class RunRecord(BaseModel):
     backend: str
     operator: str = ""  # OS login of whoever ran it (multi-user SSH provenance)
     cooldown: str = ""  # active cooldown-cycle id when the run started ("" = none declared)
-    setup_since: str = ""  # `since` date of the setup (era) in effect ("" = none)
+    setup: str = ""  # NAME of the setup in effect ("" = none declared / ambiguous unbound)
     qubits: list[str]
     started_at: str  # ISO-8601 local time with UTC offset (matches the folder dates)
     ended_at: str
@@ -158,9 +162,17 @@ def _write_json(path: Path, payload: Any) -> None:
 class DataStore:
     """Folder-backed run store with a rebuildable SQLite index."""
 
-    def __init__(self, data_root: str | Path, *, device_name: str = "device") -> None:
+    def __init__(
+        self, data_root: str | Path, *, device_name: str = "device",
+        setup: str | None = None, cooldown: str | None = None,
+    ) -> None:
         self.data_root = Path(data_root).expanduser()
         self.device_name = device_name
+        #: (cooldown id, NAMED setup) this store's session was resolved to ("" =
+        #: unbound). Bound once by build_session and stamped on every run; see
+        #: run_stamps for the semantics.
+        self.setup_name = setup or ""
+        self.cooldown_id = cooldown or ""
         self.data_root.mkdir(parents=True, exist_ok=True)
         self._db_path = self.data_root / INDEX_FILE
         with self._connect() as db:
@@ -205,17 +217,36 @@ class DataStore:
         raise RuntimeError(f"could not allocate a unique run dir for {stamp}-{experiment}")
 
     def run_stamps(self) -> tuple[str, str]:
-        """(cooldown id, setup ``since``) a run started now should carry — the run's
-        environment provenance: device -> cycle -> setup era. ("", "") when no cycle
+        """(cooldown id, setup NAME) a run started now should carry — the run's
+        environment provenance: device -> cycle -> named setup. ("", "") when no cycle
         registry / no open cycle exists — tolerant by design: library Sessions
-        (notebooks) bypass the CLI's loud resolution chain, which is the enforcer."""
+        (notebooks) bypass the CLI's loud resolution chain, which is the enforcer.
+
+        A BOUND era (the (cooldown, setup) pair resolved once by build_session) is
+        returned VERBATIM and deliberately NOT re-validated here: stamping what the
+        session actually used is truthful provenance — if the manager ends/starts a
+        cycle mid-measurement, mixing the NEW cycle id with the OLD bound setup would
+        stamp a pair that never existed, and re-validating at persist time could
+        raise AFTER the measurement (the exact data-loss mode run-START validation
+        exists to prevent). A setup bound WITHOUT a cycle id (tests, hand-built
+        stores) falls back to the currently active cycle. An unbound store auto-uses
+        the active cycle's ONLY setup (notebook parity with the CLI's auto-selection)
+        and stamps "" when the cycle has zero or several. Registry CORRUPTION still
+        raises loudly (load_cooldowns)."""
         cycles = load_cooldowns(self.data_root, self.device_name)
+        if self.setup_name and self.cooldown_id:
+            return self.cooldown_id, self.setup_name
         active = active_cooldown(cycles)
         if active is None:
             return "", ""
         cid, cycle = active
-        setup = current_setup(cycle)
-        return cid, str(setup["since"])[:10] if setup else ""
+        if self.setup_name:
+            return cid, self.setup_name
+        try:
+            name, _ = resolve_setup(cycle)
+            return cid, name
+        except SetupResolutionError:
+            return cid, ""
 
     def persist_run(
         self,
@@ -248,7 +279,7 @@ class DataStore:
         _write_json(run_dir / "device_after.json", device_after)
 
         outcomes = {q: str(o) for q, o in result.get("outcomes", {}).items()}
-        cooldown, setup_since = self.run_stamps()
+        cooldown, setup = self.run_stamps()
         record = RunRecord(
             run_id=run_id,
             experiment=experiment,
@@ -256,7 +287,7 @@ class DataStore:
             backend=backend,
             operator=_current_operator(),
             cooldown=cooldown,
-            setup_since=setup_since,
+            setup=setup,
             qubits=list(params_dump.get("qubits", [])),
             started_at=started_at,
             ended_at=ended_at,
@@ -288,6 +319,7 @@ class DataStore:
         device: str | None = None,
         operator: str | None = None,
         cooldown: str | None = None,
+        setup: str | None = None,
         pending: bool | None = None,
         limit: int = 50,
     ) -> list[dict]:
@@ -322,6 +354,9 @@ class DataStore:
         if cooldown is not None:
             where.append("cooldown = ?")
             args.append(cooldown)
+        if setup is not None:  # setup names are unique per cycle only — combine with cooldown
+            where.append("setup = ?")
+            args.append(setup)
         if pending is not None:  # True = runs with undecided suggestions, False = none left
             where.append("suggestions_pending > 0" if pending else "suggestions_pending = 0")
         sql = "SELECT * FROM runs"
@@ -503,7 +538,7 @@ class DataStore:
     def _upsert(db: sqlite3.Connection, record: RunRecord, parameters: dict, fit: dict) -> None:
         db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, ended_at, experiment, device,"
-            " backend, operator, cooldown, setup_since, qubits, outcome, outcomes, fit, tags,"
+            " backend, operator, cooldown, setup, qubits, outcome, outcomes, fit, tags,"
             " note, error, parameters, updated_device, suggestions, suggestions_pending,"
             " path, schema_version)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -516,7 +551,7 @@ class DataStore:
                 record.backend,
                 record.operator,
                 record.cooldown,
-                record.setup_since,
+                record.setup,
                 json.dumps(record.qubits),
                 record.outcome,
                 json.dumps(record.outcomes),
@@ -584,18 +619,21 @@ def load_cooldowns(data_root: str | Path, device: str) -> dict:
     """The device's cooldown-cycle registry ``<data_root>/<device>/cooldowns.toml``.
 
     One table per cycle (start, fridge, packaging, note; ``end`` absent = ACTIVE),
-    each holding ``[[<id>.setup]]`` era records. A setup carries the WHOLE
-    measurement setup of its era: ``since`` (required date), ``backend`` (required,
-    one of :data:`SETUP_BACKENDS`), ``instrument_config`` (folder holding ALL vendor
-    config files under canonical names — required for real backends, forbidden for
-    "simulated"), optional ``note``, and every other key = device port ->
-    "instrument.port". ANY change — a port, or the whole instrument — is a NEW setup.
+    each holding NAMED ``[<id>.setup.<name>]`` sub-tables — the name IS the setup's
+    identity (stamped on runs, selected via ``scqo user --setup``). A setup is one
+    whole measurement arrangement of the cycle and carries EXACTLY: ``backend``
+    (required, one of :data:`SETUP_BACKENDS`), ``instrument_config`` (folder holding
+    ALL vendor config files under canonical names — required for real backends,
+    forbidden for "simulated") and optional ``note``. Wiring lives in the vendor
+    config folder, not here; a cycle may have ZERO setups (runs refuse until the
+    manager hand-adds one).
 
     Validation is LOUD — this file stamps and drives every run: corrupt TOML, a
-    non-table cycle, more than one open cycle, a cycle with NO setups, a setup
-    missing ``since``/``backend``, an unknown backend, a missing/forbidden
-    ``instrument_config``, or two setups in one cycle sharing a folder (live state
-    written back by runs — sharing corrupts it) all raise ValueError naming the file.
+    non-table cycle, more than one open cycle, the retired v0.6 ``[[<id>.setup]]``
+    array form, a bad setup name, unknown setup keys (``since``/port maps are
+    retired), a missing/unknown backend, a missing/forbidden ``instrument_config``,
+    or two setups in one cycle sharing a folder (live state written back by runs —
+    sharing corrupts it) all raise ValueError naming the file.
     ``instrument_config`` is expanduser'd, resolved (relative paths against the
     registry's folder) and written back normalized, so every consumer sees one form.
     Folder EXISTENCE is deliberately NOT checked here — analysis machines must read
@@ -617,37 +655,59 @@ def load_cooldowns(data_root: str | Path, device: str) -> dict:
     for cid, cycle in cycles.items():
         if not isinstance(cycle, dict):
             raise ValueError(f"{path}: top-level keys must be cycle tables like [cd8]; {cid!r} is not")
-        setups = cycle.get("setup", [])
-        if not setups:
-            raise ValueError(f"{path}: cycle {cid!r} has no [[{cid}.setup]] — every cycle "
-                             "records at least its initial setup (backend + instrument_config)")
-        folders: set[str] = set()
-        for setup in setups:
-            if "since" not in setup:
-                raise ValueError(f"{path}: every [[{cid}.setup]] needs a 'since' date")
+        setups = cycle.get("setup", {})
+        if isinstance(setups, list):
+            raise ValueError(
+                f"{path}: cycle {cid!r} uses the retired [[{cid}.setup]] array form — setups are "
+                f"NAMED sub-tables since v0.7.0: [{cid}.setup.<name>] (one table per measurement "
+                "setup; the name is the setup's identity)")
+        if not isinstance(setups, dict) or not all(isinstance(s, dict) for s in setups.values()):
+            raise ValueError(f"{path}: [{cid}.setup] must contain named setup tables like "
+                             f"[{cid}.setup.qblox_main]")
+        # Zero setups is legal: an empty cycle loads fine; runs refuse at session-build
+        # time with a message naming the hand-edit fix (the manager adds blocks later).
+        folders: dict[str, str] = {}
+        for name, setup in setups.items():
+            if not _SETUP_NAME_RE.match(name):
+                raise ValueError(f"{path}: setup name {name!r} in cycle {cid!r} must be "
+                                 "letters/digits/_/- only (it becomes a CLI argument and an "
+                                 "index value)")
+            unknown = sorted(k for k in setup if k not in SETUP_KEYS)
+            if unknown:
+                raise ValueError(
+                    f"{path}: [{cid}.setup.{name}] has unknown key(s): {', '.join(unknown)} — "
+                    f"allowed keys: {', '.join(SETUP_KEYS)}. v0.7.0 retired 'since' dates (the "
+                    "setup NAME is its identity) and port-map pairs (wiring lives in the vendor "
+                    "instrument_config folder).")
             backend = setup.get("backend")
             if backend not in SETUP_BACKENDS:
-                raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: 'backend' must be "
-                                 f"one of {', '.join(SETUP_BACKENDS)}, got {backend!r}")
+                raise ValueError(f"{path}: [{cid}.setup.{name}]: 'backend' must be one of "
+                                 f"{', '.join(SETUP_BACKENDS)}, got {backend!r}")
             folder = setup.get("instrument_config")
             if backend == "simulated":
                 if folder is not None:
-                    raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: 'simulated' "
-                                     "takes no instrument_config (the demo device is built in)")
+                    raise ValueError(f"{path}: [{cid}.setup.{name}]: 'simulated' takes no "
+                                     "instrument_config (the demo device is built in)")
                 continue
             if not folder:
-                raise ValueError(f"{path}: [[{cid}.setup]] since={setup['since']}: backend "
-                                 f"{backend!r} needs 'instrument_config' (folder with the vendor "
-                                 "config files under canonical names)")
+                raise ValueError(f"{path}: [{cid}.setup.{name}]: backend {backend!r} needs "
+                                 "'instrument_config' (folder with the vendor config files "
+                                 "under canonical names)")
+            if not isinstance(folder, str):
+                # TOML happily parses unquoted dates/ints/bools — keep the LOUD
+                # ValueError contract (a TypeError from Path() names no file).
+                raise ValueError(f"{path}: [{cid}.setup.{name}]: 'instrument_config' must be a "
+                                 f"quoted path string, got {type(folder).__name__}")
             resolved = Path(folder).expanduser()
             if not resolved.is_absolute():
                 resolved = path.parent / resolved
             normalized = os.path.normcase(str(resolved.resolve()))
             if normalized in folders:
-                raise ValueError(f"{path}: two setups in cycle {cid!r} point at the same "
-                                 f"instrument_config folder ({folder!r}) — each era writes live "
-                                 "state back; sharing a folder corrupts it")
-            folders.add(normalized)
+                raise ValueError(f"{path}: setups {folders[normalized]!r} and {name!r} in cycle "
+                                 f"{cid!r} point at the same instrument_config folder "
+                                 f"({folder!r}) — each setup writes live state back; sharing a "
+                                 "folder corrupts it")
+            folders[normalized] = name
             setup["instrument_config"] = str(resolved.resolve())  # one form for all consumers
     open_cycles = [cid for cid, cycle in cycles.items() if "end" not in cycle]
     if len(open_cycles) > 1:
@@ -665,21 +725,45 @@ def active_cooldown(cycles: dict) -> tuple[str, dict] | None:
     return None
 
 
-def current_setup(cycle: dict) -> dict | None:
-    """The setup (era record) in effect: latest ``since`` <= today (None if none yet).
+class SetupResolutionError(ValueError):
+    """A cycle's setup could not be resolved.
 
-    Setups are FULL records (backend + instrument_config + port map), so no delta
-    reconstruction — the latest applicable one IS the current setup. Equal dates
-    break to the LATER block in the file (a same-day fix supersedes the morning's
-    entry). Future-dated setups (pre-staged edits) are ignored.
+    ``reason`` is ``'none'`` (the cycle has no setups yet), ``'ambiguous'`` (several
+    setups and no selection) or ``'unknown'`` (the selected name doesn't exist);
+    ``available`` lists the cycle's setup names. The message is generic on purpose —
+    CLI callers re-frame it with the device name and the exact fix command.
     """
-    today = datetime.now().date().isoformat()
-    best = None
-    for setup in cycle.get("setup", []):
-        since = str(setup["since"])[:10]
-        if since <= today and (best is None or since >= str(best["since"])[:10]):
-            best = setup
-    return best
+
+    def __init__(self, message: str, *, reason: str, available: list[str]):
+        super().__init__(message)
+        self.reason = reason
+        self.available = available
+
+
+def resolve_setup(cycle: dict, name: str | None = None) -> tuple[str, dict]:
+    """The ``(name, setup)`` a session should use: the NAMED one when ``name`` is
+    given, else the cycle's ONLY setup — with several setups a selection is mandatory
+    (``scqo user --setup``), with zero the manager must hand-add a block first.
+    Raises :class:`SetupResolutionError` otherwise (structured ``reason`` +
+    ``available`` so each caller can print its own exact fix)."""
+    setups = cycle.get("setup", {})
+    if not setups:
+        # Checked BEFORE a selected name: on an empty cycle the only real fix is
+        # hand-adding a block — "unknown selection" would prescribe scqo user
+        # --setup, which cannot select anything here.
+        raise SetupResolutionError("this cycle has no setups yet", reason="none", available=[])
+    if name:
+        if name in setups:
+            return name, setups[name]
+        raise SetupResolutionError(
+            f"setup {name!r} does not exist in this cycle "
+            f"(available: {', '.join(setups)})",
+            reason="unknown", available=list(setups))
+    if len(setups) == 1:
+        return next(iter(setups.items()))
+    raise SetupResolutionError(
+        f"this cycle has {len(setups)} setups and none is selected ({', '.join(setups)})",
+        reason="ambiguous", available=list(setups))
 
 
 

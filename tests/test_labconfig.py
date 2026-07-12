@@ -249,6 +249,45 @@ def test_user_overlay_disallowed_key_raises(monkeypatch, tmp_path):
     assert "device" in str(err.value)  # message names the allowed keys
 
 
+def test_user_overlay_setup_selects_named_setup(monkeypatch, tmp_path):
+    """v0.7.0: the user names WHICH setup of the device's ACTIVE cycle they measure with."""
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'setup = "qblox_main"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    cfg = labconfig.load(config)
+    assert cfg.setup == "qblox_main"
+    assert cfg.user_source == user
+
+
+def test_user_overlay_non_string_setup_raises(monkeypatch, tmp_path):
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, "setup = 3\n")
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    with pytest.raises(ValueError, match="setup") as err:
+        labconfig.load(config)
+    assert "user.toml" in str(err.value)  # names the offending file
+
+
+def test_lab_setup_key_is_not_read(tmp_path):
+    """'setup' is a PERSONAL selection: a shared [lab] setup would silently steer
+    every account's instrument, so the base config's key is deliberately ignored."""
+    config = _base_config(tmp_path, '[lab]\nsetup = "qblox_main"\n')
+    cfg = labconfig.load(config)
+    assert cfg.setup is None
+
+
+def test_user_overlay_allowed_keys_message_lists_setup(monkeypatch, tmp_path):
+    """Unknown overlay keys still rejected; the allowed-keys list now includes setup."""
+    config = _base_config(tmp_path)
+    user = _write_user(tmp_path, 'state_sync = "push"\n')
+    monkeypatch.setattr(labconfig, "USER_DEFAULT_PATH", user)
+    with pytest.raises(ValueError, match="state_sync") as err:
+        labconfig.load(config)
+    message = str(err.value)
+    for allowed in ("device", "setup", "default_tags", "parameters_file"):
+        assert allowed in message
+
+
 def test_user_overlay_ignored_without_base_config(monkeypatch, tmp_path):
     """No base config = built-in defaults; a device pick without a data_root is moot."""
     monkeypatch.delenv(labconfig.ENV_VAR, raising=False)

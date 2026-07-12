@@ -19,20 +19,19 @@ _COMMANDS = {
     "find": ("find", "query saved runs (no instrument touched)"),
     "accept": ("accept", "review / apply / reject a run's suggested updates (by run id)"),
     "tag": ("tag", "retro-tag / annotate a saved run"),
-    "device": ("device", "current calibration table + change history (who/what/when)"),
-    "devices": ("devices", "the menu: selectable backends/samples/instruments"),
-    "cooldown": ("cooldown", "cooldown-cycle registry: validate/list, start, end"),
-    "sample": ("sample", "add-a-sample scaffold (paste-ready snippets, edits nothing shared)"),
+    "state": ("state", "current calibration table + change history (who/what/when)"),
+    "user": ("user", "show or set YOUR selection: device + setup (writes user.toml)"),
+    "device": ("device", "device admin (manager): add, list, cooldown start/end"),
     "doctor": ("doctor", "health check: venv, drivers, config chain, registries (run me first)"),
-    "sync-launchers": ("sync_launchers", "regenerate the driver repos' launcher stubs (manager)"),
 }
 
 
 def _usage() -> str:
     lines = ["usage: scqo <command> [options]   (scqo <command> --help for that command's flags)", ""]
     lines += [f"  {name:16s} {help_}" for name, (_, help_) in _COMMANDS.items()]
+    # ASCII only: this text reaches consoles in whatever codepage the lab runs
     lines += ["", "backends: simulated is built in; qblox/qm come from the installed driver",
-              "(LCHQBDriver / LCHQMDriver — activate the matching venv)."]
+              "(LCHQBDriver / LCHQMDriver - activate the matching venv)."]
     return "\n".join(lines)
 
 

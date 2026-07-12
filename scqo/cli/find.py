@@ -2,7 +2,7 @@
 
     scqo find                                    # latest runs
     scqo find --experiment qubit_ramsey --qubit q1
-    scqo find --cooldown cd8 --since 2026-07-01
+    scqo find --cooldown cd8 --setup qblox_main --since 2026-07-01
     scqo find --show 20260704-153012-qubit_ramsey-01   # full record
 
 Queries the SQLite index under the lab's data_root (from ``~/.scqo/config.toml``).
@@ -31,6 +31,8 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     parser.add_argument("--device", help="filter by device (sample) name")
     parser.add_argument("--operator", help="filter by who ran it (OS login name)")
     parser.add_argument("--cooldown", help="filter by cooldown-cycle id, e.g. cd8")
+    parser.add_argument("--setup", help="filter by setup name (unique per cycle only — "
+                                        "combine with --cooldown)")
     parser.add_argument("--pending", action="store_true",
                         help="only runs with undecided suggested updates (decide: scqo accept)")
     parser.add_argument("--limit", type=int, default=20)
@@ -50,7 +52,7 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     runs = store.find_runs(
         experiment=args.experiment, qubit=args.qubit, tag=args.tag, since=args.since,
         until=args.until, outcome=args.outcome, device=args.device,
-        operator=args.operator, cooldown=args.cooldown,
+        operator=args.operator, cooldown=args.cooldown, setup=args.setup,
         pending=True if args.pending else None, limit=args.limit,
     )
     if not runs:
