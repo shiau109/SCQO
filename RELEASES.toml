@@ -3,6 +3,15 @@
 # scqat at its pinned tag (scqat versions independently: its own pyproject/tag line).
 # Hand-edited at release time by the manager (see RELEASING.md).
 
+[v0-7-0]
+date = 2026-07-12
+scqo = "v0.7.0"
+lchqbdriver = "v0.7.0"           # factory text; ENTIRE scripts/ wrapper layer retired (wrappers, shims, launcher stubs)
+lchqmdriver = "v0.7.0"           # same: scripts/ keeps only check_real_config.py
+scqo-contrib = "v0.7.0"          # no-change re-tag
+scqat = "v0.1.5"                 # unchanged pin
+notes = "Named user-selectable setups: cooldowns.toml setups become [cycle.setup.<name>] tables (keys backend/instrument_config/note; 'since' dates + port maps retired — wiring lives in the vendor config folder; the v0.6 [[.setup]] array form refuses loudly). user.toml gains setup; scqo user --device/--setup selects (and WRITES user.toml); a single-setup cycle auto-selects, several refuse until selected. Zero-setup cycles are legal (cooldown start opens an EMPTY cycle; runs refuse until a setup block is hand-added). Runs stamp (cooldown, setup NAME); index auto-rebuilds (schema v7, old runs reindex with empty setup); scqo find --setup; accept era guard compares names. CLI regrouping: state (was device), user (new), device = admin group absorbing devices/sample/cooldown (no aliases); sync-launchers RETIRED with the drivers' whole scripts/ wrapper layer (command wrappers, _lab/_cli shims, launcher stubs) — scqo run <name> is the one way; driver scripts/ keeps only per-repo content (check_real_config.py + LCHQB's ai_loop_demo.py). UPGRADE REQUIRES: hand-edit each device's cooldowns.toml to named setup tables (fresh-start: old array form is not read); no reinstall needed. BEHAVIOR CHANGE: multi-setup cycles refuse runs until scqo user --setup."
+
 [v0-6-0]
 date = 2026-07-12
 scqo = "v0.6.0"
