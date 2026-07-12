@@ -61,18 +61,18 @@ qubit_power_rabi              Sweep drive amplitude ... recalibrate pi_amp.
 qubit_ramsey                  Two pi/2 pulses ... correct drive_freq and report T2*.
 qubit_relaxation              Pi pulse + swept wait ... records t1_s (record-only).
 qubit_spectroscopy            Sweep a weak saturation drive ... recalibrates drive_freq.
-qubit_spectroscopy_flux       2D flux map ... reports sweet spot / Ej_sum (no writeback).
+qubit_spectroscopy_flux       2D flux map ... proposes sweet spot / Ej_sum (physical parameters).
 readout_frequency             Per-shot fidelity vs freq ... updates readout_freq.
 readout_power                 Per-shot fidelity vs amp ... updates readout_amp.
 resonator_spectroscopy        Sweep readout frequency ... updates readout_freq.
-resonator_spectroscopy_flux   2D resonator flux map ... reports sweet spot / g (no writeback).
+resonator_spectroscopy_flux   2D resonator flux map ... proposes sweet spot / g (physical parameters).
 resonator_spectroscopy_power  2D punchout ... updates readout_amp and readout_freq.
 single_shot_readout           IQ blobs ... records readout fidelity (record-only).
 ```
 
 Start with **resonator spectroscopy** — always the first measurement on a device: you
-have to find the readout resonance before any qubit experiment means anything, and its
-writeback (`readout_freq`) is the most benign one. Tag it so you can find it later:
+have to find the readout resonance before any qubit experiment means anything. Tag it
+so you can find it later:
 
 ```bash
 scqo run resonator_spectroscopy --qubits q1 --tag mytest --note "first try"
@@ -83,25 +83,101 @@ You get the structured result as JSON — extracted physics, not raw traces:
 ```json
 {
   "outcomes": { "q1": "successful" },
-  "fit": { "q1": { "readout_freq": 5907471431.6,       // dip position, written back
+  "fit": { "q1": { "readout_freq": 5907471431.6,       // dip position (suggested update)
                     "dip_detuning_hz": -1795822.3,      // how far the dip sat from the old value
                     "old_readout_freq": 5909267253.9 } },
   "error": null,
   "run_id": "20260704-225450-SQ_demo-resonator_spectroscopy-01",
-  "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\20260704-225450-SQ_demo-resonator_spectroscopy-01"
+  "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\...-01",
+  "suggestions": [ { "qubit": "q1", "field": "readout_freq", "store": "instrument",
+                     "before": 5909267253.9, "after": 5907471431.6, "status": "pending" } ]
 }
 ```
 
-Because the fit succeeded, `readout_freq` was **written back** to the device state
-(with a history record linking it to this run). Once the readout is in place, the
-qubit experiments follow the same one-liner pattern:
+> **Coming from v0.5.0?** Three habits to update: (1) runs no longer write fitted
+> values back — they *suggest*, you decide (`--accept` restores the old automatic
+> behavior); (2) `scqo calibrate` now asks after every step (`--accept` for
+> unattended bring-up); (3) T1/T2 are gone from `scqo device` — they live under
+> `scqo device --physical` now. Details below and in INSTALL §2's v0.6.0 note.
+
+**Nothing is applied automatically.** The fitted `readout_freq` is a *suggested
+update*: after the JSON, `scqo run` shows the suggestion table and asks you —
+
+```
+suggested updates (1 pending):
+    #  qubit  field              store           current ->      suggested   status
+    1  q1     readout_freq       instrument   5.90927e+09 ->   5.90747e+09 Hz   pending
+apply which updates? [a]ll / [n]one (default) / rows, qubit, field or qubit.field:
+```
+
+Press Enter to apply **nothing** (the default) — the device state is then unchanged
+and the next experiment still runs on the OLD calibration; `a` applies everything,
+or pick a subset (`1 3`, `q1`, `readout_freq`, `q1.readout_freq`) — partial
+acceptance is normal. Every applied value lands in the change history linked to
+this run. In a script or a pipe there is no prompt: the run is saved with its
+suggestions **pending**, and you decide later — by run id, even days later:
+
+```bash
+scqo find --pending                          # runs with undecided suggestions
+scqo accept                                  # the same list, decision-oriented
+scqo accept <run_id> --list                  # look at the table again
+scqo accept <run_id>                         # terminal: interactive picker
+scqo accept <run_id> --field readout_freq --comment "matches the punchout map"
+scqo accept <run_id> --reject --comment "fit chased a noise spike"
+```
+
+Applying goes through the live instrument config, so `scqo accept <run_id>` needs
+the device's venv; `--list`, `--reject` and `find --pending` are datastore-only and
+run anywhere the data drive is mounted. Two guards protect a deferred apply: a run
+from an **older cooldown/setup era**, and a value whose *before* no longer matches
+the device (someone recalibrated in between — **stale**). **At a terminal you never
+need to know a flag**: a guard trip becomes a warning plus a [y/N] question showing
+the exact values involved, and Enter always answers No — nothing changes unless you
+explicitly confirm. In scripts nobody can answer, so `--force` pre-answers yes to
+the era and stale questions.
+
+**Changed your mind later?** A decided suggestion isn't dead. At a terminal, just
+`scqo accept <old_run_id>` and pick the row — the picker asks
+*"re-apply (rollback, overwriting the current …)?"* (or, for a rejected item,
+*"accept it after all?"*). In a script, pass the answer as a flag:
+
+```bash
+scqo accept <old_run_id> --reapply --field readout_freq --comment "rolling back - the newer fit chased a spike"
+```
+
+A rollback deliberately overwrites the current value, so re-applied rows get no
+stale question (the summary shows exactly what was overwritten); the cooldown-era
+guard still applies. Every re-application is a fresh change-history entry linked to
+the run it came from, so the viewer's Device page tells the whole story: A applied →
+B applied → A re-applied.
+
+Once the readout is in place, the qubit experiments follow the same pattern:
 
 ```bash
 scqo run qubit_ramsey --qubits q1 --set num_points=201            # drive_freq + T2*
-scqo run qubit_power_rabi                                         # all qubits, defaults
-scqo run resonator_spectroscopy --no-update ...                   # analyze only, no writeback
+scqo run qubit_power_rabi --accept                                # apply updates immediately
+scqo run resonator_spectroscopy --no-update ...                   # analyze only, nothing suggested
 scqo run qubit_ramsey --params my.json                            # parameters from a file
 ```
+
+One more distinction worth knowing: **instrument settings vs sample physics** —
+the suggestion table's `store` column says which side each value belongs to.
+Calibration knobs (`readout_freq`, `pi_amp`, ...; `store: instrument`) are pushed
+to the instrument config on accept. Measured physics of the SAMPLE — T1, T2*,
+T2echo, and the flux maps' sweet spot / Ej_sum / f_r0 / g (`store: physical`) —
+is instrument-independent and lands in the device folder's `physical.json`
+instead (same accept flow, full history):
+
+```bash
+scqo device --physical              # the sample's measured physics per qubit
+scqo device --physical --history    # who accepted what, when, from which run
+scqo device --sources               # which run set each CURRENT value (both stores)
+```
+
+`--sources` answers *"which runs is my device built from?"* — the values in use
+matter more than the pending ones. Every current value names the run that set it,
+**strictly**: a value the vendor reseeded or another tool wrote shows
+`(externally changed)` and credits no run; direct notebook writes show `(manual)`.
 
 Three tiers of parameters — each overriding the previous:
 
@@ -129,11 +205,14 @@ scqo run resonator_spectroscopy --help
 
 The **daily workflow** is one command — the bring-up sequence (resonator spectroscopy
 → qubit spectroscopy → power Rabi; Ramsey is the fine-tuning follow-up once a pi pulse
-exists — run it explicitly), every step saved + tagged, summary at the end:
+exists — run it explicitly), every step saved + tagged, summary at the end. After each
+step you are shown its suggested updates and asked what to apply — what you accept
+feeds the next step; `--accept` applies everything automatically (unattended bring-up):
 
 ```bash
 scqo calibrate --qubits q0 q1 --tag cooldown1
 scqo calibrate --skip resonator_spectroscopy       # drop a step
+scqo calibrate --accept                            # unattended: apply every step's updates
 ```
 
 And the device's calibration state / change log any time:
@@ -165,6 +244,8 @@ scqo find --show 20260704-225450-SQ_demo-resonator_spectroscopy-01   # one run, 
 - Realized a week later that a run mattered? Tag it retroactively:
   `scqo tag 20260704-...-01 --add thesis-fig3 --note "best T2* so far"`
   (also backend-free).
+- `--pending` narrows to runs whose suggested updates are still undecided —
+  `scqo accept` shows the same list and is where you decide (section 2).
 
 ## 4. What's inside a run folder
 
@@ -175,7 +256,7 @@ scqo find --show 20260704-225450-SQ_demo-resonator_spectroscopy-01   # one run, 
     parameters.json      exactly what you asked for
     result.json          outcomes + fitted quantities + error (if any)
     device_before.json   calibration state before ...
-    device_after.json    ... and after the writeback
+    device_after.json    ... and after the run (differs only where updates were applied)
     analysis/q1/         per-qubit fit artifacts from scqat:
         resonator_spectroscopy.png                         ← the dip + fit, already drawn
         resonator_spectroscopy_metadata.json               fit parameters, fit quality
@@ -204,16 +285,25 @@ python -m scqo.viewer            # -> http://127.0.0.1:8080
 Four pages (port convention: **8001 qualibrate · 8080 viewer · 8081 datasette** —
 all can run at once):
 
-- **Runs** — filter by experiment / qubit / tag / outcome / date; click any run.
+- **Runs** — filter by experiment / qubit / tag / outcome / date, plus a
+  **pending only** checkbox for runs with undecided suggested updates; click any run.
+  Runs whose accepted values are still **LIVE on the device** carry a green
+  `live:` line naming those fields — the at-a-glance answer to *"which runs is my
+  device built from?"*.
 - **Run page** — outcome badges, the fit table, **every figure inline** (the dip,
-  the fringe, the 2D power map...), your parameters, and the device before → after
-  diff with changed fields highlighted. You can **add/remove tags and edit the
-  note right here** — the viewer's only write, equivalent to `scqo tag`.
-- **Trends** — a fitted quantity vs time per qubit (`t1_s`, `t2_star_s`,
+  the fringe, the 2D power map...), your parameters, the **suggested updates** table
+  (pending / accepted / rejected, who decided, comments — deciding stays on the CLI:
+  `scqo accept <run_id>`) with an **on device** column (LIVE, or superseded —
+  linking the run that superseded it), and the device before → after diff. You can
+  **add/remove tags and edit the note right here** — the viewer's only write,
+  equivalent to `scqo tag`.
+- **Trends** — a fitted quantity vs time per qubit (`t1_s`, `t2_star_s`, `ej_sum_ghz`,
   `readout_freq`, `pi_amp`, ...): coherence drift at a glance, every point linking
   to its run.
-- **Device** — the last observed calibration and the full change history, each
-  entry linking to the run that caused it.
+- **Device** — the current calibration and the sample's **physical parameters**
+  (`physical.json`): every value links to the run that set it (`(manual)` and
+  `(externally changed)` marked honestly), plus both change histories, each entry
+  linking to the run that caused it.
 
 Power users: `python -m scqo.browse` still serves raw datasette on **8081** for
 ad-hoc SQL, facets and CSV export (same canned queries as before).
@@ -329,21 +419,29 @@ backend = SimulatedBackend(InMemoryDevice({          # or QbloxBackend / QMBacke
 sess = make_session(backend, cfg, backend_label="simulated")   # the label stamps each run's provenance
 
 result = sess.run("resonator_spectroscopy", {"qubits": ["q1"]})
+result["suggestions"]                                    # the proposed updates (pending)
+sess.accept(result["run_id"], fields=["readout_freq"], comment="looks right")
+sess.reject(result["run_id"], comment="noise spike")     # decline the rest (no instrument)
+sess.run("qubit_ramsey", {...}, update="apply")          # unattended / AI loop: apply now
 sess.find_runs(experiment="resonator_spectroscopy", qubit="q1")  # list of dicts, newest first
+sess.find_runs(pending=True)                             # undecided suggestions
 sess.load_run(result["run_id"])                          # record + params + figure paths
 
-sess.device_state()   # current calibration of every qubit
-sess.history()        # every change ever: who, what, old → new, which run caused it
+sess.device_state()             # current calibration of every qubit
+sess.physical_state()           # the sample's measured physics (physical.json)
+sess.history()                  # every calibration change: who, what, old → new, which run
+sess.history(store="physical")  # same, for the physical-parameter ledger
 ```
 
 ## 7. When things fail (by design)
 
 A failed fit or a bad probe **never crashes and never loses data**: you get
-`"error": "..."`, the qubits are marked `failed`/`no_data`, nothing is written back
-to the device — and the run (including the misbehaving dataset) is still saved and
+`"error": "..."`, the qubits are marked `failed`/`no_data`, nothing is suggested or
+applied — and the run (including the misbehaving dataset) is still saved and
 searchable via `--outcome failed`, because failed data is exactly what you want to
-look at when debugging. Even "measurement fine, instrument rejected the writeback"
-comes back as a structured error with the fit intact.
+look at when debugging. Even "measurement fine, but applying an accepted value
+failed" comes back structured: the fit stays intact and the item stays *pending*
+with the error noted on it, so you can decide again once the cause is fixed.
 
 ## 8. Rules of the road (who edits what)
 
@@ -380,9 +478,10 @@ Everything above is real: **both instruments are hardware-proven** through this 
 the GUI you read about in section 4 (viewer + datasette) is shipped. Still ahead:
 
 - **Device-level inference** (Phase 3): combining runs into EJ/EC, anharmonicity,
-  flux response via scqat + SCQ.jl — the recorded T1/T2/fidelity ledger is its input.
-- **Running measurements from the viewer** (run-forms with an approval gate) and a
-  per-instrument run lock — until then, measuring stays on the CLI and
+  flux response via scqat + SCQ.jl — the physical-parameter ledger (`physical.json`:
+  T1/T2, sweet spots, Ej_sum, f_r0, g) is its input.
+- **Running measurements — and accepting updates — from the viewer**, plus a
+  per-instrument run lock — until then, measuring and deciding stay on the CLI and
   one-measurement-per-instrument stays a social rule.
 - **The AI loop**: the catalog/Session JSON surface is built for it, but no agent
   drives it yet.

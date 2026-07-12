@@ -95,7 +95,7 @@ uv pip install --python .venv-qm\Scripts\python.exe -e .\scqat -e .\SCQO -e .\LC
 ```
 
 (Each scqo install line also puts the **`scqo` command** on that venv's PATH — the
-whole Tier-1 surface (`scqo run/find/tag/device/devices/cooldown/sample/calibrate`)
+whole Tier-1 surface (`scqo run/find/accept/tag/device/devices/cooldown/sample/calibrate`)
 works from any directory. `[viewer]` pulls the run-viewer's web extras —
 fastapi/uvicorn/jinja2/python-multipart —
 for `python -m scqo.viewer`; `datasette` powers the SQL browser `python -m scqo.browse`.
@@ -326,6 +326,40 @@ tables are simply no longer read; `user.toml` selects a `device` instead of a
 the config folder is the connection truth). The run index rebuilds itself (schema
 check); old runs reindex with an empty setup era.
 
+**Upgrading to v0.6.0 (fresh-start policy, no migration) — READ THIS ONE, it
+changes what a run DOES:**
+
+- **Runs no longer write fitted values back.** They become *pending suggestions*:
+  at a terminal `scqo run` shows the table and asks (press `a` to apply all —
+  Enter applies NOTHING and the device stays unchanged); in scripts everything
+  stays pending until `scqo accept <run_id>`. The pre-v0.6 behavior is one flag
+  away: `scqo run ... --accept` (or `update="apply"` in Python). `scqo calibrate`
+  now asks after each step — use `scqo calibrate --accept` for unattended
+  bring-up, otherwise later steps run on whatever you accepted so far.
+- **T1/T2*/T2echo moved out of the device state.** `scqo device` no longer shows
+  them — they are SAMPLE physics now, living in `<data_root>\<device>\physical.json`
+  with their own change history: `scqo device --physical [--history]`. Legacy
+  `t1_s`/`t2_star_s`/`t2_echo_s` keys in an old `scqo_state.json` are simply not
+  read (`readout_fidelity` stays: it is a fact about qubit+setup).
+- **Nothing to migrate:** the run index rebuilds itself (schema v6); pre-v0.6
+  runs reindex with no suggestions. Find undecided runs any time with
+  `scqo find --pending` or bare `scqo accept`.
+- Changed your mind later? At a terminal `scqo accept <run_id>` simply ASKS
+  ("re-apply (rollback)?", "apply anyway?" on an era mismatch, per-row stale
+  overwrite questions — Enter always = No); `--reapply`/`--force` are the script
+  form of those answers. See TUTORIAL §2.
+- **Provenance is first-class:** `scqo device --sources` (and the viewer's
+  `live:` markers / value-to-run links) show which run set each CURRENT value —
+  strictly: values reseeded by the vendor or written by another tool show
+  `(externally changed)` and credit no run. Additive, no data action.
+
+**Upgrading a dev machine (tracks `main`, editable installs):** `git pull` in every
+repo is normally ALL it takes — code and new subcommands are picked up immediately.
+Re-run the §1 `uv pip install -e` lines only when the release notes in
+[RELEASES.toml](RELEASES.toml) say so (entry points and dependencies register at
+install time — e.g. anything crossing v0.4.0); finish with `scqo doctor` either way.
+Tagged servers follow the §5 procedure instead.
+
 ### Adding a new sample
 
 Nothing shared to edit — a sample IS its data folder plus its own cooldown registry.
@@ -342,6 +376,22 @@ remaining step paste-ready (it never edits shared files):
    selection. Everything else auto-creates on first use: `<data_root>\<name>\` run
    folders, `scqo_state.json`, the index row, viewer pages. Verify with
    `scqo devices`.
+
+### Cleaning state — from "just the index" to factory reset
+
+Most "clean-up" needs are lighter than a factory reset. The ladder, mildest first:
+
+1. **Rebuild the index only** (always safe — the folders are the truth): delete
+   ALL `index.sqlite*` files (`-wal`/`-shm` siblings too) in the data_root, then
+   `python -m scqo <data_root>`. Fixes a stale/corrupt index; loses nothing.
+2. **Reset a device's instrument state**: delete
+   `<data_root>\<device>\scqo_state.json` — it reseeds from the vendor config at
+   the next session (fresh-start rule; the change history in it is lost).
+   **Do NOT reflexively delete `physical.json` next to it**: that file IS the
+   sample's measured-physics ledger (T1/T2, arch/dispersive fits + their history)
+   and does NOT reseed from anywhere — delete it only if you truly mean to
+   discard those measurements.
+3. **Factory reset** — everything below.
 
 ### Factory reset (make a machine "new" again)
 
@@ -602,6 +652,9 @@ read-only command.
 
 | Symptom | Cause / fix |
 |---|---|
+| runs succeed but `scqo device` never changes | v0.6.0 behavior: fitted values are SUGGESTED, not applied — decide at the run prompt, later via `scqo accept <run_id>`, or run with `--accept` (see the §2 v0.6.0 upgrade note) |
+| `scqo accept` refused with "stale" / "already decided" | that's the SCRIPT (non-terminal) behavior — at a terminal it asks a [y/N] question instead (Enter = No); in scripts answer via `--force` / `--reapply` |
+| the T1/T2 columns disappeared from `scqo device` | moved in v0.6.0: coherence times are sample physics now — `scqo device --physical` (`<device>\physical.json`) |
 | `ModuleNotFoundError: scqo` | no venv activated — Windows: `.venv-view\Scripts\Activate.ps1`; macOS/Linux: `source .venv-view/bin/activate` |
 | `scqo: command not found` / not recognized | no venv activated, or scqo upgraded across v0.4.0 without re-running the section-1 install line (the command registers at install time). `Get-Command scqo` shows which venv's command you're getting |
 | viewer: `missing package: uvicorn` (or fastapi/jinja2), or a `python-multipart` RuntimeError | **wrong venv activated** — run the viewer from `(view)` or `(qblox)`. The `(.venv-qm)` lock env deliberately omits `python-multipart`, so the viewer's tag-edit route cannot start there |

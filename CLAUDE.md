@@ -72,16 +72,21 @@ scqo/
   parameters.py   # Parameters base + QubitSelection / AveragingParameters mixins (decision surface)
   result.py       # Outcome enum + Result base (extraction surface)
   device.py       # QubitView / DeviceModel ABCs (neutral field names)
+  physical.py     # PHYSICAL_FIELDS + PhysicalStore: the SAMPLE's instrument-independent
+                  #   measured physics (T1/T2, arch/dispersive fits) -> <device>/physical.json
+  suggestions.py  # Suggestion + SuggestionCapture: update() writes become PENDING
+                  #   proposals on the run record; accept/reject decide them (v0.6)
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update) + backend half (probe)
   registry.py     # @register / get / catalog  (AI's menu of measurements)
-  session.py      # Session: catalog() / run() / find_runs() / load_run() / device_state() / history()
+  session.py      # Session: catalog() / run() / accept() / reject() / find_runs() /
+                  #   load_run() / device_state() / physical_state() / history()
   datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
-  cli/            # the `scqo` command (run/calibrate/find/tag/device/devices/cooldown/
-                  #   sample/doctor/sync-launchers): ONE engine, any-directory; the
-                  #   device's current cooldown setup picks the backend, resolved via
+  cli/            # the `scqo` command (run/calibrate/find/accept/tag/device/devices/
+                  #   cooldown/sample/doctor/sync-launchers): ONE engine, any-directory;
+                  #   the device's current cooldown setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; simulated is built in
                   #   (_backends.ensure_demo_experiments fills the catalog driver-less)
   experiments/
@@ -89,11 +94,11 @@ scqo/
     qubit_spectroscopy.py       # two-tone peak search -> coarse drive_freq (bring-up step 2)
     qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
-    qubit_relaxation.py         # pi + swept wait, exp-decay fit -> reports t1_s (no writeback)
-    qubit_echo.py               # Hahn echo, exp-envelope fit -> reports t2_echo_s (no writeback)
-    qubit_spectroscopy_flux.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (Phase-3 feeder)
+    qubit_relaxation.py         # pi + swept wait, exp-decay fit -> t1_s (physical store)
+    qubit_echo.py               # Hahn echo, exp-envelope fit -> t2_echo_s (physical store)
+    qubit_spectroscopy_flux.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (physical store; Phase-3 feeder)
     single_shot_readout.py      # per-shot IQ blobs (prepared_state x shot_idx) -> readout fidelity
-    resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (report)
+    resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (physical store)
     readout_power.py            # per-shot fidelity vs amp prefactor -> updates readout_amp
     readout_frequency.py        # per-shot fidelity vs readout detuning -> updates readout_freq
     resonator_spectroscopy_power.py  # 2D punchout (detuning x power_db) -> readout_amp + readout_freq
@@ -315,3 +320,61 @@ the exact `scqo cooldown start` fix. Fresh-start: retired keys are simply not re
   shared ACTIVE config folders. Real-config test fixtures:
   `tests/demo_instr_config/` (OPX_OPX1000, QBlox_Scheduler); drivers run
   parse-grade tests against them (skip-guarded, side-by-side checkout).
+
+**2026-07-10 — suggest → review → accept + physical-parameter store (v0.6.0,
+fresh start: no data migration).** `Session.run` no longer applies fitted values:
+`update()` runs against a `SuggestionCapture` shim (zero changes to experiment/
+driver/contrib update() bodies; a typo'd field now raises instead of vanishing) and
+every write becomes a PENDING `Suggestion` (qubit/field/store/before/after/status/
+comment) stored on the run record (`record.json` = truth; index v6 adds
+`suggestions` + `suggestions_pending`, auto-reindex). `update` param: `"suggest"`
+(default) / `"apply"` (old behavior — capture + immediate accept-all through the
+SAME path, so applied runs carry the audit trail too; `True`/`False` alias
+apply/none) / `"none"`. Decisions: `scqo run` prompts at a terminal (Enter = apply
+nothing; partial by rows/qubit/field), non-TTY leaves pending; later
+`scqo accept <run_id>` (interactive picker / `--qubit`/`--field` partial /
+`--reject` + `--comment`; bare `scqo accept` lists pending, `find --pending` too).
+`Session.accept` replays through RecordingDevice (vendor-push-first, per-qubit
+atomic, ChangeRecords stamped with the ORIGINATING run_id) guarded by cooldown-era
+match + per-item staleness (before == current) unless `--force`; reject/list are
+datastore-only (no backend built). `calibrate` prompts per step (accepted values
+feed the next step; `--accept` unattended). NEW `scqo/physical.py`:
+`PHYSICAL_FIELDS` + `PhysicalStore` -> `<data_root>/<device>/physical.json`
+(values + ChangeRecord history; next to a bare state_path when no data_root) — the
+SAMPLE's instrument-independent measured physics. t1_s/t2_star_s/t2_echo_s MOVED
+out of config.FIELDS into it (readout_fidelity stays: instrument-dependent);
+legacy state-file keys are simply not read. Flux experiments' update() now
+proposes their physics (unified names: `flux_period_v`->`dv_phi0_v`,
+`f01_at_sweet_spot_hz`->`f_q_max_hz`; fit keys unchanged). Physics-integrity
+rule (from the v0.6.0 review): resonator_spectroscopy_flux proposes f_r0/g ONLY
+when the caller supplied `f_q_max_hz` (an unconstrained dispersive fit holds
+f_q_max at a scqat placeholder assumption), and never proposes f_q_max_hz itself
+(an input; qubit_spectroscopy_flux measures it) — assumed values must not enter
+the measured-physics ledger. Surfaces:
+`Session.physical_state()`/`history(store=)`/`find_runs(pending=)`,
+`scqo device --physical`, viewer (display-only: pending filter + updates column,
+run-page suggestions table, device-page physical panel; tag/note stays its only
+write). `updated_device` redefined: "≥1 suggestion applied" (a later accept flips
+it via the tag_run-pattern `update_suggestions`). `sample.json` stays reserved for
+Phase-3 *inferred* physics. **2026-07-11 (from the new-user role-play):**
+`scqo accept --reapply` re-decides ALREADY accepted/rejected items — roll back to
+an older run's value or accept after a reject; staleness guard OFF in that mode
+(the summary's `current` shows what was overwritten), era guard stays; every
+re-application is a fresh run-linked ChangeRecord. Plus the v0.5→v0.6 upgrade
+notes in INSTALL §2 and the "Coming from v0.5.0?" call-out in TUTORIAL §2.
+**2026-07-12 — live-source provenance + guards-as-dialogue.** NEW `scqo/provenance.py`
+(pure; shared by viewer + Session.live_sources()): the LAST ChangeRecord per
+(qubit, field) is credited as a value's source ONLY while `record.new == current`
+(strict match — vendor reseeds/qualibrate writes = "external", NEVER a false
+credit; run_id=None = "manual"; no record = "unrecorded"). Surfaces: viewer runs
+list `live:` line in the updates column (pending line preserved), device page
+values link to their source runs (state authority switched to scqo_state.json
+`config` when present — deferred accepts now visible), run page "on device"
+column (LIVE / superseded→link), CLI `scqo device --sources` (both stores, one
+table). And `Session.accept(dry_run=True)` returns a JSON plan (era reported not
+raised, decided items included, per-item stale/current facts); the interactive
+picker (`_review.review_interactively`) turns every guard into a warning + [y/N]
+(Enter = No): era asks once, decided rows ask "re-apply (rollback)?", stale rows
+show the diff — no flag knowledge needed at a TTY; `--force`/`--reapply` remain
+the script form (batch semantics byte-identical). `_apply` returns applied ITEMS
+(status alone can't tell after a failed reapply).

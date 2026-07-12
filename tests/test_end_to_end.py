@@ -154,12 +154,32 @@ def test_session_catalog_and_run_are_json():
     assert "frequency_span_hz" in schema["properties"]
 
     before = sess.device_state()["q0"]["readout_freq"]
-    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"], "frequency_span_hz": 15e6})
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"], "frequency_span_hz": 15e6},
+                      update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
-    # update=True wrote the fitted frequency back into the device
+    # update="apply" wrote the fitted frequency back into the device
     after = sess.device_state()["q0"]["readout_freq"]
     assert after != before
     assert np.isclose(after, result["fit"]["q0"]["readout_freq"])
+    # ... and the applied update carries its audit trail
+    assert [(s["field"], s["status"]) for s in result["suggestions"]] == [("readout_freq", "accepted")]
+
+
+def test_default_run_suggests_but_applies_nothing():
+    """The v0.6 default: fitted values become PENDING suggestions — no store changes,
+    no history, no vendor push — until a human (or accept) applies them."""
+    sess = Session(SimulatedBackend(_device()))
+
+    state_before = sess.device_state()
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"], "frequency_span_hz": 15e6})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    assert sess.device_state() == state_before  # nothing applied
+    assert sess.history() == []
+    (s,) = result["suggestions"]
+    assert s["status"] == "pending" and s["store"] == "instrument"
+    assert s["qubit"] == "q0" and s["field"] == "readout_freq"
+    assert s["before"] == state_before["q0"]["readout_freq"]
+    assert np.isclose(s["after"], result["fit"]["q0"]["readout_freq"])
 
 
 def test_ramsey_generalizes_pattern():
@@ -173,15 +193,19 @@ def test_ramsey_generalizes_pattern():
     result = sess.run(
         "qubit_ramsey",
         {"qubits": ["q1"], "frequency_detuning_hz": 1.0e6, "max_idle_time_ns": 4000, "num_points": 201},
+        update="apply",
     )
     assert result["outcomes"]["q1"] == Outcome.SUCCESSFUL.value
     # recovered residual detuning is small (|err| <= 0.2 * applied) and T2* is physical
     assert abs(result["fit"]["q1"]["detuning_error_hz"]) < 0.3e6
     assert 1e-6 < result["fit"]["q1"]["t2_star_s"] < 50e-6
-    # update=True wrote the corrected drive_freq back (a different field than resonator spec)
+    # update="apply" wrote the corrected drive_freq back (a different field than resonator spec)
     after = sess.device_state()["q1"]["drive_freq"]
     assert after != before
     assert np.isclose(after, result["fit"]["q1"]["drive_freq"])
+    # T2* is sample physics: recorded in the PHYSICAL store, not the instrument config
+    assert sess.physical_state()["q1"]["t2_star_s"] == result["fit"]["q1"]["t2_star_s"]
+    assert "t2_star_s" not in sess.device_state()["q1"]
 
 
 def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
@@ -189,7 +213,8 @@ def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
     sess = Session(SimulatedBackend(_device()))
 
     before = sess.device_state()["q0"]["drive_freq"]
-    result = sess.run("qubit_spectroscopy", {"qubits": ["q0"], "frequency_span_hz": 60e6})
+    result = sess.run("qubit_spectroscopy", {"qubits": ["q0"], "frequency_span_hz": 60e6},
+                      update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     assert abs(fit["peak_detuning_hz"]) <= 60e6 / 2  # inside the swept window
@@ -199,18 +224,18 @@ def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
 
 
 def test_qubit_relaxation_records_t1():
-    """T1: exponential decay fit -> t1_s RECORDED into device state + history
-    (record-only field: every calibration knob stays untouched, nothing is pushed)."""
+    """T1: exponential decay fit -> t1_s recorded into the PHYSICAL store + its
+    history (sample physics: the instrument config stays completely untouched)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
-    result = sess.run("qubit_relaxation", {"qubits": ["q0"]})
+    result = sess.run("qubit_relaxation", {"qubits": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 20e-6 * 0.8 < result["fit"]["q0"]["t1_s"] < 60e-6 * 1.2  # sim truth 20-60 us
-    after = sess.device_state()
-    assert after["q0"]["t1_s"] == result["fit"]["q0"]["t1_s"]  # recorded as state
-    assert {f: v for f, v in after["q0"].items() if f != "t1_s"} == state_before["q0"]
-    assert [(h["field"], h["qubit"]) for h in sess.history()] == [("t1_s", "q0")]
+    assert sess.physical_state()["q0"]["t1_s"] == result["fit"]["q0"]["t1_s"]
+    assert sess.device_state() == state_before  # instrument config untouched
+    assert sess.history() == []  # ... and no instrument history either
+    assert [(h["field"], h["qubit"]) for h in sess.history(store="physical")] == [("t1_s", "q0")]
 
 
 def test_resonator_power_2d_updates_amp_and_freq():
@@ -219,7 +244,7 @@ def test_resonator_power_2d_updates_amp_and_freq():
     sess = Session(SimulatedBackend(_device()))
 
     before = sess.device_state()["q0"]
-    result = sess.run("resonator_spectroscopy_power", {"qubits": ["q0"]})
+    result = sess.run("resonator_spectroscopy_power", {"qubits": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     # optimal power is below the simulated punchout knee (-12..-8 dB)
@@ -234,27 +259,27 @@ def test_resonator_power_2d_updates_amp_and_freq():
 
 
 def test_qubit_echo_records_t2_echo():
-    """Echo: exponential envelope fit -> t2_echo_s RECORDED into device state +
-    history (record-only field: calibration knobs untouched)."""
+    """Echo: exponential envelope fit -> t2_echo_s recorded into the PHYSICAL store
+    + its history (sample physics: instrument config untouched)."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
-    result = sess.run("qubit_echo", {"qubits": ["q0"]})
+    result = sess.run("qubit_echo", {"qubits": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert 30e-6 * 0.8 < result["fit"]["q0"]["t2_echo_s"] < 80e-6 * 1.2  # sim truth 30-80 us
-    after = sess.device_state()
-    assert after["q0"]["t2_echo_s"] == result["fit"]["q0"]["t2_echo_s"]
-    assert {f: v for f, v in after["q0"].items() if f != "t2_echo_s"} == state_before["q0"]
-    assert [h["field"] for h in sess.history()] == ["t2_echo_s"]
+    assert sess.physical_state()["q0"]["t2_echo_s"] == result["fit"]["q0"]["t2_echo_s"]
+    assert sess.device_state() == state_before
+    assert [h["field"] for h in sess.history(store="physical")] == ["t2_echo_s"]
 
 
 def test_qubit_flux_map_recovers_arch():
     """2D flux map: point-cloud + transmon arch fit -> sweet spot inside the swept
-    window, arch top at the current drive_freq; no writeback (Phase-3 schema)."""
+    window, arch top at the current drive_freq; the arch parameters land in the
+    PHYSICAL store (unified names: dv_phi0_v, f_q_max_hz) — no instrument knob."""
     sess = Session(SimulatedBackend(_device()))
 
     state_before = sess.device_state()
-    result = sess.run("qubit_spectroscopy_flux", {"qubits": ["q0"]})
+    result = sess.run("qubit_spectroscopy_flux", {"qubits": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     assert -0.3 <= fit["sweet_spot_flux_v"] <= 0.3  # sim hides it inside the window
@@ -262,8 +287,13 @@ def test_qubit_flux_map_recovers_arch():
     assert fit["f01_at_sweet_spot_hz"] == np.float64(fit["f01_at_sweet_spot_hz"])
     assert abs(fit["f01_at_sweet_spot_hz"] - fit["old_drive_freq"]) < 40e6
     assert fit["ej_sum_ghz"] > 0
-    assert sess.device_state() == state_before  # no writeback yet
+    assert sess.device_state() == state_before  # instrument config untouched
     assert sess.history() == []
+    physical = sess.physical_state()["q0"]
+    assert physical["sweet_spot_flux_v"] == fit["sweet_spot_flux_v"]
+    assert physical["dv_phi0_v"] == fit["flux_period_v"]  # unified field name
+    assert physical["ej_sum_ghz"] == fit["ej_sum_ghz"]
+    assert physical["f_q_max_hz"] == fit["f01_at_sweet_spot_hz"]
 
 
 def test_single_shot_readout_fidelity():
@@ -272,7 +302,8 @@ def test_single_shot_readout_fidelity():
     confusion probabilities stay run-record-only (instrument-dependent by decision)."""
     sess = Session(SimulatedBackend(_device()))
 
-    result = sess.run("single_shot_readout", {"qubits": ["q0"], "num_shots": 1500})
+    result = sess.run("single_shot_readout", {"qubits": ["q0"], "num_shots": 1500},
+                      update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     # sim: 3.5-5 sigma separation, 1-5% thermal flips, 3-8% decay flips
@@ -286,18 +317,33 @@ def test_single_shot_readout_fidelity():
 
 def test_resonator_flux_map_recovers_dispersive_model():
     """Resonator-vs-flux: dip trace + dispersive fit -> sweet spot inside the swept
-    window, coupling g near the simulated range; no writeback."""
+    window, coupling g near the simulated range; the dispersive quantities land in
+    the PHYSICAL store — no instrument knob. f_r0/g are proposed only when the fit
+    was constrained by a supplied f_q_max_hz, and the assumed/input f_q_max is
+    never recorded as measured physics."""
     sess = Session(SimulatedBackend(_device()))
 
+    # Unconstrained fit (default f_q_max_hz=None): only the robust flux-periodicity
+    # quantities are proposed — g would be conditional on an ASSUMED f_q_max.
+    result = sess.run("resonator_spectroscopy_flux", {"qubits": ["q0"]}, update="apply")
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    assert set(sess.physical_state()["q0"]) == {"sweet_spot_flux_v", "dv_phi0_v"}
+
+    # Constrained fit: the caller supplies the qubit sweet-spot frequency
     state_before = sess.device_state()
-    result = sess.run("resonator_spectroscopy_flux", {"qubits": ["q0"]})
+    result = sess.run("resonator_spectroscopy_flux",
+                      {"qubits": ["q0"], "f_q_max_hz": 3.87e9}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     assert -0.3 <= fit["sweet_spot_flux_v"] <= 0.3
     assert 40e6 < fit["g_hz"] < 200e6  # sim truth 70-100 MHz, loose fit tolerance
     assert abs(fit["f_r0_hz"] - fit["old_readout_freq"]) < 20e6  # bare near dressed
-    assert sess.device_state() == state_before  # no writeback
+    assert sess.device_state() == state_before  # instrument config untouched
     assert sess.history() == []
+    physical = sess.physical_state()["q0"]
+    for field in ("sweet_spot_flux_v", "dv_phi0_v", "f_r0_hz", "g_hz"):
+        assert physical[field] == fit[field]
+    assert "f_q_max_hz" not in physical  # an input/assumption, never recorded here
 
 
 def test_readout_power_picks_fidelity_optimum_and_updates_amp():
@@ -307,7 +353,8 @@ def test_readout_power_picks_fidelity_optimum_and_updates_amp():
 
     before = sess.device_state()["q0"]
     result = sess.run(
-        "readout_power", {"qubits": ["q0"], "num_amp_points": 8, "num_shots": 400}
+        "readout_power", {"qubits": ["q0"], "num_amp_points": 8, "num_shots": 400},
+        update="apply",
     )
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
@@ -325,7 +372,8 @@ def test_readout_frequency_picks_fidelity_optimum_and_updates_freq():
 
     before = sess.device_state()["q0"]
     result = sess.run(
-        "readout_frequency", {"qubits": ["q0"], "num_freq_points": 9, "num_shots": 400}
+        "readout_frequency", {"qubits": ["q0"], "num_freq_points": 9, "num_shots": 400},
+        update="apply",
     )
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
@@ -343,7 +391,8 @@ def test_power_rabi_generalizes_pattern():
     assert "qubit_power_rabi" in {e["name"] for e in sess.catalog()}
 
     before = sess.device_state()["q0"]["pi_amp"]
-    result = sess.run("qubit_power_rabi", {"qubits": ["q0"], "max_amp_factor": 2.0, "num_points": 201})
+    result = sess.run("qubit_power_rabi", {"qubits": ["q0"], "max_amp_factor": 2.0, "num_points": 201},
+                      update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     # recovered pi factor is near 1 (simulated miscalibration was within +-15%)
     assert 0.8 < result["fit"]["q0"]["pi_amp_factor"] < 1.2

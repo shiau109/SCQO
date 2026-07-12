@@ -2,8 +2,9 @@
 
 X90 - tau/2 - X - tau/2 - X90, sweeping the total idle time tau: the central pi
 pulse refocuses quasi-static dephasing, so the envelope decays with T2_echo
-(T2* <= T2_echo <= 2*T1). A *reported* quantity like T1: ``update()`` is a no-op
-and the daily value lives in the run index (``fit_trend`` query).
+(T2* <= T2_echo <= 2*T1). Like T1, ``update()`` proposes ``t2_echo_s`` as a
+PHYSICAL parameter (``physical.json`` on accept); the daily value also lives in
+the run index (``fit_trend`` query).
 
 Renamed from ``t2_echo`` 2026-07-06.
 """
@@ -32,7 +33,8 @@ class QubitEchoParameters(QubitSelection, AveragingParameters):
 
 
 class QubitEchoResult(Result):
-    """``fit[qubit]`` carries ``t2_echo_s`` (plus fit amplitude/offset). No writeback."""
+    """``fit[qubit]`` carries ``t2_echo_s`` (plus fit amplitude/offset); proposed as a
+    physical parameter by ``update()``."""
 
 
 class QubitEcho(Experiment):
@@ -41,8 +43,8 @@ class QubitEcho(Experiment):
     name: ClassVar[str] = "qubit_echo"
     description: ClassVar[str] = (
         "Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time; fits "
-        "the exponential envelope and records t2_echo_s into the device state "
-        "(record-only, no instrument push)."
+        "the exponential envelope and proposes t2_echo_s as a physical parameter "
+        "(sample physics, no instrument knob)."
     )
     Parameters: ClassVar[type] = QubitEchoParameters
     Result: ClassVar[type] = QubitEchoResult

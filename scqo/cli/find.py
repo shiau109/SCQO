@@ -31,6 +31,8 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     parser.add_argument("--device", help="filter by device (sample) name")
     parser.add_argument("--operator", help="filter by who ran it (OS login name)")
     parser.add_argument("--cooldown", help="filter by cooldown-cycle id, e.g. cd8")
+    parser.add_argument("--pending", action="store_true",
+                        help="only runs with undecided suggested updates (decide: scqo accept)")
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--show", metavar="RUN_ID", help="print one run in full (record, params, figures)")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
@@ -48,7 +50,8 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     runs = store.find_runs(
         experiment=args.experiment, qubit=args.qubit, tag=args.tag, since=args.since,
         until=args.until, outcome=args.outcome, device=args.device,
-        operator=args.operator, cooldown=args.cooldown, limit=args.limit,
+        operator=args.operator, cooldown=args.cooldown,
+        pending=True if args.pending else None, limit=args.limit,
     )
     if not runs:
         print("no runs match")
@@ -57,7 +60,8 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
         tags = ",".join(r["tags"]) if r["tags"] else "-"
         qubits = ",".join(r["qubits"])
         operator = r.get("operator") or "-"
-        print(f"{r['run_id']:44s} {r['outcome']:10s} {qubits:12s} {operator:10s} {tags:20s} {r['path']}")
+        pend = f"pend:{r['suggestions_pending']}" if r.get("suggestions_pending") else ""
+        print(f"{r['run_id']:44s} {r['outcome']:10s} {qubits:12s} {operator:10s} {tags:20s} {pend:8s} {r['path']}")
     print(f"\n({len(runs)} run(s); data_root = {store.data_root})")
     return 0
 

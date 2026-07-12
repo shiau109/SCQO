@@ -29,6 +29,31 @@ folder <code>{{ path }}</code></p>
   {% for k, v in parameters.items() %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}
 </table>
 
+{% if suggestions %}
+<h3>Suggested updates</h3>
+<table>
+  <tr><th>qubit</th><th>field</th><th>store</th><th>before</th><th>after</th><th>status</th><th>on device</th><th>decided</th><th>comment</th></tr>
+  {% for s in suggestions %}
+  {% set od = on_device[loop.index0] if on_device else None %}
+  <tr {% if s.status == "pending" %}class="changed"{% endif %}>
+    <td>{{ s.qubit }}</td><td>{{ s.field }}</td><td>{{ s.store }}</td>
+    <td>{{ "%.8g" | format(s.before) if s.before is number else (s.before if s.before is not none else "(unmeasured)") }}</td>
+    <td>{{ "%.8g" | format(s.after) if s.after is number else s.after }}</td>
+    <td>{% if s.status == "pending" %}<b>pending</b>{% else %}{{ s.status }}{% endif %}</td>
+    <td>{% if od and od.kind == "live" %}<span class="live">LIVE on device</span>
+        {%- elif od and od.kind == "superseded" %}<a href="/run/{{ od.run_id }}" title="{{ od.run_id }}">superseded</a>
+        {%- elif od and od.kind == "external" %}superseded <span class="ext">(externally changed)</span>
+        {%- elif od and od.kind == "manual" %}superseded <span class="muted">(manual write)</span>
+        {%- else %}-{% endif %}</td>
+    <td>{% if s.decided_by %}{{ s.decided_by }} · {{ (s.decided_at or "")[:19] }}{% else %}-{% endif %}</td>
+    <td>{{ s.comment }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="muted">Decisions happen at the terminal: <code>scqo accept {{ record.run_id }}</code>
+(applying calibration knobs needs the live instrument config — the viewer never touches instruments).</p>
+{% endif %}
+
 {% if diff %}
 <h3>Device before → after</h3>
 <table>
@@ -41,6 +66,7 @@ folder <code>{{ path }}</code></p>
   </tr>
   {% endfor %}
 </table>
+<p class="muted">Snapshots bracket the run — rows change here only when suggestions were applied at run time (e.g. <code>--accept</code>).</p>
 {% endif %}
 
 <h3>Tags &amp; note</h3>

@@ -24,12 +24,15 @@ from ..datastore import (
     load_cooldowns,
     load_device_registry,
 )
+from ..physical import PHYSICAL_FIELDS, PHYSICAL_FILE
+from ..provenance import live_run_map, live_sources, summarize_live
 
 #: quantities never tracked as device state (instrument-dependent; recorded decision)
 _FIT_ONLY_TRENDS = ("p_e_given_g",)
 #: fit quantities offered as one-click trend links (free-text also accepted):
-#: measured physics first, then calibration knobs — derived from the field table.
+#: measured physics first, then calibration knobs — derived from the field tables.
 TREND_QUANTITIES = (
+    *PHYSICAL_FIELDS,
     *(f for f, s in FIELDS.items() if not s.push),
     *(f for f, s in FIELDS.items() if s.push),
     *_FIT_ONLY_TRENDS,
@@ -53,6 +56,19 @@ def create_app(
         except (OSError, json.JSONDecodeError):
             return None
 
+    def _sources_for(dev: str) -> tuple[dict, dict]:
+        """(instrument, physical) live-source maps for a device, from its two state
+        JSONs (({}, {}) where absent). The state files ARE the viewer's current-
+        value authority — the strict-match rule credits a run only while its
+        recorded value still equals the live one (see scqo.provenance)."""
+        sfile = _state_file_for(dev)
+        state = (_read_json(sfile) if sfile else None) or {}
+        physical = _read_json(store.data_root / dev / PHYSICAL_FILE) or {}
+        return (
+            live_sources(state.get("config", {}), state.get("history", [])),
+            live_sources(physical.get("values", {}), physical.get("history", [])),
+        )
+
     @app.get("/", response_class=HTMLResponse)
     def runs_page(
         request: Request,
@@ -65,6 +81,7 @@ def create_app(
         device: str = "",
         operator: str = "",
         cooldown: str = "",
+        pending: str = "",
         limit: int = 50,
     ):
         rows = store.find_runs(
@@ -77,19 +94,28 @@ def create_app(
             device=device or None,
             operator=operator or None,
             cooldown=cooldown or None,
+            pending=True if pending else None,
             limit=limit,
         )
+        # Which of these runs CONTRIBUTE to a device's current values ("the runs
+        # the device is built from") — run_ids are globally unique by construction.
+        live_by_run: dict[str, str] = {}
+        for dev in {r["device"] for r in rows}:
+            inst, phys = _sources_for(dev)
+            for rid, pairs in live_run_map(inst, phys).items():
+                live_by_run[rid] = summarize_live(pairs)
         return templates.TemplateResponse(
             request,
             "runs.html",
             {
                 "rows": rows,
+                "live_by_run": live_by_run,
                 "experiments": store.distinct_experiments(),
                 "devices": store.distinct_devices(),
                 "filters": {"experiment": experiment, "qubit": qubit, "tag": tag,
                             "outcome": outcome, "since": since, "until": until,
                             "device": device, "operator": operator,
-                            "cooldown": cooldown, "limit": limit},
+                            "cooldown": cooldown, "pending": pending, "limit": limit},
                 "data_root": str(store.data_root),
             },
         )
@@ -111,6 +137,23 @@ def create_app(
                 b, a = before.get(q, {}).get(field), after.get(q, {}).get(field)
                 diff.append({"qubit": q, "field": field, "before": b, "after": a,
                              "changed": b != a})
+        # Is each ACCEPTED value still the one the device runs? (aligned with the
+        # suggestions list; None for non-accepted rows / no source info)
+        inst_sources, phys_sources = _sources_for(record["device"])
+        on_device = []
+        for s in record.get("suggestions", []):
+            sources = phys_sources if s.get("store") == "physical" else inst_sources
+            src = sources.get(s.get("qubit"), {}).get(s.get("field"))
+            if s.get("status") != "accepted" or src is None:
+                on_device.append(None)
+            elif src["status"] == "run" and src["run_id"] == run_id:
+                on_device.append({"kind": "live"})
+            elif src["status"] == "run":
+                on_device.append({"kind": "superseded", "run_id": src["run_id"]})
+            elif src["status"] == "external":
+                on_device.append({"kind": "external"})
+            else:  # manual
+                on_device.append({"kind": "manual"})
         return templates.TemplateResponse(
             request,
             "run.html",
@@ -119,6 +162,8 @@ def create_app(
                 "parameters": loaded["parameters"],
                 "result": loaded["result"],
                 "figures": figures,
+                "suggestions": record.get("suggestions", []),
+                "on_device": on_device,
                 "diff": diff,
                 "path": str(run_dir),
             },
@@ -178,20 +223,37 @@ def create_app(
     def device_page(request: Request, device: str = ""):
         dev = device or device_name
         latest = store.find_runs(device=dev, limit=1)
-        state = None
-        if latest:
-            state = _read_json(_run_dir(latest[0]) / "device_after.json")
         history: list[dict] = []
+        state = None
+        state_authority = ""
         sfile = _state_file_for(dev)
         if sfile and sfile.is_file():
+            # The state file is the authority since v0.6: it reflects deferred
+            # accepts too, and is what the live-source annotations are computed
+            # against (annotating a run snapshot with state-file provenance would
+            # contradict itself whenever an accept ran after the latest run).
             data = _read_json(sfile) or {}
+            state = data.get("config") or None
             history = list(reversed(data.get("history", [])))[:200]
+            state_authority = "state"
+        if state is None and latest:  # no state file yet: last run's snapshot
+            state = _read_json(_run_dir(latest[0]) / "device_after.json")
+            state_authority = "snapshot"
+        inst_sources, phys_sources = _sources_for(dev)
         registry = load_device_registry(store.data_root)
         # Stable column order: descriptor order first, then any extra observed fields.
-        # (Fields are heterogeneous per qubit — only measured qubits carry t1_s etc. —
+        # (Fields are heterogeneous per qubit — only measured qubits carry a value —
         # so the first qubit's keys are NOT a valid header.)
         observed = {f for fields in (state or {}).values() for f in fields}
         state_fields = [f for f in FIELDS if f in observed] + sorted(observed - set(FIELDS))
+        # The sample's measured physics (physical.json) — same heterogeneity rule.
+        physical = _read_json(store.data_root / dev / PHYSICAL_FILE) or {}
+        phys_values = physical.get("values", {})
+        phys_history = list(reversed(physical.get("history", [])))[:200]
+        observed_phys = {f for fields in phys_values.values() for f in fields}
+        physical_fields = [f for f in PHYSICAL_FIELDS if f in observed_phys] + sorted(
+            observed_phys - set(PHYSICAL_FIELDS)
+        )
         # Cooldown cycles + current setup (device -> cycle -> setup era). The
         # registry validates loudly at RUN time; the viewer must render regardless.
         cooldown_error = ""
@@ -207,8 +269,12 @@ def create_app(
             request,
             "device.html",
             {"state": state or {}, "state_fields": state_fields,
+             "state_authority": state_authority,
+             "state_sources": inst_sources, "physical_sources": phys_sources,
              "latest": latest[0] if latest else None,
              "history": history, "state_path": str(sfile or ""),
+             "physical": phys_values, "physical_fields": physical_fields,
+             "physical_history": phys_history,
              "device": dev, "devices": store.distinct_devices(),
              "registry": registry.get(dev) or {},
              "cycles": cycles, "active_cycle": active[0] if active else None,

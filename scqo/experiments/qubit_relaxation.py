@@ -1,9 +1,10 @@
 """Qubit relaxation — excited-state lifetime T1 (backend-free half).
 
 Excite with a pi pulse, wait a swept delay, measure; fit the exponential decay to
-extract T1. ``update()`` records ``t1_s`` into the device state + change history as a
-RECORD-ONLY field (never pushed to the instrument — see ``scqo.config.FIELDS``); the
-per-run value also lives in the run index (``fit_trend`` query).
+extract T1. ``update()`` proposes ``t1_s`` as a PHYSICAL parameter — sample physics
+landing in ``physical.json`` on accept (see ``scqo.physical.PHYSICAL_FIELDS``; no
+instrument knob involved); the per-run value also lives in the run index
+(``fit_trend`` query).
 
 Promoted from scqo-contrib 2026-07-05 (as ``t1_relaxation``; renamed
 ``qubit_relaxation`` 2026-07-06) — the first Tier-3 promotion.
@@ -33,7 +34,8 @@ class QubitRelaxationParameters(QubitSelection, AveragingParameters):
 
 
 class QubitRelaxationResult(Result):
-    """``fit[qubit]`` carries ``t1_s`` (plus fit amplitude/offset). No writeback."""
+    """``fit[qubit]`` carries ``t1_s`` (plus fit amplitude/offset); proposed as a
+    physical parameter by ``update()``."""
 
 
 class QubitRelaxation(Experiment):
@@ -42,7 +44,7 @@ class QubitRelaxation(Experiment):
     name: ClassVar[str] = "qubit_relaxation"
     description: ClassVar[str] = (
         "Excite with a pi pulse, wait a swept delay and measure; fits the exponential "
-        "decay and records t1_s into the device state (record-only, no instrument push)."
+        "decay and proposes t1_s as a physical parameter (sample physics, no instrument knob)."
     )
     Parameters: ClassVar[type] = QubitRelaxationParameters
     Result: ClassVar[type] = QubitRelaxationResult

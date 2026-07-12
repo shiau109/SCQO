@@ -4,9 +4,12 @@
 flux and fit the full dispersive model f_r(flux) = f_r0 + g^2 / (f_r0 - f_q(flux))
 (transmon arch f_q). Reports the flux sweet spot, flux period (dv_phi0), the bare
 resonator f_r0 and the coupling g — the resonator-side flux picture that pairs
-with qubit_spectroscopy_flux for Phase-3 inference. ``update()`` is a no-op:
-flux offsets are not tracked fields yet, and readout_freq updates remain
-resonator_spectroscopy's job at the chosen operating flux.
+with qubit_spectroscopy_flux for Phase-3 inference. ``update()`` proposes the
+sweet spot + flux period as PHYSICAL parameters (``physical.json`` on accept);
+f_r0/g are proposed only when ``f_q_max_hz`` was supplied — an unconstrained fit
+holds f_q_max at a placeholder assumption, and assumed values must not enter the
+measured-physics ledger. readout_freq updates remain resonator_spectroscopy's job
+at the chosen operating flux.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ class ResonatorSpectroscopyFluxParameters(QubitSelection, AveragingParameters):
 
 class ResonatorSpectroscopyFluxResult(Result):
     """``fit[qubit]``: ``sweet_spot_flux_v``, ``sweet_spot_freq_hz``, ``dv_phi0_v``,
-    ``f_r0_hz``, ``g_hz``. No writeback."""
+    ``f_r0_hz``, ``g_hz``. ``update()`` proposes them as physical parameters."""
 
 
 class ResonatorSpectroscopyFlux(Experiment):
@@ -48,8 +51,10 @@ class ResonatorSpectroscopyFlux(Experiment):
     name: ClassVar[str] = "resonator_spectroscopy_flux"
     description: ClassVar[str] = (
         "2D resonator spectroscopy vs flux bias: tracks the dip at every flux and fits "
-        "the dispersive model; reports flux sweet spot, flux period, bare f_r0 and "
-        "coupling g (no device writeback)."
+        "the dispersive model; proposes flux sweet spot + flux period (dv_phi0) as "
+        "physical parameters — plus bare f_r0 and coupling g when f_q_max_hz is "
+        "supplied (an unconstrained fit only ASSUMES f_q_max; assumptions are not "
+        "recorded as physics)."
     )
     Parameters: ClassVar[type] = ResonatorSpectroscopyFluxParameters
     Result: ClassVar[type] = ResonatorSpectroscopyFluxResult
@@ -131,6 +136,26 @@ class ResonatorSpectroscopyFlux(Experiment):
         return result
 
     def update(self) -> None:
-        # Sweet spot / f_r0 / g are reported, not written back (flux offset is not a
-        # tracked field yet; readout_freq stays resonator_spectroscopy's job).
-        return
+        """Propose the dispersive-fit quantities as PHYSICAL fields (sample physics).
+
+        Sweet spot + flux period are always proposed (they come from the robust
+        flux-periodicity part). ``f_r0_hz``/``g_hz`` are proposed only when the
+        caller supplied ``f_q_max_hz``: without it the estimator holds f_q_max at
+        a placeholder guess and g is conditional on that assumption — an assumed
+        value must never enter the measured-physics ledger. ``f_q_max_hz`` itself
+        is never proposed here (it is an INPUT of this fit; qubit_spectroscopy_flux
+        measures it). readout_freq stays resonator_spectroscopy's job at the
+        chosen operating flux — nothing here touches an instrument knob.
+        """
+        if self.result is None:
+            return
+        fields = ["sweet_spot_flux_v", "dv_phi0_v"]
+        if self.params.f_q_max_hz is not None:  # dispersive model properly constrained
+            fields += ["f_r0_hz", "g_hz"]
+        for qubit, fit in self.result.fit.items():
+            if self.result.outcomes[qubit] is not Outcome.SUCCESSFUL:
+                continue
+            view = self.device.qubit(qubit)
+            for field in fields:
+                if field in fit:
+                    setattr(view, field, fit[field])

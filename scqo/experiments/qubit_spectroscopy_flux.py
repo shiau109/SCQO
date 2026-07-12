@@ -4,9 +4,9 @@
 the current ``drive_freq``, find the 0-1 peak at every flux and fit the transmon
 arch ``f = sqrt(8*Ec*Ej_eff) - Ec``. Reports the sweet spot, flux period and
 ``Ej_sum`` — the f01(flux) inputs that Phase-3 device-level EJ/EC inference
-consumes. ``update()`` is a no-op for now: a flux offset is not yet a tracked
-device field (that is the Phase-3 schema-widening step), so the arch parameters
-live in the run index (``fit_trend`` on ``ej_sum_ghz`` / ``sweet_spot_flux_v``).
+consumes. ``update()`` proposes them as PHYSICAL parameters (sample physics,
+``physical.json`` on accept — see scqo.physical); nothing is pushed to any
+instrument, and the fits also stay queryable in the run index (``fit_trend``).
 
 Flux safety: the flux axis is in volts on the qubit's flux line, bounded to
 |V| <= 0.5 by the parameter schema; probes must return the line to its idle
@@ -41,7 +41,7 @@ class QubitSpectroscopyFluxParameters(QubitSelection, AveragingParameters):
 
 class QubitSpectroscopyFluxResult(Result):
     """``fit[qubit]``: ``sweet_spot_flux_v``, ``f01_at_sweet_spot_hz``, ``flux_period_v``,
-    ``ej_sum_ghz`` (+ stderrs). No writeback yet (Phase-3 schema)."""
+    ``ej_sum_ghz`` (+ stderrs). ``update()`` proposes them as physical parameters."""
 
 
 class QubitSpectroscopyFlux(Experiment):
@@ -50,8 +50,8 @@ class QubitSpectroscopyFlux(Experiment):
     name: ClassVar[str] = "qubit_spectroscopy_flux"
     description: ClassVar[str] = (
         "2D qubit spectroscopy vs flux bias: finds the 0-1 peak at every flux and fits "
-        "the transmon arch; reports sweet spot, flux period and Ej_sum (the Phase-3 "
-        "EJ/EC inference inputs — no device writeback yet)."
+        "the transmon arch; proposes sweet spot, flux period (dv_phi0) and Ej_sum as "
+        "physical parameters (the Phase-3 EJ/EC inference inputs — no instrument knob)."
     )
     Parameters: ClassVar[type] = QubitSpectroscopyFluxParameters
     Result: ClassVar[type] = QubitSpectroscopyFluxResult
@@ -135,6 +135,23 @@ class QubitSpectroscopyFlux(Experiment):
         return result
 
     def update(self) -> None:
-        # Sweet spot / Ej_sum are reported, not written back: flux offset is not a
-        # tracked device field yet (Phase-3 schema widening).
-        return
+        """Propose the arch parameters as PHYSICAL fields (sample physics, no vendor).
+
+        Fit keys keep their historical names; ``flux_period_v`` and
+        ``f01_at_sweet_spot_hz`` land on the unified physical fields ``dv_phi0_v`` /
+        ``f_q_max_hz`` (the same quantities the resonator flux map measures).
+        """
+        if self.result is None:
+            return
+        for qubit, fit in self.result.fit.items():
+            if self.result.outcomes[qubit] is not Outcome.SUCCESSFUL:
+                continue
+            view = self.device.qubit(qubit)
+            for fit_key, field in (
+                ("sweet_spot_flux_v", "sweet_spot_flux_v"),
+                ("flux_period_v", "dv_phi0_v"),
+                ("ej_sum_ghz", "ej_sum_ghz"),
+                ("f01_at_sweet_spot_hz", "f_q_max_hz"),
+            ):
+                if fit_key in fit:  # the estimator adds arch keys conditionally
+                    setattr(view, field, fit[fit_key])

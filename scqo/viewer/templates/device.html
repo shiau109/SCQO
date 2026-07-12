@@ -57,18 +57,62 @@ backend <b>{{ setup.backend }}</b>{% if setup.instrument_config %}, config <code
 {% endif %}
 
 {% if state %}
+{% if state_authority == "state" %}
+<p class="muted">Current calibration — from <code>scqo_state.json</code> (deferred accepts included).
+Values link to the run that set them{% if latest %} · latest run: <a href="/run/{{ latest.run_id }}">{{ latest.run_id }}</a>{% endif %}.</p>
+{% else %}
 <p class="muted">Last observed calibration — from
   <a href="/run/{{ latest.run_id }}">{{ latest.run_id }}</a> (device_after snapshot).</p>
+{% endif %}
 <table>
   <tr><th>qubit</th>{% for f in state_fields %}<th>{{ f }}</th>{% endfor %}</tr>
   {% for q, fields in state.items() %}
   <tr><td>{{ q }}</td>
-    {% for f in state_fields %}{% set v = fields.get(f) %}<td>{{ "%.8g" | format(v) if v is number else (v if v is not none else "-") }}</td>{% endfor %}
+    {% for f in state_fields %}{% set v = fields.get(f) %}{% set src = state_sources.get(q, {}).get(f) %}{% set fmt = "%.8g" | format(v) if v is number else (v if v is not none else "-") %}<td>
+      {%- if src and src.status == "run" %}<a href="/run/{{ src.run_id }}" title="{{ (src.timestamp or '')[:19] }} · {{ src.operator or '-' }}">{{ fmt }}</a>
+      {%- elif src and src.status == "external" %}{{ fmt }} <span class="ext">(externally changed)</span>
+      {%- elif src and src.status == "manual" %}{{ fmt }} <span class="muted">(manual)</span>
+      {%- else %}{{ fmt }}{% endif %}</td>{% endfor %}
   </tr>
   {% endfor %}
 </table>
+<p class="muted">A linked value is LIVE from that run (strict match); (externally changed) = the
+current value matches no SCQO record — reseeded by the vendor or written by another tool.</p>
 {% else %}
 <p>No runs yet — the device page shows the last run's device_after snapshot.</p>
+{% endif %}
+
+{% if physical %}
+<h3>Physical parameters</h3>
+<p class="muted">Instrument-independent measured physics of the sample (<code>physical.json</code>) —
+values land here when a run's suggested updates are accepted.</p>
+<table>
+  <tr><th>qubit</th>{% for f in physical_fields %}<th>{{ f }}</th>{% endfor %}</tr>
+  {% for q, fields in physical.items() %}
+  <tr><td>{{ q }}</td>
+    {% for f in physical_fields %}{% set v = fields.get(f) %}{% set src = physical_sources.get(q, {}).get(f) %}{% set fmt = "%.8g" | format(v) if v is number else (v if v is not none else "-") %}<td>
+      {%- if src and src.status == "run" %}<a href="/run/{{ src.run_id }}" title="{{ (src.timestamp or '')[:19] }} · {{ src.operator or '-' }}">{{ fmt }}</a>
+      {%- elif src and src.status == "external" %}{{ fmt }} <span class="ext">(externally changed)</span>
+      {%- elif src and src.status == "manual" %}{{ fmt }} <span class="muted">(manual)</span>
+      {%- else %}{{ fmt }}{% endif %}</td>{% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+{% if physical_history %}
+<table>
+  <tr><th>when</th><th>qubit</th><th>field</th><th>old</th><th>new</th><th>experiment</th><th>operator</th><th>run</th></tr>
+  {% for h in physical_history %}
+  <tr>
+    <td>{{ h.timestamp[:19] }}</td><td>{{ h.qubit }}</td><td>{{ h.field }}</td>
+    <td>{{ "%.8g" | format(h.old) if h.old is number else (h.old if h.old is not none else "-") }}</td>
+    <td>{{ "%.8g" | format(h.new) if h.new is number else h.new }}</td>
+    <td>{{ h.experiment }}</td>
+    <td>{{ h.operator or "-" }}</td>
+    <td>{% if h.run_id %}<a href="/run/{{ h.run_id }}">{{ h.run_id }}</a>{% else %}-{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 {% endif %}
 
 <h3>Change history</h3>

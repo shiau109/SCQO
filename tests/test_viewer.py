@@ -50,8 +50,9 @@ def _device() -> InMemoryDevice:
 
 @pytest.fixture(scope="module")
 def lab(tmp_path_factory):
-    """A datastore with three runs (res spec, ramsey, t1), a SECOND sample sharing the
-    same data_root (multi-device paths), and a viewer client over it all."""
+    """A datastore with three APPLIED runs (res spec, ramsey, t1), one run left
+    PENDING, a SECOND sample sharing the same data_root (multi-device paths), and a
+    viewer client over it all."""
     root = tmp_path_factory.mktemp("data")
     # State file at the <data_root>/<device>/ convention (THE rule since v0.5).
     (root / "devV").mkdir()
@@ -67,9 +68,16 @@ def lab(tmp_path_factory):
         SimulatedBackend(_device()), data_root=root, device_name="devV",
         state_path=str(state), state_sync="push",
     )
-    r_res = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["cool1"])
-    r_ram = sess.run("qubit_ramsey", {"qubits": ["q1"], "num_points": 201}, tags=["cool1", "special"])
-    r_t1 = sess.run("qubit_relaxation", {"qubits": ["q1"]}, tags=["cool1"])
+    r_res = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply", tags=["cool1"])
+    # a second applied run SUPERSEDES r_res's readout_freq (live-source tests)
+    r_res2 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply", tags=["cool1"])
+    r_ram = sess.run("qubit_ramsey", {"qubits": ["q1"], "num_points": 201}, update="apply",
+                     tags=["cool1", "special"])
+    r_t1 = sess.run("qubit_relaxation", {"qubits": ["q1"]}, update="apply", tags=["cool1"])
+    r_pend = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["cool1"])  # left pending
+    # a q0-only physical value -> heterogeneous columns + a "(manual)" source
+    sess.physical.record("q0", "g_hz", 80e6)
+    sess.physical.save()
 
     # second physical sample; its state file follows the
     # <data_root>/<device>/scqo_state.json convention the viewer resolves
@@ -78,14 +86,15 @@ def lab(tmp_path_factory):
         SimulatedBackend(_device()), data_root=root, device_name="chipZ",
         state_path=str(root / "chipZ" / "scqo_state.json"), state_sync="push",
     )
-    r_z = sess_z.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["zcool"])
+    r_z = sess_z.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply", tags=["zcool"])
     (root / "devices.toml").write_text(
         '[chipZ]\ndescription = "second sample on the other fridge"\n',
         encoding="utf-8",
     )
 
     client = TestClient(create_app(root, device_name="devV"))
-    return {"client": client, "root": root, "res": r_res, "ram": r_ram, "t1": r_t1, "chipz": r_z}
+    return {"client": client, "root": root, "res": r_res, "res2": r_res2, "ram": r_ram,
+            "t1": r_t1, "pend": r_pend, "chipz": r_z}
 
 
 def test_runs_page_lists_and_filters(lab):
@@ -161,14 +170,40 @@ def test_device_page_history_operator_column(lab):
     assert getpass.getuser() in page  # this test process's login, stamped on the runs
 
 
-def test_device_page_stable_columns_with_heterogeneous_fields(lab):
-    """Only q1 was T1/Ramsey-measured, so q1 carries t1_s/t2_star_s and q0 does not —
-    the state table must still show those columns (the old header used the FIRST
-    qubit's fields and would have dropped them)."""
+def test_physical_panel_stable_columns_with_heterogeneous_fields(lab):
+    """Only q1 was T1/Ramsey-measured (t1_s, t2_star_s) and only q0 has g_hz — the
+    physical panel must show ALL observed columns with '-' for unmeasured cells
+    (the first qubit's fields are NOT a valid header). The '-' assertion is scoped
+    to the VALUES table itself: the page carries unrelated '-' cells (open-cycle
+    end date, history run column), which must not satisfy this test."""
     page = lab["client"].get("/device").text
-    assert "<th>t1_s</th>" in page
-    assert "<th>t2_star_s</th>" in page
-    assert ">-</td>" in page  # q0's unmeasured cells render as '-'
+    assert "Physical parameters" in page
+    values_table = page.split("Physical parameters", 1)[1].split("</table>", 1)[0]
+    assert "<th>t1_s</th>" in values_table
+    assert "<th>t2_star_s</th>" in values_table
+    assert "<th>g_hz</th>" in values_table
+    assert ">-</td>" in values_table  # unmeasured cells render as '-'
+
+
+def test_run_page_shows_suggestions_table(lab):
+    c = lab["client"]
+    # a pending run: highlighted rows + the decide-at-the-terminal hint
+    page = c.get(f"/run/{lab['pend']['run_id']}").text
+    assert "Suggested updates" in page
+    assert "<b>pending</b>" in page
+    assert f"scqo accept {lab['pend']['run_id']}" in page
+    # an applied run still shows its audit trail
+    page_applied = c.get(f"/run/{lab['res']['run_id']}").text
+    assert "Suggested updates" in page_applied and "accepted" in page_applied
+
+
+def test_runs_page_pending_filter_and_updates_column(lab):
+    c = lab["client"]
+    page = c.get("/", params={"pending": "1"}).text
+    assert lab["pend"]["run_id"] in page
+    assert lab["res"]["run_id"] not in page  # applied at run time -> nothing pending
+    full = c.get("/").text
+    assert "1 pending" in full  # the updates column flags the undecided run
 
 
 def test_trends_offer_descriptor_quantities(lab):
@@ -224,6 +259,58 @@ def test_main_initializes_fresh_data_root_but_rejects_typos(tmp_path, monkeypatc
 
     with pytest.raises(SystemExit, match="does not exist"):
         main(["--data-root", str(tmp_path / "typo_lab")])
+
+
+def _row_chunk(page: str, run_id: str) -> str:
+    """The runs-table row fragment following this run's link (up to </tr>)."""
+    return page.split(f"/run/{run_id}", 1)[1].split("</tr>", 1)[0]
+
+
+def test_runs_page_live_column(lab):
+    """The updates column names the fields a run keeps LIVE on the device; a
+    superseded run carries no live line; a pending run keeps its pending line."""
+    page = lab["client"].get("/").text
+    live_row = _row_chunk(page, lab["res2"]["run_id"])
+    assert "live:" in live_row and "readout_freq (q0)" in live_row
+    superseded_row = _row_chunk(page, lab["res"]["run_id"])
+    assert "live:" not in superseded_row and "1/1 applied" in superseded_row
+    pending_row = _row_chunk(page, lab["pend"]["run_id"])
+    assert "1 pending" in pending_row
+
+
+def test_device_page_values_link_to_source_runs(lab):
+    """Strict match: each value links to the run that set it; manual writes are
+    marked; the assertions are scoped to the VALUE tables (history links too)."""
+    page = lab["client"].get("/device").text
+    # slice to the value TABLE itself — the caption above it links the latest run
+    state_table = page.split("Current calibration", 1)[1].split("<table>", 1)[1].split("</table>", 1)[0]
+    assert f"/run/{lab['res2']['run_id']}" in state_table  # readout_freq -> its run
+    assert f"/run/{lab['res']['run_id']}" not in state_table  # superseded: no credit
+    physical_table = page.split("Physical parameters", 1)[1].split("</table>", 1)[0]
+    assert f"/run/{lab['t1']['run_id']}" in physical_table  # t1_s -> its run
+    assert "(manual)" in physical_table  # the notebook-written g_hz
+
+
+def test_run_page_live_and_superseded_badges(lab):
+    c = lab["client"]
+    assert "LIVE on device" in c.get(f"/run/{lab['res2']['run_id']}").text
+    superseded_page = c.get(f"/run/{lab['res']['run_id']}").text
+    assert "LIVE on device" not in superseded_page
+    assert f'<a href="/run/{lab["res2"]["run_id"]}" title=' in superseded_page  # superseded -> by whom
+
+
+def test_device_page_flags_external_change(lab):
+    """Hand-edit chipZ's state file: the strict-match rule must show the value as
+    externally changed and credit NO run. (chipZ so devV fixtures stay pristine.)"""
+    state_path = Path(lab["root"]) / "chipZ" / "scqo_state.json"
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    data["config"]["q0"]["readout_freq"] = 9.9e9  # another tool wrote the config
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+
+    page = lab["client"].get("/device", params={"device": "chipZ"}).text
+    state_table = page.split("Current calibration", 1)[1].split("<table>", 1)[1].split("</table>", 1)[0]
+    assert "(externally changed)" in state_table
+    assert f"/run/{lab['chipz']['run_id']}" not in state_table  # never a false credit
 
 
 def test_trends_never_mix_samples(lab):

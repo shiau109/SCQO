@@ -81,3 +81,129 @@ def test_cli_set_beats_file_defaults(tmp_path):
     assert proc.returncode == 0, proc.stderr
     saved = json.loads((Path(_result(proc)["data_path"]) / "parameters.json").read_text(encoding="utf-8"))
     assert saved["num_points"] == 99
+
+
+# ------------------------------------------------------- suggest / review / accept
+
+
+def test_default_run_suggests_then_accept_by_run_id(tmp_path):
+    """The full deferred flow, non-TTY (a subprocess IS the script case): the run
+    leaves suggestions pending with a decide-later hint on stderr (stdout stays
+    parseable JSON), and `scqo accept <run_id>` applies them later."""
+    proc = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0")
+    assert proc.returncode == 0, proc.stderr
+    result = _result(proc)  # stdout parses despite the extra stderr output
+    (s,) = result["suggestions"]
+    assert s["status"] == "pending" and s["field"] == "readout_freq"
+    assert "suggested updates" in proc.stderr
+    assert f"scqo accept {result['run_id']}" in proc.stderr
+
+    # the pending run is findable three ways (all datastore-only)
+    listing = _run_cli(tmp_path, "accept")
+    assert result["run_id"] in listing.stdout and "pending:1" in listing.stdout
+    table = _run_cli(tmp_path, "accept", result["run_id"], "--list")
+    assert table.returncode == 0 and "readout_freq" in table.stdout
+    found = _run_cli(tmp_path, "find", "--pending")
+    assert result["run_id"] in found.stdout and "pend:1" in found.stdout
+
+    # non-TTY accept with no selectors applies ALL pending
+    accept = _run_cli(tmp_path, "accept", result["run_id"], "--comment", "looks right")
+    assert accept.returncode == 0, accept.stderr
+    summary = json.loads(accept.stdout)
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert summary["pending_left"] == 0
+
+    # the change history carries the ORIGINATING run id
+    history = _run_cli(tmp_path, "device", "--history")
+    assert result["run_id"] in history.stdout and "readout_freq" in history.stdout
+
+    # nothing left to decide
+    assert "no runs with pending suggestions" in _run_cli(tmp_path, "accept").stdout
+    assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
+
+
+def test_run_accept_flag_applies_immediately(tmp_path):
+    proc = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
+    assert proc.returncode == 0, proc.stderr
+    result = _result(proc)
+    assert {s["status"] for s in result["suggestions"]} == {"accepted"}
+    history = _run_cli(tmp_path, "device", "--history")
+    assert result["run_id"] in history.stdout
+
+
+def test_reject_needs_no_backend(tmp_path):
+    proc = _run_cli(tmp_path, "run", "qubit_relaxation", "--qubits", "q0")
+    run_id = _result(proc)["run_id"]
+
+    reject = _run_cli(tmp_path, "accept", run_id, "--reject", "--comment", "noisy fit")
+    assert reject.returncode == 0, reject.stderr
+    summary = json.loads(reject.stdout)
+    assert summary["rejected"] == [{"qubit": "q0", "field": "t1_s"}]
+    assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
+    # the T1 was never applied: the physical table stays empty
+    physical = _run_cli(tmp_path, "device", "--physical")
+    assert "no physical parameters recorded yet" in physical.stdout
+
+
+def test_reapply_rolls_back_from_the_cli(tmp_path):
+    """Two accepted runs; `scqo accept <first> --reapply` restores the first value."""
+    proc_a = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
+    run_a = _result(proc_a)["run_id"]
+    value_a = _result(proc_a)["suggestions"][0]["after"]
+    _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
+
+    # decided items are refused without the flag...
+    plain = _run_cli(tmp_path, "accept", run_a)
+    assert json.loads(plain.stdout)["applied"] == []
+    # ...and restored with it
+    proc = _run_cli(tmp_path, "accept", run_a, "--reapply", "--comment", "rollback")
+    assert proc.returncode == 0, proc.stderr
+    summary = json.loads(proc.stdout)
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert summary["applied"][0]["after"] == value_a
+
+    history = _run_cli(tmp_path, "device", "--history")
+    assert history.stdout.count(run_a) == 2  # first accept + the rollback
+
+
+def test_accepted_physics_shows_in_device_physical(tmp_path):
+    proc = _run_cli(tmp_path, "run", "qubit_relaxation", "--qubits", "q0", "--accept")
+    assert proc.returncode == 0, proc.stderr
+    physical = _run_cli(tmp_path, "device", "--physical")
+    assert "t1_s" in physical.stdout and "q0" in physical.stdout
+    history = _run_cli(tmp_path, "device", "--physical", "--history")
+    assert "t1_s" in history.stdout and _result(proc)["run_id"] in history.stdout
+
+
+def test_device_sources_traces_current_values(tmp_path):
+    """`scqo device --sources`: every current value names the run that set it,
+    across BOTH stores; a hand-edited state file shows as externally changed."""
+    proc_a = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
+    run_a = _result(proc_a)["run_id"]
+    proc_t1 = _run_cli(tmp_path, "run", "qubit_relaxation", "--qubits", "q0", "--accept")
+    run_t1 = _result(proc_t1)["run_id"]
+
+    src = _run_cli(tmp_path, "device", "--sources")
+    assert src.returncode == 0, src.stderr
+    readout_row = next(line for line in src.stdout.splitlines() if "readout_freq" in line)
+    assert run_a in readout_row
+    t1_row = next(line for line in src.stdout.splitlines() if "t1_s" in line)
+    assert run_t1 in t1_row and "physical" in t1_row
+
+    # after a rollback the credit follows the value back to the first run
+    _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")
+    _run_cli(tmp_path, "accept", run_a, "--reapply", "--comment", "rollback")
+    src2 = _run_cli(tmp_path, "device", "--sources")
+    assert run_a in next(line for line in src2.stdout.splitlines() if "readout_freq" in line)
+
+    # strict match: a hand-edited value credits no run
+    state_path = tmp_path / "data" / "simdev" / "scqo_state.json"
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    data["config"]["q0"]["readout_freq"] = 9.9e9  # another tool wrote the config
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+    src3 = _run_cli(tmp_path, "device", "--sources")
+    readout_row3 = next(line for line in src3.stdout.splitlines() if "readout_freq" in line)
+    assert "(externally changed)" in readout_row3 and run_a not in readout_row3
+
+    # --sources is one table over both stores; combining is a usage error
+    assert _run_cli(tmp_path, "device", "--sources", "--physical").returncode == 2

@@ -62,7 +62,7 @@ RAMSEY_PARAMS = {"qubits": ["q1"], "frequency_detuning_hz": 1.0e6, "max_idle_tim
 
 def test_run_persists_full_layout(tmp_path):
     sess = _session(tmp_path)
-    result = sess.run("resonator_spectroscopy", {"qubits": ["q0", "q1"]})
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0", "q1"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert "datastore_error" not in result
 
@@ -86,11 +86,35 @@ def test_run_persists_full_layout(tmp_path):
     assert record["outcome"] == "successful"
     assert record["updated_device"] is True
     assert record["qubits"] == ["q0", "q1"]
+    # the applied updates carry their audit trail on the record (the truth)
+    assert {s["status"] for s in record["suggestions"]} == {"accepted"}
 
-    # device_before/after snapshots bracket the writeback
+    # device_before/after snapshots bracket the (applied) writeback
     before = json.loads((run_dir / "device_before.json").read_text(encoding="utf-8"))
     after = json.loads((run_dir / "device_after.json").read_text(encoding="utf-8"))
     assert after["q0"]["readout_freq"] != before["q0"]["readout_freq"]
+
+
+def test_default_run_stores_pending_suggestions(tmp_path):
+    """The v0.6 default: nothing applied, the proposal is stored on the record and
+    findable via the pending filter — and the decision store survives a reindex."""
+    sess = _session(tmp_path)
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    run_dir = Path(result["data_path"])
+
+    record = json.loads((run_dir / "record.json").read_text(encoding="utf-8"))
+    assert record["updated_device"] is False
+    (s,) = record["suggestions"]
+    assert s["status"] == "pending" and s["field"] == "readout_freq"
+
+    before = json.loads((run_dir / "device_before.json").read_text(encoding="utf-8"))
+    after = json.loads((run_dir / "device_after.json").read_text(encoding="utf-8"))
+    assert before == after  # nothing was applied at run time
+
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [result["run_id"]]
+    assert sess.find_runs(pending=False) == []
+    assert sess.datastore.reindex() == 1  # pending state lives in record.json
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [result["run_id"]]
 
 
 def test_find_runs_filters(tmp_path):
@@ -182,7 +206,7 @@ def test_load_run_and_open_dataset(tmp_path):
 
 def test_history_links_to_run_id(tmp_path):
     sess = _session(tmp_path)
-    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply")
     hist = sess.history()
     assert hist
     assert all(h["run_id"] == r["run_id"] for h in hist)
@@ -203,12 +227,14 @@ class _UpdateExplodes(ResonatorSpectroscopy):
 
 
 def test_update_failure_is_structured_and_run_still_persisted(tmp_path):
-    """A writeback failure must not raise, and must not lose the measurement."""
+    """A raising update() must not raise across the boundary, and must not lose the
+    measurement — the capture phase reports it as a structured error."""
     sess = _session(tmp_path)
     result = sess.run("update_explodes", {"qubits": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value  # the measurement itself
-    assert "update/save failed" in result["error"]
-    assert "run_id" in result  # persisted despite the failed writeback
+    assert "suggestion capture failed" in result["error"]
+    assert result["suggestions"] == []  # nothing proposable came out of it
+    assert "run_id" in result  # persisted despite the failed capture
     assert (Path(result["data_path"]) / "record.json").is_file()
     assert sess.find_runs(experiment="update_explodes")[0]["updated_device"] is False
 
@@ -244,9 +270,10 @@ def test_old_index_schema_triggers_rebuild(tmp_path):
 
 def test_without_data_root_behaves_as_before(tmp_path):
     sess = Session(SimulatedBackend(_device()))
-    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert "run_id" not in result and "data_path" not in result
+    assert result["suggestions"]  # returned even without a datastore (the AI loop)
     assert sess.find_runs() == []
     assert sess.history()[0]["run_id"] is None
 

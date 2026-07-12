@@ -9,16 +9,20 @@ effective defaults — the code defaults overlaid by your ``~/.scqo/parameters.t
 tables (need one-off custom parameters? run that step alone via ``scqo run``).
 The qubit list is chosen once for the whole sequence (``--qubits`` or all device
 qubits) and deliberately overrides any per-experiment ``qubits`` in the parameters
-file. Every step is saved to the datastore and tagged; fitted
-values are written back to the device state as each step succeeds. Exits non-zero
-if any step had no successful qubit.
+file. Every step is saved to the datastore and tagged. After each step you are
+shown its suggested updates and asked what to apply — ACCEPTED values feed the next
+step (skipping means later steps run on the pre-run calibration); ``--accept``
+applies every step's updates automatically (unattended bring-up, the pre-v0.6
+behavior). Exits non-zero if any step had no successful qubit.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 
 from ._backends import build_session, default_qubits
+from ._review import review_interactively
 
 # Bring-up order: readout -> coarse f01 (two-tone) -> pi amplitude. Ramsey (fine
 # frequency + T2*) needs a calibrated pi pulse first: run it explicitly via
@@ -35,17 +39,25 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
     parser.add_argument("--tag", action="append", default=[], dest="tags",
                         help="extra searchable tag for every run in this sequence (repeatable)")
     parser.add_argument("--note", default="", help="note stored with every run in this sequence")
+    parser.add_argument("--accept", action="store_true",
+                        help="apply every step's suggested updates automatically (unattended bring-up)")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
     args = parser.parse_args(argv)
 
     sess, _ = build_session(args.config)
     qubits = args.qubits or default_qubits(sess)
     steps = [s for s in SEQUENCE if s not in args.skip]
+    mode = "apply" if args.accept else "suggest"
+    if mode == "suggest" and not (sys.stdin.isatty() and sys.stderr.isatty()):
+        print("warning: not a terminal — suggestions will be left pending and later steps "
+              "will run on the PRE-RUN calibration; use --accept for unattended bring-up",
+              file=sys.stderr)
 
     print(f"calibrating {', '.join(qubits)}: {' -> '.join(steps)}\n")
     failures: list[str] = []
     for step in steps:
-        result = sess.run(step, {"qubits": qubits}, tags=[*args.tags, "calibrate"], note=args.note)
+        result = sess.run(step, {"qubits": qubits}, update=mode,
+                          tags=[*args.tags, "calibrate"], note=args.note)
         outcomes = " ".join(f"{q}:{o}" for q, o in result["outcomes"].items())
         run_id = result.get("run_id", "-")
         print(f"{step:28s} {outcomes:40s} {run_id}")
@@ -53,11 +65,20 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
             print(f"{'':28s} error: {result['error']}")
         if not any(o == "successful" for o in result["outcomes"].values()):
             failures.append(step)
+        elif mode == "suggest" and result.get("suggestions") and "run_id" in result:
+            # Accepted values feed the NEXT step; declining is a legitimate choice.
+            review_interactively(sess, result["run_id"], result["suggestions"])
 
     print("\nfinal device state:")
     for q, fields in sess.device_state().items():
         pretty = "  ".join(f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}" for k, v in fields.items())
         print(f"  {q}: {pretty}")
+    physical = sess.physical_state()
+    if physical:
+        print("\nphysical parameters:")
+        for q, fields in physical.items():
+            pretty = "  ".join(f"{k}={v:.6g}" if isinstance(v, float) else f"{k}={v}" for k, v in fields.items())
+            print(f"  {q}: {pretty}")
 
     if failures:
         print(f"\nFAILED steps (no qubit succeeded): {', '.join(failures)}")

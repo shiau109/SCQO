@@ -116,7 +116,7 @@ def test_partial_success_writes_only_good_qubits():
     sess = Session(SimulatedBackend(_device()))
     before_q1 = sess.device_state()["q1"]["readout_freq"]
 
-    result = sess.run("partial_success", {"qubits": ["q0", "q1"]})
+    result = sess.run("partial_success", {"qubits": ["q0", "q1"]}, update="apply")
 
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert result["outcomes"]["q1"] == Outcome.FAILED.value

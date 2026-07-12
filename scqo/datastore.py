@@ -9,7 +9,7 @@ The **run folder is the truth**: each ``Session.run`` writes a self-contained fo
         parameters.json      # experiment name + validated Parameters
         result.json          # structured Result (outcomes / fit / error)
         device_before.json   # SCQO config snapshot before the run
-        device_after.json    # snapshot after update()
+        device_after.json    # snapshot after the run (differs only if updates were applied)
         analysis/<qubit>/    # scqat estimator artifacts (metadata / plotdata / figures)
 
 ``index.sqlite`` at ``data_root`` is a **disposable cache** over those folders: it makes
@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field
 
 from .config import _current_operator
 
-SCHEMA_VERSION = 5  # v5: setup_since column (renamed from wiring_since; setup = the era record)
+SCHEMA_VERSION = 6  # v6: suggestions + suggestions_pending columns (suggest/review/accept)
 RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS runs (
   error          TEXT,
   parameters     TEXT NOT NULL,
   updated_device INTEGER NOT NULL DEFAULT 0,
+  suggestions    TEXT NOT NULL DEFAULT '[]',
+  suggestions_pending INTEGER NOT NULL DEFAULT 0,
   path           TEXT NOT NULL,
   schema_version INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (run_id, device)
@@ -104,6 +106,10 @@ class RunRecord(BaseModel):
     outcomes: dict[str, str]
     error: str | None = None
     updated_device: bool = False
+    #: suggested field updates captured from update() (scqo.suggestions.Suggestion
+    #: dicts, kept opaque here): qubit/field/store/before/after + decision status.
+    #: Stored in record.json — the truth — so decisions survive any index rebuild.
+    suggestions: list[dict] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     note: str = ""
     path: str  # run folder, relative to data_root (forward slashes)
@@ -226,6 +232,7 @@ class DataStore:
         ended_at: str,
         backend: str,
         updated_device: bool,
+        suggestions: list[dict] | None = None,
         tags: list[str] | None = None,
         note: str = "",
     ) -> RunRecord:
@@ -257,6 +264,7 @@ class DataStore:
             outcomes=outcomes,
             error=result.get("error"),
             updated_device=updated_device,
+            suggestions=list(suggestions or []),
             tags=list(tags or []),
             note=note,
             path=run_dir.relative_to(self.data_root).as_posix(),
@@ -280,6 +288,7 @@ class DataStore:
         device: str | None = None,
         operator: str | None = None,
         cooldown: str | None = None,
+        pending: bool | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """Query the index; newest first; rows as JSON-able dicts (RunRecord fields + fit)."""
@@ -313,6 +322,8 @@ class DataStore:
         if cooldown is not None:
             where.append("cooldown = ?")
             args.append(cooldown)
+        if pending is not None:  # True = runs with undecided suggestions, False = none left
+            where.append("suggestions_pending > 0" if pending else "suggestions_pending = 0")
         sql = "SELECT * FROM runs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -402,6 +413,36 @@ class DataStore:
             )
         return record
 
+    def update_suggestions(
+        self, run_id: str, suggestions: list[dict], updated_device: bool | None = None
+    ) -> dict:
+        """Retro-update a run's suggestion list (accept/reject decisions) by run_id.
+
+        Same discipline as :meth:`tag_run`: ``record.json`` — the truth — is
+        rewritten first, then the index row is patched, so decisions survive any
+        index rebuild. ``updated_device=True`` additionally flips the run's flag
+        (a later accept makes the run a device-updating run); None leaves it alone.
+        """
+        run_dir = self._run_dir(run_id)
+        record = json.loads((run_dir / RECORD_FILE).read_text(encoding="utf-8"))
+        record["suggestions"] = _scrub(suggestions)
+        if updated_device is not None:
+            record["updated_device"] = bool(updated_device)
+        _write_json(run_dir / RECORD_FILE, record)
+        pending = sum(1 for s in record["suggestions"] if s.get("status") == "pending")
+        with self._connect() as db:
+            db.execute(
+                "UPDATE runs SET suggestions = ?, suggestions_pending = ?,"
+                " updated_device = COALESCE(?, updated_device) WHERE run_id = ?",
+                (
+                    json.dumps(record["suggestions"]),
+                    pending,
+                    None if updated_device is None else int(updated_device),
+                    run_id,
+                ),
+            )
+        return record
+
     # -------------------------------------------------------------------- index
     def reindex(self) -> int:
         """Drop and rebuild ``index.sqlite`` from the run folders. Returns the row count.
@@ -463,8 +504,9 @@ class DataStore:
         db.execute(
             "INSERT OR REPLACE INTO runs (run_id, started_at, ended_at, experiment, device,"
             " backend, operator, cooldown, setup_since, qubits, outcome, outcomes, fit, tags,"
-            " note, error, parameters, updated_device, path, schema_version)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " note, error, parameters, updated_device, suggestions, suggestions_pending,"
+            " path, schema_version)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 record.run_id,
                 record.started_at,
@@ -484,6 +526,8 @@ class DataStore:
                 record.error,
                 json.dumps(_scrub(parameters)),
                 int(record.updated_device),
+                json.dumps(_scrub(record.suggestions)),
+                sum(1 for s in record.suggestions if s.get("status") == "pending"),
                 record.path,
                 record.schema_version,
             ),
@@ -492,7 +536,7 @@ class DataStore:
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict:
         out = dict(row)
-        for key in ("qubits", "outcomes", "fit", "tags", "parameters"):
+        for key in ("qubits", "outcomes", "fit", "tags", "parameters", "suggestions"):
             if out.get(key) is not None:
                 out[key] = json.loads(out[key])
         out["updated_device"] = bool(out["updated_device"])

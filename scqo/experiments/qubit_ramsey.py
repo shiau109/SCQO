@@ -127,7 +127,8 @@ class QubitRamsey(Experiment):
             return
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
-                # Calibration push first: if the vendor rejects the corrected drive
-                # frequency, no T2* gets recorded either (no half-applied updates).
+                # Calibration knob first: applies are per-qubit atomic in capture
+                # order, so if the vendor rejects the corrected drive frequency the
+                # T2* (a physical field) is skipped too — no half-applied qubit.
                 self.device.qubit(qubit).drive_freq = fit["drive_freq"]
                 self.device.qubit(qubit).t2_star_s = fit["t2_star_s"]

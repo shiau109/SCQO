@@ -14,6 +14,8 @@ from .result import Outcome, Result
 from .contract import ContractError, DatasetContract
 from .config import ChangeRecord, RecordingDevice
 from .device import DeviceModel, QubitView
+from .physical import PHYSICAL_FIELDS, PhysicalStore
+from .suggestions import Suggestion
 from .backend import Backend
 from .experiment import Experiment
 from .registry import catalog, get, register
@@ -31,6 +33,9 @@ __all__ = [
     "ContractError",
     "ChangeRecord",
     "RecordingDevice",
+    "PhysicalStore",
+    "PHYSICAL_FIELDS",
+    "Suggestion",
     "DeviceModel",
     "QubitView",
     "Backend",

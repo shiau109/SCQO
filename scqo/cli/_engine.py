@@ -13,6 +13,7 @@ import os
 import sys
 
 from ._backends import build_session, default_qubits, ensure_demo_experiments
+from ._review import format_table, review_interactively
 
 
 def _parse_value(text: str):
@@ -81,8 +82,11 @@ def run_experiment_cli(
     parser.add_argument("--tag", action="append", default=[], dest="tags",
                         help="searchable tag for this run (repeatable)")
     parser.add_argument("--note", default="", help="free-text note stored with the run")
-    parser.add_argument("--no-update", action="store_true",
-                        help="analyze only; do not write fitted values back to the device")
+    update_group = parser.add_mutually_exclusive_group()
+    update_group.add_argument("--accept", action="store_true",
+                              help="apply all suggested updates immediately (unattended runs / AI loop)")
+    update_group.add_argument("--no-update", action="store_true",
+                              help="analyze only; do not even capture suggested updates")
     parser.add_argument("--config", help="lab config path (default: $SCQO_CONFIG or ~/.scqo/config.toml)")
     args = parser.parse_args(argv)
     name = experiment or args.experiment
@@ -130,8 +134,20 @@ def run_experiment_cli(
     applied = sorted(k for k in file_defaults if k not in params)
     if applied:  # stderr: stdout stays parseable JSON (| jq etc.)
         print(f"# parameter defaults from {cfg.parameters_source} [{name}]: {', '.join(applied)}", file=sys.stderr)
-    result = sess.run(name, params, update=not args.no_update, tags=args.tags, note=args.note)
+    mode = "apply" if args.accept else ("none" if args.no_update else "suggest")
+    result = sess.run(name, params, update=mode, tags=args.tags, note=args.note)
     print(json.dumps(result, indent=2))
     if "data_path" in result:
         print(f"\nsaved: {result['data_path']}")
+    if mode == "suggest" and result.get("suggestions"):
+        if "run_id" in result:
+            review_interactively(sess, result["run_id"], result["suggestions"])
+        elif result.get("datastore_error"):  # data_root IS configured; saving failed
+            print("\nsuggested updates (saving the run FAILED — NOT stored, nothing to "
+                  "accept later; see datastore_error above):", file=sys.stderr)
+            print(format_table(result["suggestions"]), file=sys.stderr)
+        else:  # no data_root: nothing stored, so there is no later — apply now or lose it
+            print("\nsuggested updates (no data_root configured — NOT stored; "
+                  "rerun with --accept to apply at run time):", file=sys.stderr)
+            print(format_table(result["suggestions"]), file=sys.stderr)
     return 1 if result.get("error") else 0

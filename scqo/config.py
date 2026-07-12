@@ -23,11 +23,16 @@ always legitimate. Wiring/hardware stays vendor-owned and is never modelled here
 
 **Two classes of fields** (see :data:`FIELDS`): *pushed* calibration knobs
 (readout_freq, drive_freq, pi_amp, readout_amp) behave as above; *record-only*
-measured physics (t1_s, t2_star_s, t2_echo_s, readout_fidelity) is recorded into the
-SCQO config + history but NEVER pushed — the instrument has no such knob, and drivers
+instrument-DEPENDENT measured values (readout_fidelity) are recorded into the SCQO
+config + history but NEVER pushed — the instrument has no such knob, and drivers
 need no code for these. Pull-mode startup merges saved record-only values back in
 (the vendor snapshot cannot carry them). Every change record is stamped with the
 **operator** (OS login) — attribution works for manual notebook writes too.
+
+Instrument-INDEPENDENT physics (T1, T2*, transmon-arch and dispersive-fit
+parameters) is NOT a device field: it belongs to the sample and lives in
+:mod:`scqo.physical` (``physical.json``), written through the same
+suggest -> review -> accept flow (:mod:`scqo.suggestions`).
 """
 
 from __future__ import annotations
@@ -72,12 +77,12 @@ FIELDS: dict[str, FieldSpec] = {
     "pi_amp": FieldSpec("", "Amplitude of the calibrated pi (x180) pulse.", push=True),
     "readout_amp": FieldSpec("", "Amplitude of the readout pulse (dimensionless, within "
                                  "the backend's current output-power configuration).", push=True),
-    # record-only measured physics (no vendor knob exists; drivers untouched).
-    # p_e_given_g (thermal population) deliberately stays run-record-only: it is
-    # instrument-dependent — compare across instruments by query, never as state.
-    "t1_s": FieldSpec("s", "Energy-relaxation time T1.", push=False),
-    "t2_star_s": FieldSpec("s", "Ramsey dephasing time T2*.", push=False),
-    "t2_echo_s": FieldSpec("s", "Hahn-echo coherence time T2_echo.", push=False),
+    # record-only measured values that are instrument-DEPENDENT (no vendor knob,
+    # drivers untouched — but the value is a fact about qubit+setup, so it stays in
+    # the instrument state, not scqo.physical). p_e_given_g (thermal population)
+    # deliberately stays run-record-only: compare across instruments by query,
+    # never as state. Instrument-INDEPENDENT physics (T1, T2*, arch/dispersive
+    # parameters) lives in scqo.physical.PHYSICAL_FIELDS instead.
     "readout_fidelity": FieldSpec("", "Single-shot assignment fidelity (0.5..1).", push=False),
 }
 
@@ -149,8 +154,8 @@ class _RecordingQubitView(QubitView):
     """
 
     def __init__(self, parent: "RecordingDevice", name: str) -> None:
-        self.name = name
-        self._parent = parent
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "_parent", parent)
 
     # Generate one property per FIELDS entry. Assigning into the class namespace
     # (vars()) makes them real properties; the pushed subset satisfies the QubitView
@@ -158,6 +163,17 @@ class _RecordingQubitView(QubitView):
     for _field, _spec in FIELDS.items():
         vars()[_field] = _tracked_property(_field, _spec)
     del _field, _spec
+
+    def __setattr__(self, attr: str, value) -> None:
+        # A write to an untracked name must fail LOUDLY — it used to vanish into the
+        # instance dict (e.g. legacy t1_s writes, whose home is now scqo.physical).
+        if isinstance(getattr(type(self), attr, None), property):
+            object.__setattr__(self, attr, value)  # routes through the property setter
+            return
+        raise AttributeError(
+            f"unknown device field {attr!r} for {self.name} — tracked fields: "
+            f"{', '.join(FIELDS)} (instrument-independent physics lives in scqo.physical)"
+        )
 
 
 class RecordingDevice(DeviceModel):
@@ -266,11 +282,18 @@ class RecordingDevice(DeviceModel):
             json.dump(data, f, indent=2)
 
     def _load_state(self, path: str) -> dict:
-        """Load a saved state file: installs the history, returns the saved config."""
+        """Load a saved state file: installs the history, returns the saved config.
+
+        Saved fields SCQO no longer tracks are simply not read (the fresh-start
+        rule) — e.g. pre-v0.6 t1_s/t2_*_s keys, whose home is now physical.json.
+        Their history rows stay untouched (provenance is never rewritten)."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         self._history = [ChangeRecord(**r) for r in data.get("history", [])]
-        return data.get("config", {})
+        return {
+            qubit: {f: v for f, v in fields.items() if f in FIELDS}
+            for qubit, fields in data.get("config", {}).items()
+        }
 
     def _push_config(self) -> None:
         """Push the PUSHED fields of the SCQO config into the vendor device (SCQO is
@@ -284,14 +307,16 @@ class RecordingDevice(DeviceModel):
 
 def _merge_pull_seed(vendor: dict, saved: dict) -> dict:
     """Pull-mode startup seed. The vendor snapshot is authoritative for the qubit set
-    and every PUSHED field; saved values of non-pushed fields (record-only measured
-    physics) are retained for qubits the vendor still reports. Qubits only in the
-    saved config are dropped (their history rows remain untouched)."""
+    and every PUSHED field; saved values of non-pushed fields still in :data:`FIELDS`
+    (record-only measured values) are retained for qubits the vendor still reports.
+    Saved fields SCQO no longer tracks are dropped — e.g. the pre-v0.6 t1_s/t2_*_s
+    keys, whose home is now ``physical.json`` (fresh start, no migration). Qubits
+    only in the saved config are dropped too (their history rows stay untouched)."""
     merged = {qubit: dict(fields) for qubit, fields in vendor.items()}
     for qubit, fields in saved.items():
         if qubit not in merged:
             continue
         for field, value in fields.items():
-            if field not in PUSHED_FIELDS:
+            if field in FIELDS and field not in PUSHED_FIELDS:
                 merged[qubit][field] = value
     return merged
