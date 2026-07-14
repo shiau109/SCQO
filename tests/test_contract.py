@@ -95,18 +95,18 @@ def test_two_axis_contract():
     import xarray as xr
 
     contract = DatasetContract(
-        sweeps=("detuning_hz", "power_db"), sweep_units=("Hz", "dB"), variables=("I", "Q")
+        sweeps=("detuning_hz", "power_dbm"), sweep_units=("Hz", "dBm"), variables=("I", "Q")
     )
-    assert contract.dims == ("qubit", "detuning_hz", "power_db")
+    assert contract.dims == ("qubit", "detuning_hz", "power_dbm")
 
-    det, pwr = np.linspace(-1e6, 1e6, 5), np.linspace(-30, 0, 3)
+    det, pwr = np.linspace(-1e6, 1e6, 5), np.linspace(-50, -20, 3)
     data = np.zeros((2, det.size, pwr.size))
     ds2 = xr.Dataset(
-        {"I": (("qubit", "detuning_hz", "power_db"), data),
-         "Q": (("qubit", "detuning_hz", "power_db"), data)},
-        coords={"qubit": ["q0", "q1"], "detuning_hz": det, "power_db": pwr},
+        {"I": (("qubit", "detuning_hz", "power_dbm"), data),
+         "Q": (("qubit", "detuning_hz", "power_dbm"), data)},
+        coords={"qubit": ["q0", "q1"], "detuning_hz": det, "power_dbm": pwr},
     )
     contract.validate(ds2)  # conforms
 
     with pytest.raises(ContractError):
-        contract.validate(ds2.isel(power_db=0, drop=True))  # lost an axis -> reject
+        contract.validate(ds2.isel(power_dbm=0, drop=True))  # lost an axis -> reject

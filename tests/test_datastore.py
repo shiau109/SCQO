@@ -654,3 +654,43 @@ def test_bound_era_pair_survives_a_mid_session_cycle_change(tmp_path):
                      '[cd1.setup.a]\nbackend = "simulated"\n\n'
                      "[cd2]\nstart = 2026-07-11\n")
     assert store.run_stamps() == ("cd1", "a")  # the bound era, verbatim
+
+
+def test_power_context_persists_and_reindexes(tmp_path):
+    """power_context (v0.8) lands in record.json, survives reindex, and a pre-v0.8
+    record without the key loads as {} — no index schema bump."""
+    import json as _json
+
+    from scqo.testing import InMemoryDevice, SimulatedBackend
+
+    device = InMemoryDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "readout_power_dbm": -25.0}}
+    )
+
+    class _PowerBackend(SimulatedBackend):
+        def power_context(self, qubits):
+            return {q: {"output_att_db": 20, "pulse_amp": 0.5,
+                        "readout_power_dbm": float("nan")} for q in qubits}
+
+    from scqo import Session
+
+    sess = Session(_PowerBackend(device), data_root=tmp_path / "data", device_name="devA")
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="none")
+    run_id = result["run_id"]
+
+    loaded = sess.load_run(run_id)
+    record = loaded["record"]
+    assert record["power_context"]["q0"]["output_att_db"] == 20
+    assert record["power_context"]["q0"]["readout_power_dbm"] is None  # NaN scrubbed
+
+    # a pre-v0.8 record (key absent) still parses and reindexes (Pydantic default {})
+    from pathlib import Path as _Path
+
+    from scqo.datastore import RunRecord
+
+    del record["power_context"]
+    assert RunRecord(**record).power_context == {}
+    rec_path = _Path(loaded["path"]) / "record.json"
+    rec_path.write_text(_json.dumps(record), encoding="utf-8")
+    assert sess.datastore.reindex() >= 1

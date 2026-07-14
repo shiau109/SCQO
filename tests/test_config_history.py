@@ -385,3 +385,191 @@ def test_suggestions_skipped_for_failed_qubit():
     exp.result = _Demo.Result(outcomes={"q0": _O.FAILED}, fit={"q0": {"t1_s": 1e-6}})
     exp.update()
     assert capture.suggestions == []  # failed fits propose nothing
+
+
+# ---------------------------------------------------------------- coupled-write sync
+# (v0.8: one vendor knob feeds several neutral fields — setting readout_power_dbm
+# re-solves the output chain and moves readout_amp. RecordingDevice._sync_coupled
+# reconciles the echo so the config/staleness guard never desync.)
+
+_CHAIN_TOP_DBM = -14.0  # the fake chain's power at digital amplitude 1.0
+
+
+class _CoupledQubit:
+    """Fake vendor qubit whose power setter rewrites amp (and vice versa) like a
+    real chain: P = _CHAIN_TOP_DBM + 20*log10(amp)."""
+
+    def __init__(self, name: str, state: dict) -> None:
+        self.name = name
+        self._state = state
+
+    @property
+    def readout_freq(self) -> float:
+        return self._state["readout_freq"]
+
+    @readout_freq.setter
+    def readout_freq(self, value: float) -> None:
+        self._state["readout_freq"] = float(value)
+
+    @property
+    def drive_freq(self) -> float:
+        return self._state["drive_freq"]
+
+    @drive_freq.setter
+    def drive_freq(self, value: float) -> None:
+        self._state["drive_freq"] = float(value)
+
+    @property
+    def pi_amp(self) -> float:
+        return self._state["pi_amp"]
+
+    @pi_amp.setter
+    def pi_amp(self, value: float) -> None:
+        self._state["pi_amp"] = float(value)
+
+    @property
+    def readout_amp(self) -> float:
+        return self._state["readout_amp"]
+
+    @readout_amp.setter
+    def readout_amp(self, value: float) -> None:
+        self._state["readout_amp"] = float(value)
+
+    @property
+    def readout_power_dbm(self) -> float:
+        import math
+
+        amp = self._state["readout_amp"]
+        if not amp:
+            raise ValueError("amp unset — power undefined")
+        return _CHAIN_TOP_DBM + 20.0 * math.log10(amp)
+
+    @readout_power_dbm.setter
+    def readout_power_dbm(self, value: float) -> None:
+        # the chain solve: amp becomes the residual of the requested power
+        self._state["readout_amp"] = 10.0 ** ((float(value) - _CHAIN_TOP_DBM) / 20.0)
+
+
+class _CoupledDevice:
+    def __init__(self, qubits: dict[str, dict]) -> None:
+        self._qubits = {name: dict(state) for name, state in qubits.items()}
+
+    def qubit(self, name: str) -> _CoupledQubit:
+        return _CoupledQubit(name, self._qubits[name])
+
+    def save(self) -> None:
+        pass
+
+    def snapshot(self) -> dict:
+        out = {}
+        for name, state in self._qubits.items():
+            view = self.qubit(name)
+            entry = dict(state)
+            try:
+                entry["readout_power_dbm"] = view.readout_power_dbm
+            except ValueError:
+                entry["readout_power_dbm"] = None
+            out[name] = entry
+        return out
+
+
+def _coupled_device() -> _CoupledDevice:
+    return _CoupledDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25}}
+    )
+
+
+def test_coupled_write_records_the_echo_and_keeps_config_synced():
+    from scqo import RecordingDevice
+
+    dev = RecordingDevice(_coupled_device())
+    dev.set_context("resonator_spectroscopy_power_chain", "run-xyz")
+    dev.qubit("q0").readout_power_dbm = -20.0
+
+    hist = dev.history()
+    assert [(r.field, r.coupled_to) for r in hist] == [
+        ("readout_power_dbm", None),
+        ("readout_amp", "readout_power_dbm"),
+    ]
+    assert all(r.run_id == "run-xyz" for r in hist)  # same run context on the echo
+    # the authoritative config matches the vendor for BOTH fields (staleness truthful)
+    expected_amp = 10.0 ** ((-20.0 - _CHAIN_TOP_DBM) / 20.0)
+    assert np.isclose(dev.snapshot()["q0"]["readout_amp"], expected_amp)
+    assert np.isclose(dev.snapshot()["q0"]["readout_power_dbm"], -20.0)
+
+
+def test_uncoupled_write_records_no_echo():
+    from scqo import RecordingDevice
+
+    dev = RecordingDevice(_coupled_device())
+    dev.qubit("q0").readout_freq = 6.0e9
+    assert [(r.field, r.coupled_to) for r in dev.history()] == [("readout_freq", None)]
+
+
+def test_coupled_write_updates_amp_and_power_together():
+    """Writing readout_amp on a chained vendor moves the derived power too."""
+    from scqo import RecordingDevice
+
+    dev = RecordingDevice(_coupled_device())
+    dev.qubit("q0").readout_amp = 0.5
+    fields = {r.field: r for r in dev.history()}
+    assert fields["readout_amp"].coupled_to is None
+    assert fields["readout_power_dbm"].coupled_to == "readout_amp"
+    assert np.isclose(dev.snapshot()["q0"]["readout_power_dbm"], _CHAIN_TOP_DBM + 20 * np.log10(0.5))
+
+
+def test_sync_skips_unreadable_fields():
+    """A vendor view that cannot produce a field (unset chain) is skipped, not fatal."""
+    from scqo import RecordingDevice
+
+    dev = _CoupledDevice({"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9,
+                                 "pi_amp": 0.2, "readout_amp": 0.0}})  # amp 0 -> power raises
+    rec = RecordingDevice(dev)
+    rec.qubit("q0").readout_freq = 6.0e9  # sync re-reads power -> ValueError -> skipped
+    assert [r.field for r in rec.history()] == ["readout_freq"]
+
+
+def test_push_load_reconciles_inconsistent_saved_pair(tmp_path):
+    """A saved (power, amp) pair the chain solve makes inconsistent is reconciled on
+    push-mode load — the power (declared last in PUSHED_FIELDS) wins, the amp echo is
+    recorded with coupled_to."""
+    import json as _json
+
+    from scqo import RecordingDevice
+
+    path = tmp_path / "scqo_state.json"
+    path.write_text(_json.dumps({
+        "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                          "readout_amp": 0.9,               # inconsistent with the power below
+                          "readout_power_dbm": -20.0}},     # -> amp must become ~0.5
+        "history": [],
+    }), encoding="utf-8")
+
+    dev = RecordingDevice(_coupled_device(), state_path=str(path), on_load="push")
+    expected_amp = 10.0 ** ((-20.0 - _CHAIN_TOP_DBM) / 20.0)
+    assert np.isclose(dev.snapshot()["q0"]["readout_amp"], expected_amp)
+    echoes = [r for r in dev.history() if r.coupled_to == "readout_power_dbm"]
+    assert [r.field for r in echoes] == ["readout_amp"]
+
+
+def test_pre_v08_state_file_loads_in_push_mode(tmp_path):
+    """A v0.7 state file (no readout_power_dbm key, history rows without coupled_to)
+    loads in push mode: the missing field is backfilled from the vendor snapshot."""
+    import json as _json
+
+    from scqo import RecordingDevice
+
+    path = tmp_path / "scqo_state.json"
+    path.write_text(_json.dumps({
+        "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9,
+                          "pi_amp": 0.2, "readout_amp": 0.25}},
+        "history": [{"timestamp": "2026-01-01T00:00:00+00:00", "qubit": "q0",
+                     "field": "readout_freq", "old": 5.9e9, "new": 5.95e9,
+                     "experiment": "resonator_spectroscopy"}],
+    }), encoding="utf-8")
+
+    dev = RecordingDevice(_coupled_device(), state_path=str(path), on_load="push")
+    assert dev.history()[0].coupled_to is None  # old rows load with the default
+    # backfilled from the vendor: power derived from the vendor's amp 0.25
+    assert np.isclose(dev.snapshot()["q0"]["readout_power_dbm"],
+                      _CHAIN_TOP_DBM + 20 * np.log10(0.25))

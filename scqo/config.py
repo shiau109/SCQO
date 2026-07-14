@@ -22,7 +22,8 @@ Either way, a *write* during a run always records + pushes: a fresh fit result i
 always legitimate. Wiring/hardware stays vendor-owned and is never modelled here.
 
 **Two classes of fields** (see :data:`FIELDS`): *pushed* calibration knobs
-(readout_freq, drive_freq, pi_amp, readout_amp) behave as above; *record-only*
+(readout_freq, drive_freq, pi_amp, readout_amp, readout_power_dbm) behave as above;
+*record-only*
 instrument-DEPENDENT measured values (readout_fidelity) are recorded into the SCQO
 config + history but NEVER pushed — the instrument has no such knob, and drivers
 need no code for these. Pull-mode startup merges saved record-only values back in
@@ -77,6 +78,16 @@ FIELDS: dict[str, FieldSpec] = {
     "pi_amp": FieldSpec("", "Amplitude of the calibrated pi (x180) pulse.", push=True),
     "readout_amp": FieldSpec("", "Amplitude of the readout pulse (dimensionless, within "
                                  "the backend's current output-power configuration).", push=True),
+    # Keep readout_power_dbm LAST among the pushed fields: _push_config pushes in
+    # declaration order, and the absolute power must win over readout_amp (whose
+    # value is the chain solve's residual).
+    "readout_power_dbm": FieldSpec(
+        "dBm",
+        "Absolute readout pulse power at the instrument output port. Setting it "
+        "re-solves the output chain (QM full_scale_power_dbm / Qblox output_att) "
+        "keeping the digital amplitude <= 0.5 full scale; readout_amp changes as a "
+        "COUPLED side effect.",
+        push=True),
     # record-only measured values that are instrument-DEPENDENT (no vendor knob,
     # drivers untouched — but the value is a fact about qubit+setup, so it stays in
     # the instrument state, not scqo.physical). p_e_given_g (thermal population)
@@ -115,6 +126,11 @@ class ChangeRecord:
     run_id: str | None = None
     #: OS login of whoever made the change (None only when undeterminable).
     operator: str | None = None
+    #: Set when this change is the vendor-side ECHO of writing another field (one
+    #: vendor knob feeds several neutral fields — e.g. setting readout_power_dbm
+    #: re-solves the chain and moves readout_amp): names the field whose write
+    #: caused it. None for direct writes.
+    coupled_to: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -200,8 +216,15 @@ class RecordingDevice(DeviceModel):
             saved = self._load_state(state_path)
             if on_load == "push":
                 # SCQO fully owns this device: load the saved config and push it to the
-                # vendor so the instrument matches SCQO for the pushed fields.
+                # vendor so the instrument matches SCQO for the pushed fields. Fields
+                # added since the file was saved (e.g. a pre-v0.8 file without
+                # readout_power_dbm) are backfilled from the vendor snapshot — pushed
+                # reads are strict and would KeyError on a missing key.
                 self._config = saved
+                vendor = inner.snapshot()
+                for qubit, fields in self._config.items():
+                    for field in FIELDS:
+                        fields.setdefault(field, vendor.get(qubit, {}).get(field))
                 self._push_config()
             else:
                 # "pull" (safe default while another tool may also write the vendor
@@ -245,7 +268,8 @@ class RecordingDevice(DeviceModel):
         """Record-only fields read as None until first measured (pushed stay strict)."""
         return self._config.get(qubit, {}).get(field)
 
-    def _record(self, qubit: str, field: str, value: float) -> None:
+    def _record(self, qubit: str, field: str, value: float, *,
+                coupled_to: str | None = None) -> None:
         """Record a measured value: history + SCQO config, NO vendor push."""
         value = float(value)
         if not math.isfinite(value):  # the state JSON must stay strictly parseable
@@ -258,6 +282,7 @@ class RecordingDevice(DeviceModel):
                 # Stamped here (not via set_context) so manual writes outside a run —
                 # a notebook tweaking pi_amp — are attributed too.
                 operator=_current_operator() or None,
+                coupled_to=coupled_to,
             )
         )
         self._config.setdefault(qubit, {})[field] = value          # SCQO config (authoritative)
@@ -271,6 +296,35 @@ class RecordingDevice(DeviceModel):
         # a change that never reached the hardware.
         setattr(self._inner.qubit(qubit), field, value)
         self._record(qubit, field, value)
+        self._sync_coupled(qubit, field)
+
+    def _sync_coupled(self, qubit: str, changed_field: str) -> None:
+        """Reconcile vendor-side write echoes so the SCQO config never desyncs.
+
+        One vendor knob may feed several neutral fields (setting readout_power_dbm
+        re-solves the output chain, which moves readout_amp). After a push of one
+        field, re-read the qubit's OTHER pushed fields from the vendor; any drifted
+        value gets its own ChangeRecord (``coupled_to`` = the written field, same
+        experiment/run context) and a config update — keeping the accept-time
+        staleness guard and live-source provenance truthful. Reads only, so no
+        recursion; a view that cannot produce a field (unset chain, coupler
+        element) is skipped."""
+        view = self._inner.qubit(qubit)
+        for other in PUSHED_FIELDS:
+            if other == changed_field:
+                continue
+            try:
+                current = getattr(view, other)
+            except Exception:
+                continue
+            if current is None:
+                continue
+            current = float(current)
+            if not math.isfinite(current):  # never poison the strict-JSON config
+                continue
+            if self._config.get(qubit, {}).get(other) == current:
+                continue  # exact comparison — the same rule the staleness guard uses
+            self._record(qubit, other, current, coupled_to=changed_field)
 
     # ---------------------------------------------------------------- persistence
     def _persist(self, path: str) -> None:
@@ -298,11 +352,18 @@ class RecordingDevice(DeviceModel):
     def _push_config(self) -> None:
         """Push the PUSHED fields of the SCQO config into the vendor device (SCQO is
         authoritative in push mode). Record-only fields have no vendor knob and are
-        never pushed; wiring/hardware is left untouched."""
+        never pushed; wiring/hardware is left untouched.
+
+        Fields go in :data:`PUSHED_FIELDS` declaration order — readout_power_dbm is
+        declared last, so the absolute power wins and readout_amp becomes its chain
+        residual. A final coupled sync reconciles (and records) any saved pair the
+        chain solve made inconsistent."""
         for qubit, fields in self._config.items():
-            for field, value in fields.items():
-                if value is not None and field in PUSHED_FIELDS:
+            for field in PUSHED_FIELDS:
+                value = fields.get(field)
+                if value is not None:
                     setattr(self._inner.qubit(qubit), field, value)
+            self._sync_coupled(qubit, "readout_power_dbm")
 
 
 def _merge_pull_seed(vendor: dict, saved: dict) -> dict:

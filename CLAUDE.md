@@ -101,7 +101,10 @@ scqo/
     resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (physical store)
     readout_power.py            # per-shot fidelity vs amp prefactor -> updates readout_amp
     readout_frequency.py        # per-shot fidelity vs readout detuning -> updates readout_freq
-    resonator_spectroscopy_power.py  # 2D punchout (detuning x power_db) -> readout_amp + readout_freq
+    resonator_spectroscopy_power_amp.py  # FAST punchout: set-top -> one-program FPGA amplitude
+                                #   sweep down -> revert; absolute-dBm window -> readout_power_dbm + readout_freq
+    resonator_spectroscopy_power_chain.py  # CAREFUL punchout: steps the output chain per point
+                                #   (amp ~0.5 for SNR; wide, cross-backend) -> readout_power_dbm + readout_freq
 tests/test_end_to_end.py        # catalog -> run -> writeback, no hardware
 tests/test_datastore.py         # run folders + index + tags + reindex, no hardware
 ```
@@ -427,3 +430,96 @@ steps (res spec → qubit spec → power Rabi, accept each). A sequence runner
 returns with the Phase-3 AI loop, where deciding the next step belongs.
 `cli/calibrate.py` deleted, `_COMMANDS` entry gone (no alias), `_review.py` is
 shared by run + accept only.
+
+**2026-07-13 — two-mode readout power (v0.8.0).** The punchout's relative-dB axis
+has a floating, backend-specific reference (0 dB = current readout_amp; the
+digital "1.0" means different dBm on QM vs Qblox). The fix is a two-level control
+scheme, not an absolute sweep axis (chain knobs aren't sweepable in-program):
+- **Fifth PUSHED field `readout_power_dbm`** (absolute dBm at the port; declared
+  LAST in FIELDS — push order is load-bearing). Setters solve the chain keeping
+  amplitude ≤ 0.5 full scale (canonical point): QM picks the smallest
+  `full_scale_power_dbm` grid value (−11..+16 by 3; BIDIRECTIONAL via the
+  explicit-fs arg — the bare power_tools helper only bumps up), Qblox the largest
+  even `output_att` in [0,60], amplitude absorbing the exact residual. Qblox's
+  absolute scale uses the nominal +5 dBm full scale (±few dB; per-setup AC-Stark
+  anchor = Phase 3). Unset/zero amplitude ⇒ the power reads as UNDEFINED
+  (ValueError → snapshot None), never −inf.
+- **Coupled-write sync in RecordingDevice**: one vendor knob feeds several
+  neutral fields, so after any push the qubit's other pushed fields are re-read
+  and drifted values recorded as ChangeRecords with `coupled_to=<field>` — the
+  SCQO config, staleness guard and provenance stay truthful. Push-mode load
+  pushes in FIELDS declaration order (power last, authoritative) and reconciles;
+  pre-v0.8 state files backfill the new field from the vendor snapshot.
+- **`resonator_spectroscopy_power_chain` is CHAIN-STEPPED** (user design; renamed
+  2026-07-14 from `_absolute` — see the disambiguation bullet): the
+  chain knobs are not FPGA-loop sweepable, so `run()` steps them with a PYTHON
+  loop — per power point (ascending: constant power per acquisition, no high→low
+  ring-down jumps) it re-solves the chain through the raw vendor views (per-point
+  amplitude stays ~0.5 full scale for SNR; the setter policy: chain as attenuated
+  as possible, amp = exact residual → every point hits its requested power exactly,
+  uniform-dB axis on BOTH backends) and acquires ONE 1D detuning scan; slices
+  xr.concat into the 2D contract. Audit = BOUNDARY pair only (recorded set(max) +
+  revert, 2 ChangeRecords + echoes; the per-point steps are unrecorded acquisition
+  detail, tracked in dataset coords + the figure). Cost: N_power compile+run
+  cycles. Driver probes = the plain 1D res-spec pattern at current device state
+  (QM literally reuses `probes/resonator_spectroscopy.build_program`, incl. its
+  depletion wait; Qblox = 1D freq loop + 10 µs IdlePulse). `simulate()` is
+  per-point (reads `self._current_power_dbm`). The knee arrives as a normal
+  suggestion; scqat's estimator is reused unchanged. The amplitude-sweep punchout
+  stays a single hardware program — see the disambiguation bullet for its final
+  absolute-window form (uniform dBm on both backends).
+- **`power_context` on run records**: `Backend.power_context(qubits)` (default
+  {}) stamps raw chain values per qubit into record.json at run END — provenance
+  only, NO index column, schema stays v7.
+- **Fast punchout RENAMED `resonator_spectroscopy_power_amp`** (2026-07-14,
+  no alias, fresh-start: pre-rename runs stay under the old name; users rename
+  their parameters.toml section header AND its keys — the params became absolute,
+  see the disambiguation bullet). The scqat estimator keeps its
+  method-level name `resonator_spectroscopy_power` (shared by both punchouts;
+  artifact filenames unchanged), as does the shared QM probe module. Loop order
+  on BOTH backends is now **amplitude → averages → frequency** (frequency is the
+  INNERMOST/fastest loop, so the resonator only jumps power between slow outer
+  steps and the acquired axis order is (power_dbm, detuning_hz) — the scqat
+  estimator transposes by name so analysis is unaffected; core define_sweep +
+  Contract reordered to match). QM restructured from freq→avg→amp with middle-axis
+  stream averaging `buffer(dfs).buffer(n_avg).map(FUNCTIONS.average(0)).buffer(amps)`;
+  Qblox from rep→freq→amp — cluster-side bin averaging over the middle rep loop is
+  a hardware prove-out item. NEW optional param `resonator_relaxation_time_ns`:
+  the between-readout ring-down wait (QM: overrides per-qubit QUAM
+  `depletion_time`; Qblox: the IdlePulse — None keeps the probe's historical
+  4 ns, likely too short on real hardware: set it).
+- Qblox backend: `save()` now writes BOTH files (hw_config.json = the runtime
+  truth; the dut's embedded copy is synced first, closing the divergence trap);
+  the hardware config is validated at construction (the agent otherwise leaves a
+  path-loaded config unparsed until connect_clusters). QM: the view property
+  lives on QMQubitView with power_tools imported lazily (quam_fields stays pure).
+- **Punchout figures (scqat v0.1.6): ONE shared provenance form.** Both punchouts
+  attach per-(qubit,power) `digital_amp`/`chain_setting` + `chain_name` coords
+  (real backends; from Backend.power_context — `_chain` captures per point, `_amp`
+  once at the top with the amp row derived `top_amp·10^((P−max)/20)`) → an
+  amp/chain SUBPLOT under the map (shared power axis: amp with the 0.5 guide
+  line, chain setting on a twin axis; `_amp` shows a flat chain + sweeping amp,
+  `_chain` a stepping chain + amp sawtooth). Both ALWAYS attach `power_axis_kind`
+  ("absolute dBm", the x-label) + `mode_label` (the title's second line) — even
+  simulated, so every figure is self-identifying. The v0.1.6-dev scalar form
+  (power_ref/amp_ref secondary axis, chain_label title, power_offset_dbm axis
+  shift) was REMOVED before release; such legacy coords are ignored. Absent
+  provenance (simulated) → plain map, labels only.
+- **Disambiguation (2026-07-14, final): both punchouts named by the KNOB they
+  sweep, IDENTICAL absolute-dBm Parameters (min/max_power_dbm −50/−20 default,
+  le=10), both propose `readout_power_dbm` + `readout_freq` — the mode label on
+  each figure tells them apart.** `_amp` = the lab's proven qualibrate set-top
+  pattern: run() solves the chain for `max_power_dbm` once (recorded boundary
+  write + coupled echo, auto-revert in finally — the same audit as `_chain`),
+  sweeps the amplitude PREFACTOR down from 1 in ONE FPGA program (prefactors
+  shared across qubits — every qubit hits the same absolute window exactly; the
+  shared QM probe + qualibrate LCH node are unchanged), SNR best at the top and
+  degrading toward the bottom. UNIFORM dBm axis on both backends: QM via
+  `for_each_` geometric prefactors; Qblox UNROLLS the amplitude axis (one block
+  per power point with a literal amp coord — scheduler loop domains are
+  linear-only; fixed 2026-07-14 after the first real chipA run showed the old
+  linear loop's bunched axis). `_chain` steps the output chain per point (slow;
+  amp ~0.5 everywhere). BOTH refuse when a qubit's `readout_power_dbm` is unknown
+  (revert target undefined — the old `_amp` relative fallback is deleted). Old
+  `_absolute` runs stay findable only under the old name (no alias); users rename
+  their `parameters.toml` section header + keys (`extra="forbid"` fails loudly).

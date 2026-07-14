@@ -34,3 +34,13 @@ class Backend(ABC):
         ``xarray.Dataset`` with a ``qubit`` dimension plus the experiment's sweep axes.
         The simulated backend ignores ``probe`` and calls ``experiment.simulate`` instead.
         """
+
+    def power_context(self, qubits: list[str]) -> dict:
+        """Raw per-qubit output-chain values behind ``readout_power_dbm`` at run end.
+
+        Vendor-specific keys (QM: full_scale_power_dbm + readout amplitude; Qblox:
+        output_att + pulse_amp + the nominal full scale), stamped into each run
+        record as PROVENANCE ONLY — never re-applied. The default is ``{}``: the
+        simulated backend has no output chain.
+        """
+        return {}

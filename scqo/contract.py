@@ -33,8 +33,8 @@ class DatasetContract:
 
     Attributes:
         sweeps: names of the swept dimensions/coordinates, in canonical order
-            (e.g. ``("idle_time_ns",)`` or ``("detuning_hz", "power_db")``).
-        sweep_units: documentary units per sweep axis (e.g. ``("Hz", "dB")``);
+            (e.g. ``("idle_time_ns",)`` or ``("power_dbm", "detuning_hz")``).
+        sweep_units: documentary units per sweep axis (e.g. ``("dBm", "Hz")``);
             not enforced (xarray coords carry no units here).
         variables: data variables every conforming dataset must contain.
         qubit_dim: the per-qubit dimension/coordinate name (default ``"qubit"``).

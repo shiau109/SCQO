@@ -79,7 +79,8 @@ readout_frequency             Per-shot fidelity vs freq ... updates readout_freq
 readout_power                 Per-shot fidelity vs amp ... updates readout_amp.
 resonator_spectroscopy        Sweep readout frequency ... updates readout_freq.
 resonator_spectroscopy_flux   2D resonator flux map ... proposes sweet spot / g (physical parameters).
-resonator_spectroscopy_power  2D punchout ... updates readout_amp and readout_freq.
+resonator_spectroscopy_power_amp    Fast punchout (FPGA amplitude sweep) ... proposes readout_power_dbm + readout_freq.
+resonator_spectroscopy_power_chain  Careful punchout (steps the output chain per point) ... proposes readout_power_dbm + readout_freq.
 single_shot_readout           IQ blobs ... records readout fidelity (record-only).
 ```
 
@@ -238,6 +239,65 @@ And the device's calibration state / change log any time:
 scqo state                      # current values per qubit
 scqo state --history 20         # who changed what, when, in which run
 ```
+
+### Readout power — two modes (v0.8)
+
+Behind the readout drive are TWO knobs, and two punchout experiments named for
+the knob each one sweeps. They take **identical parameters** (an absolute-dBm
+window: `min_power_dbm`/`max_power_dbm`, default −50…−20), report the same
+absolute axis, and propose the same fields (`readout_power_dbm` +
+`readout_freq`) — they differ only in mechanism, and each figure prints its mode
+in the title so you can never confuse the two.
+
+The knobs:
+
+- **`readout_power_dbm`** — the ABSOLUTE readout power (dBm at the instrument
+  port). Setting it re-solves the output chain (QM `full_scale_power_dbm` in 3 dB
+  steps / Qblox `output_att` in 2 dB steps) so the digital amplitude lands at
+  **≤ 0.5 of full scale** — the canonical operating point. `readout_amp` moves as
+  a *coupled* side effect (the history marks such echoes with the causing field).
+- **`readout_amp`** — the digital amplitude, relative to whatever the chain is
+  set to. Fast and fine-grained, but the digital "1.0" means a different dBm on QM
+  vs Qblox, which is why the punchouts work in absolute power instead.
+
+The two experiments:
+
+- **`resonator_spectroscopy_power_amp`** (fast) solves the chain for the WINDOW
+  TOP once (`readout_power_dbm = max_power_dbm` — a recorded write, auto-reverted
+  after the run), then sweeps the digital amplitude down from it in ONE hardware
+  program. Every qubit hits the same absolute window exactly, whatever its
+  standing power. Minutes fast; the trade-off is SNR — best at the top of the
+  window, degrading toward the bottom where the DAC amplitude gets tiny.
+- **`resonator_spectroscopy_power_chain`** (careful) steps the chain per power
+  point: a Python loop (the chain knobs cannot change inside the FPGA loop)
+  re-solves the chain so the digital amplitude stays at ~0.5 full scale for good
+  SNR at EVERY point, and runs one 1D detuning scan per point — ascending,
+  constant power within each scan, so resonator ring-down from a power jump can
+  never contaminate. Wide and cross-backend comparable, but each point is a
+  separate compile+run cycle (the default 21 points adds a few minutes).
+
+Both record the boundary set/revert pair honestly (2 change records + coupled
+echoes per qubit) and both leave the device exactly as found — accepting the
+suggestion is what actually re-centers the chain. Both refuse to run on a qubit
+whose `readout_power_dbm` is unknown (an unconfigured chain or zero amplitude:
+the revert target would be undefined) — set it once, or fix `readout_amp`, first.
+
+The workflow: run **`_amp`** for the quick look; reach for **`_chain`** when the
+low-power end matters (the dispersive dip near the knee is faint) or for a
+calibrated cross-backend sweep, then fine-tune with `_amp` again.
+
+Absolute-scale honesty: on QM the dBm axis is exact at the port; on Qblox it is
+derived from the nominal +5 dBm module full scale, good to ±a few dB (a per-setup
+photon-number anchor is a Phase-3 refinement). BOTH experiments sweep a uniformly
+spaced dBm axis on BOTH backends (`_chain` by re-solving the chain per point;
+`_amp` with exact geometric amplitudes — on Qblox the amplitude axis is unrolled
+point-by-point, since the hardware only loops linearly). Both figures share ONE format: the map
+plus a SUBPLOT underneath (shared power axis) showing the per-point **digital
+amplitude** and the used `output_att` / `full_scale_power_dbm` — for `_amp` the
+chain curve is flat and the amplitude sweeps; for `_chain` the chain steps and
+the amplitude sawtooths around 0.5 — so every map records what the instrument
+was actually doing. Every run also records the raw chain values (`power_context`
+in record.json), so past axes stay interpretable even after the chain changes.
 
 ## 3. Finding your data (the whole point)
 

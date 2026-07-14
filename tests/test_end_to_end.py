@@ -18,7 +18,8 @@ from scqo.experiments import (
     ReadoutPower,
     ResonatorSpectroscopy,
     ResonatorSpectroscopyFlux,
-    ResonatorSpectroscopyPower,
+    ResonatorSpectroscopyPowerAmp,
+    ResonatorSpectroscopyPowerChain,
     SingleShotReadout,
     QubitRelaxation,
     QubitEcho,
@@ -67,7 +68,7 @@ class DemoQubitRelaxation(QubitRelaxation):
 
 
 @register
-class DemoResonatorSpectroscopyPower(ResonatorSpectroscopyPower):
+class DemoResonatorSpectroscopyPowerAmp(ResonatorSpectroscopyPowerAmp):
     """Concrete punchout for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -122,11 +123,21 @@ class DemoReadoutFrequency(ReadoutFrequency):
         return None
 
 
+@register
+class DemoResonatorSpectroscopyPowerChain(ResonatorSpectroscopyPowerChain):
+    """Concrete absolute punchout for tests/demos; no real instrument program."""
+
+    def probe(self):  # never called by SimulatedBackend
+        return None
+
+
 def _device() -> InMemoryDevice:
     return InMemoryDevice(
         {
-            "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25},
-            "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18, "readout_amp": 0.22},
+            "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25,
+                   "readout_power_dbm": -25.0},
+            "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18, "readout_amp": 0.22,
+                   "readout_power_dbm": -27.0},
         }
     )
 
@@ -238,24 +249,72 @@ def test_qubit_relaxation_records_t1():
     assert [(h["field"], h["qubit"]) for h in sess.history(store="physical")] == [("t1_s", "q0")]
 
 
-def test_resonator_power_2d_updates_amp_and_freq():
-    """First 2D experiment: punchout picks a dispersive-regime power and writes back
-    BOTH readout_amp and readout_freq."""
+def test_amp_punchout_suggests_and_reverts():
+    """The fast punchout shares _chain's absolute-window semantics: set-top +
+    auto-revert are recorded, the knee is PROPOSED on the absolute dBm axis, and
+    the device is unchanged until the suggestion is accepted."""
     sess = Session(SimulatedBackend(_device()))
 
     before = sess.device_state()["q0"]
-    result = sess.run("resonator_spectroscopy_power", {"qubits": ["q0"]}, update="apply")
+    result = sess.run("resonator_spectroscopy_power_amp", {"qubits": ["q0"]})
+    # default window -50..-20 dBm, default update="suggest"
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
-    # optimal power is below the simulated punchout knee (-12..-8 dB)
-    assert fit["optimal_power_db"] <= -6.0
-    assert 0 < fit["readout_amp_factor"] < 1.0
+    # the optimum sits below the simulated knee (8-12 dB under the -20 dBm top)
+    assert -50.0 < fit["optimal_power_dbm"] <= -26.0
+    assert fit["readout_power_dbm"] == fit["optimal_power_dbm"]
+    assert fit["old_readout_power_dbm"] == before["readout_power_dbm"]
+
+    # suggest mode: the proposal is pending, the device is UNCHANGED (revert proven)
+    assert {(s["field"], s["status"]) for s in result["suggestions"]} == {
+        ("readout_power_dbm", "pending"), ("readout_freq", "pending")
+    }
+    assert sess.device_state()["q0"] == before
+
+    # ...but the set-top/revert pair is honestly recorded, tagged with the experiment
+    power_moves = [h for h in sess.history() if h["field"] == "readout_power_dbm"]
+    assert [h["new"] for h in power_moves] == [-20.0, before["readout_power_dbm"]]
+    assert all(h["experiment"] == "resonator_spectroscopy_power_amp" for h in power_moves)
+
+
+def test_amp_punchout_apply_writes_absolute_power_and_freq():
+    sess = Session(SimulatedBackend(_device()))
+    result = sess.run("resonator_spectroscopy_power_amp", {"qubits": ["q0"]}, update="apply")
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     after = sess.device_state()["q0"]
-    assert np.isclose(after["readout_amp"], before["readout_amp"] * fit["readout_amp_factor"])
-    assert np.isclose(after["readout_freq"], fit["readout_freq"])
-    # both writebacks are in the history, linked to the same run
+    assert np.isclose(after["readout_power_dbm"], result["fit"]["q0"]["readout_power_dbm"])
+    assert np.isclose(after["readout_freq"], result["fit"]["q0"]["readout_freq"])
     fields = {h["field"] for h in sess.history()}
-    assert {"readout_amp", "readout_freq"} <= fields
+    assert {"readout_power_dbm", "readout_freq"} <= fields
+
+
+def test_amp_punchout_multi_qubit_shares_the_absolute_window():
+    """q0 (-25 dBm) and q1 (-27 dBm) sweep the SAME absolute window (each chain is
+    solved for the -20 dBm top); each proposes its own absolute optimum and reverts
+    to its own standing power."""
+    sess = Session(SimulatedBackend(_device()))
+    before = sess.device_state()
+    result = sess.run("resonator_spectroscopy_power_amp", {"qubits": ["q0", "q1"]})
+    for q in ("q0", "q1"):
+        assert result["outcomes"][q] == Outcome.SUCCESSFUL.value
+        fit = result["fit"][q]
+        assert -50.0 < fit["readout_power_dbm"] <= -26.0
+        assert fit["old_readout_power_dbm"] == before[q]["readout_power_dbm"]
+    assert sess.device_state() == before  # both reverted (suggest mode)
+
+
+def test_amp_punchout_refuses_unconfigured_chain():
+    """readout_power_dbm unknown -> structured failure (the revert target would be
+    undefined), identical semantics to _chain; the old relative fallback is gone."""
+    device = InMemoryDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "readout_power_dbm": None}}
+    )
+    sess = Session(SimulatedBackend(device))
+    result = sess.run("resonator_spectroscopy_power_amp", {"qubits": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.FAILED.value
+    assert "readout_power_dbm is unknown" in (result["error"] or "")
+    assert result["suggestions"] == []
 
 
 def test_qubit_echo_records_t2_echo():
@@ -402,3 +461,137 @@ def test_power_rabi_generalizes_pattern():
     # calibration can leave the value numerically unchanged while still being written.
     assert any(h["qubit"] == "q0" and h["field"] == "pi_amp" for h in sess.history())
     assert np.isclose(after, result["fit"]["q0"]["pi_amp"])
+
+
+def test_chain_punchout_suggests_and_reverts():
+    """The v0.8 absolute punchout: sweep-top set + auto-revert are recorded, the knee
+    is PROPOSED (suggest mode) on the absolute dBm axis, and the device is unchanged
+    until the suggestion is accepted."""
+    sess = Session(SimulatedBackend(_device()))
+
+    before = sess.device_state()["q0"]
+    result = sess.run(
+        "resonator_spectroscopy_power_chain",
+        {"qubits": ["q0"], "max_power_dbm": -15.0, "min_power_dbm": -45.0},
+    )  # default update="suggest"
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    fit = result["fit"]["q0"]
+    # the optimum sits below the simulated knee (8-12 dB under the -15 dBm top)
+    assert -45.0 < fit["optimal_power_dbm"] <= -21.0
+    assert fit["readout_power_dbm"] == fit["optimal_power_dbm"]
+    assert fit["old_readout_power_dbm"] == before["readout_power_dbm"]
+
+    # suggest mode: the proposal is pending, the device is UNCHANGED (revert proven)
+    assert {(s["field"], s["status"]) for s in result["suggestions"]} == {
+        ("readout_power_dbm", "pending"), ("readout_freq", "pending")
+    }
+    assert sess.device_state()["q0"] == before
+
+    # ...but the set-top/revert pair is honestly recorded, tagged with the experiment
+    # (no datastore configured here, so run_id stays None — the context tag remains)
+    power_moves = [h for h in sess.history() if h["field"] == "readout_power_dbm"]
+    assert [h["new"] for h in power_moves] == [-15.0, before["readout_power_dbm"]]
+    assert all(h["experiment"] == "resonator_spectroscopy_power_chain" for h in power_moves)
+
+
+def test_chain_punchout_accept_applies_the_power():
+    sess = Session(SimulatedBackend(_device()))
+    result = sess.run(
+        "resonator_spectroscopy_power_chain",
+        {"qubits": ["q0"], "max_power_dbm": -15.0, "min_power_dbm": -45.0},
+        update="apply",
+    )
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    after = sess.device_state()["q0"]
+    assert np.isclose(after["readout_power_dbm"], result["fit"]["q0"]["readout_power_dbm"])
+    assert np.isclose(after["readout_freq"], result["fit"]["q0"]["readout_freq"])
+
+
+def test_chain_punchout_refuses_unconfigured_chain():
+    """A qubit whose readout_power_dbm is unknown refuses to run (the revert target
+    would be undefined) — a structured failure, not a crash."""
+    device = InMemoryDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "readout_power_dbm": None}}
+    )
+    sess = Session(SimulatedBackend(device))
+    result = sess.run(
+        "resonator_spectroscopy_power_chain",
+        {"qubits": ["q0"], "max_power_dbm": -15.0, "min_power_dbm": -45.0},
+    )
+    assert result["outcomes"]["q0"] == Outcome.FAILED.value
+    assert "readout_power_dbm is unknown" in (result["error"] or "")
+    assert result["suggestions"] == []
+
+
+def test_punchout_figures_carry_chain_provenance(tmp_path):
+    """Chain-stepped provenance: when the backend reports an output chain, the
+    punchout plotdata artifacts carry the PER-POINT digital_amp/chain_setting vars
+    (+ chain_name) that draw the amp/chain subplot; the simulated (no-chain)
+    backend produces artifacts WITHOUT them (figures unchanged)."""
+    import numpy as np_
+    import xarray as xr
+
+    class _ChainBackend(SimulatedBackend):
+        def power_context(self, qubits):
+            # per-point capture: derive att/amp from each qubit's CURRENT power
+            # (the raw per-point write set it), like a real backend would
+            out = {}
+            for q in qubits:
+                p = self._device.qubit(q).readout_power_dbm
+                att = int(min(60, max(0, 2 * ((5.0 - p - 6.02) // 2))))
+                out[q] = {"output_att_db": att,
+                          "pulse_amp": 10.0 ** ((p - 5.0 + att) / 20.0)}
+            return out
+
+    sess = Session(_ChainBackend(_device()), data_root=tmp_path / "data", device_name="devA")
+    result = sess.run(
+        "resonator_spectroscopy_power_chain",
+        {"qubits": ["q0"], "max_power_dbm": -15.0, "min_power_dbm": -45.0},
+    )
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    run_dir = tmp_path / "data" / sess.load_run(result["run_id"])["record"]["path"]
+    plotdata = xr.load_dataset(
+        run_dir / "analysis" / "q0" / "resonator_spectroscopy_power_plotdata.nc"
+    )
+    assert plotdata.attrs["chain_name"] == "output_att (dB)"
+    assert plotdata.attrs["mode_label"] == "chain-stepped (slow)"
+    assert plotdata.attrs["power_axis_kind"] == "absolute dBm"
+    amp = plotdata["digital_amp"].values
+    att = plotdata["chain_setting"].values
+    assert amp.shape == plotdata["power"].shape and np_.all(np_.isfinite(amp))
+    assert np_.all(amp <= 0.51)                      # per-point canonical policy
+    assert att[0] >= att[-1]                          # ascending power -> att steps DOWN
+    assert list(run_dir.glob("analysis/q0/*.png"))    # the figure rendered
+
+    # the FAST punchout emits the SAME provenance form (one shared figure format):
+    # amp sweeps down from the top, the chain setting stays flat
+    result_amp = sess.run("resonator_spectroscopy_power_amp", {"qubits": ["q0"]})
+    run_dir_amp = tmp_path / "data" / sess.load_run(result_amp["run_id"])["record"]["path"]
+    plotdata_amp = xr.load_dataset(
+        run_dir_amp / "analysis" / "q0" / "resonator_spectroscopy_power_plotdata.nc"
+    )
+    assert plotdata_amp.attrs["chain_name"] == "output_att (dB)"
+    assert plotdata_amp.attrs["mode_label"] == "amplitude sweep (fast)"
+    assert plotdata_amp.attrs["power_axis_kind"] == "absolute dBm"
+    amp2 = plotdata_amp["digital_amp"].values
+    att2 = plotdata_amp["chain_setting"].values
+    assert np_.all(np_.diff(amp2) > 0)                # amp grows with power (prefactor -> 1 at the top)
+    assert np_.allclose(att2, att2[0])                # chain FIXED during the sweep
+    assert list(run_dir_amp.glob("analysis/q0/*.png"))
+
+    # plain simulated backend: no chain -> no provenance vars, but the labels are
+    # still attached (the figure stays self-identifying)
+    sess2 = Session(SimulatedBackend(_device()), data_root=tmp_path / "data2", device_name="devB")
+    result2 = sess2.run(
+        "resonator_spectroscopy_power_chain",
+        {"qubits": ["q0"], "max_power_dbm": -15.0, "min_power_dbm": -45.0},
+    )
+    run_dir2 = tmp_path / "data2" / sess2.load_run(result2["run_id"])["record"]["path"]
+    plotdata2 = xr.load_dataset(
+        run_dir2 / "analysis" / "q0" / "resonator_spectroscopy_power_plotdata.nc"
+    )
+    assert "digital_amp" not in plotdata2.data_vars
+    assert "chain_name" not in plotdata2.attrs
+    assert plotdata2.attrs["mode_label"] == "chain-stepped (slow)"
+    assert plotdata2.attrs["power_axis_kind"] == "absolute dBm"

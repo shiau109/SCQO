@@ -244,6 +244,13 @@ class Session:
         suggestion_dicts = [s.model_dump(mode="json") for s in suggestions]
         if self.datastore is not None:
             assert run_id is not None and run_dir is not None
+            # Raw output-chain values at run END (provenance; the absolute experiment's
+            # sweep top is recoverable from parameters.json). Must never fail a run.
+            try:
+                power_context = self.backend.power_context(
+                    list(getattr(exp.params, "qubits", []))) or {}
+            except Exception:
+                power_context = {}
             try:
                 self.datastore.persist_run(
                     run_id=run_id,
@@ -259,6 +266,7 @@ class Session:
                     backend=self.backend_label,
                     updated_device=updated,
                     suggestions=suggestion_dicts,
+                    power_context=power_context,
                     tags=list(dict.fromkeys([*self.default_tags, *(tags or [])])),
                     note=note,
                 )

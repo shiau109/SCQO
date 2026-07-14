@@ -114,6 +114,10 @@ class RunRecord(BaseModel):
     #: dicts, kept opaque here): qubit/field/store/before/after + decision status.
     #: Stored in record.json — the truth — so decisions survive any index rebuild.
     suggestions: list[dict] = Field(default_factory=list)
+    #: raw per-qubit output-chain values behind readout_power_dbm at run END
+    #: (Backend.power_context: vendor-specific keys, provenance only, never
+    #: re-applied). record.json-only — deliberately NOT an index column.
+    power_context: dict = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     note: str = ""
     path: str  # run folder, relative to data_root (forward slashes)
@@ -266,6 +270,7 @@ class DataStore:
         suggestions: list[dict] | None = None,
         tags: list[str] | None = None,
         note: str = "",
+        power_context: dict | None = None,
     ) -> RunRecord:
         """Write the run folder (``record.json`` last) and upsert the index row."""
         params_dump = params.model_dump(mode="json") if hasattr(params, "model_dump") else dict(params)
@@ -296,6 +301,7 @@ class DataStore:
             error=result.get("error"),
             updated_device=updated_device,
             suggestions=list(suggestions or []),
+            power_context=_scrub(dict(power_context or {})),
             tags=list(tags or []),
             note=note,
             path=run_dir.relative_to(self.data_root).as_posix(),

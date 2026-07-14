@@ -42,7 +42,7 @@ def test_healthy_simulated_setup_passes(tmp_path):
     assert "all checks passed" in proc.stdout
     assert "cd1 ACTIVE" in proc.stdout and "backend=simulated" in proc.stdout
     assert "'sim_main' (auto)" in proc.stdout  # single-setup cycle auto-selects
-    assert "12 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
+    assert "13 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
 
 
 def test_missing_registry_or_setup_fails(tmp_path):

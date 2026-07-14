@@ -10,6 +10,9 @@ Each backend maps them onto its native model:
     pi_amp             q.xy.operations['x180'].amp      q.rxy.amp180
     readout_amp        q.resonator.operations           q.measure.pulse_amp
                          ['readout'].amplitude
+    readout_power_dbm  full_scale_power_dbm + readout   output_att[port-clock] +
+                         amplitude (power_tools)          measure.pulse_amp (nominal
+                                                          +5 dBm full scale)
 
 This keeps experiment physics free of any vendor attribute path.
 """
@@ -64,6 +67,19 @@ class QubitView(ABC):
     @readout_amp.setter
     @abstractmethod
     def readout_amp(self, value: float) -> None: ...
+
+    @property
+    @abstractmethod
+    def readout_power_dbm(self) -> float:
+        """Absolute readout pulse power at the instrument output port (dBm).
+
+        Setting it re-solves the backend's output chain (QM full_scale_power_dbm /
+        Qblox output_att) keeping the digital amplitude <= 0.5 full scale — so
+        ``readout_amp`` changes as a coupled side effect."""
+
+    @readout_power_dbm.setter
+    @abstractmethod
+    def readout_power_dbm(self, value: float) -> None: ...
 
 
 class DeviceModel(ABC):

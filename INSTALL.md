@@ -399,6 +399,48 @@ and the commands regrouped.**
   are gone with NO replacements (use the `scqo` command: `scqo state` /
   `scqo device ...` / `scqo user ...`).
 
+**Upgrading to v0.8.0 (fresh-start policy, no migration): absolute readout power.**
+
+- **A fifth tracked field, `readout_power_dbm`** (absolute dBm at the instrument
+  port), on every backend. Setting it re-solves the output chain (QM
+  `full_scale_power_dbm` / Qblox `output_att`) keeping the digital amplitude
+  ≤ 0.5 full scale — so `readout_amp` changes as a COUPLED side effect, which the
+  history now records explicitly (`coupled_to` on the change record). The first
+  write normalizes a legacy chain to that canonical form; pending `readout_amp`
+  suggestions from before may go stale — truthfully.
+- **New experiment `resonator_spectroscopy_power_chain`**: the CAREFUL punchout —
+  it steps the output chain (QM `full_scale_power_dbm` / Qblox `output_att`) one
+  power point at a time (amp held ~0.5 for SNR), so its dBm axis is wide and
+  cross-backend comparable (slow: one compile+run per point). Proposes
+  `readout_power_dbm` + `readout_freq`. See TUTORIAL §2 "Readout power — two modes".
+- **Run records gain `power_context`** (raw chain values per qubit at run end) in
+  `record.json` — provenance only; the index schema is UNCHANGED (v7, no reindex).
+- **The FAST punchout is RENAMED**: `resonator_spectroscopy_power` →
+  `resonator_spectroscopy_power_amp` (it sweeps power via the FPGA amplitude in one
+  program; the chain-stepped sibling above is `_chain`). No alias: rename your
+  `~\.scqo\parameters.toml` section header (`[resonator_spectroscopy_power]` →
+  `[resonator_spectroscopy_power_amp]`); pre-rename runs stay findable under the
+  old name (`scqo find --experiment resonator_spectroscopy_power`).
+- **Both punchouts now take the SAME absolute-dBm inputs** —
+  `min_power_dbm`/`max_power_dbm` (default −50…−20), same fields, same proposals
+  (`readout_power_dbm` + `readout_freq`); only the mechanism differs and the figure
+  labels it. `_amp` realizes the window by temporarily solving the chain for
+  `max_power_dbm` (a recorded write, auto-reverted — the run leaves the device as
+  found) and sweeping the amplitude down from it, so any window up to the chain max
+  is reachable. Consequences: (a) the old relative keys `min_power_db`/`max_power_db`
+  are GONE — a stale `[resonator_spectroscopy_power_amp]` parameters.toml entry
+  fails loudly naming the file (`extra="forbid"`); rename the keys and rescale the
+  values to absolute dBm. (b) A qubit whose `readout_power_dbm` is unknown now
+  REFUSES to run (both punchouts; the old `readout_amp` fallback is gone) — set
+  `readout_power_dbm` once, or fix `readout_amp`, first. It also gains the
+  optional `resonator_relaxation_time_ns` parameter (ring-down wait between
+  readouts) and both backends now acquire amplitude → averages → frequency (the
+  frequency sweep is innermost/fastest, so the readout power only changes between
+  slow outer steps).
+- **No reinstall needed** (no entry-point changes): `git pull` suffices on dev
+  machines; tagged servers follow §5. Old state files load as-is (the new field
+  backfills from the vendor config on first load).
+
 **Upgrading a dev machine (tracks `main`, editable installs):** `git pull` in every
 repo is normally ALL it takes — code and new subcommands are picked up immediately.
 Re-run the §1 `uv pip install -e` lines only when the release notes in

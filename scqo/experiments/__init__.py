@@ -12,10 +12,15 @@ from .qubit_spectroscopy import (
     QubitSpectroscopyParameters,
     QubitSpectroscopyResult,
 )
-from .resonator_spectroscopy_power import (
-    ResonatorSpectroscopyPower,
-    ResonatorSpectroscopyPowerParameters,
-    ResonatorSpectroscopyPowerResult,
+from .resonator_spectroscopy_power_amp import (
+    ResonatorSpectroscopyPowerAmp,
+    ResonatorSpectroscopyPowerAmpParameters,
+    ResonatorSpectroscopyPowerAmpResult,
+)
+from .resonator_spectroscopy_power_chain import (
+    ResonatorSpectroscopyPowerChain,
+    ResonatorSpectroscopyPowerChainParameters,
+    ResonatorSpectroscopyPowerChainResult,
 )
 from .qubit_relaxation import QubitRelaxation, QubitRelaxationParameters, QubitRelaxationResult
 from .qubit_echo import QubitEcho, QubitEchoParameters, QubitEchoResult
@@ -50,9 +55,12 @@ __all__ = [
     "ResonatorSpectroscopy",
     "ResonatorSpectroscopyParameters",
     "ResonatorSpectroscopyResult",
-    "ResonatorSpectroscopyPower",
-    "ResonatorSpectroscopyPowerParameters",
-    "ResonatorSpectroscopyPowerResult",
+    "ResonatorSpectroscopyPowerAmp",
+    "ResonatorSpectroscopyPowerAmpParameters",
+    "ResonatorSpectroscopyPowerAmpResult",
+    "ResonatorSpectroscopyPowerChain",
+    "ResonatorSpectroscopyPowerChainParameters",
+    "ResonatorSpectroscopyPowerChainResult",
     "QubitRelaxation",
     "QubitRelaxationParameters",
     "QubitRelaxationResult",
