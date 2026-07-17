@@ -10,11 +10,7 @@ import json
 from typing import ClassVar, Dict, Any
 
 import numpy as np
-<<<<<<< Updated upstream
 from pydantic import Field, field_validator
-=======
-from pydantic import Field
->>>>>>> Stashed changes
 import xarray as xr
 
 from .._scqat import per_qubit_results
@@ -67,7 +63,6 @@ class QubitTomographyParameters(QubitSelection, AveragingParameters):
         description="Qubit configurations mapping qubit name to init_state ('0','1','+','-','+i','-i') and target_gate ('I','X','X90','Y','Y90')"
     )
     gate_counts: list[int] = Field(
-<<<<<<< Updated upstream
         default_factory=lambda: [0, 1, 2, 5, 10],
         description="Gate counts to sweep (e.g. [0, 1, 2]). Can also be a string 'start:stop[:step]' or a dict."
     )
@@ -95,12 +90,6 @@ class QubitTomographyParameters(QubitSelection, AveragingParameters):
                 except ValueError:
                     pass
         return val
-
-=======
-        default_factory=list,
-        description="Gate counts to sweep (e.g. [0, 1, 2])"
-    )
->>>>>>> Stashed changes
     symmetrized_readout: bool = Field(
         True,
         description="Whether to perform symmetrized (inverted) readout for error mitigation."
@@ -110,11 +99,6 @@ class QubitTomographyParameters(QubitSelection, AveragingParameters):
         description="Number of shots for training GMM classifier."
     )
 
-
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
 class QubitTomographyResult(Result):
     """Output of QubitTomography."""
     pass
@@ -195,22 +179,11 @@ class QubitTomography(Experiment):
                         Q_tomo[q_idx, b_idx, s_idx, g_idx] = rng.normal(0, 0.8, len(shot_idx))
                         
         return {
-<<<<<<< Updated upstream
             "I_tomo": (("qubit", "basis", "sym", "gate_count", "shot_idx"), I_tomo),
             "Q_tomo": (("qubit", "basis", "sym", "gate_count", "shot_idx"), Q_tomo),
             "I_train": (("qubit", "prepared_state", "train_shot_idx"), I_train),
             "Q_train": (("qubit", "prepared_state", "train_shot_idx"), Q_train)
         }
-
-
-=======
-            "I_tomo": I_tomo,
-            "Q_tomo": Q_tomo,
-            "I_train": I_train,
-            "Q_train": Q_train
-        }
-
->>>>>>> Stashed changes
     def estimate(self) -> QubitTomographyResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
         from scqat.estimators.qubit_tomography import QubitTomographyEstimator
