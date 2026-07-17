@@ -18,6 +18,13 @@ Deciding happens interactively right after ``scqo run``, later via
 time with ``update="apply"`` — which routes through the exact same capture+apply
 path, so even auto-applied runs carry their suggestion audit trail.
 
+Suggestions have two **origins**: ``estimator`` (captured from ``update()``, the
+default) and ``operator`` (a human read the value off the run's figure — e.g. the
+estimator failed on a clearly visible dip — and attached it via ``Session.suggest``
+/ ``scqo suggest``). Operator items carry ``proposed_by``/``proposed_at`` and flow
+through the exact same accept flow, so the applied value is credited to the run
+whose data justified it.
+
 The capture surface exposes one property per ``FIELDS`` ∪ ``PHYSICAL_FIELDS`` entry,
 so ``update()`` implementations (core, driver, contrib) address calibration knobs
 and physical parameters identically and need no code change; routing is by
@@ -56,6 +63,13 @@ class Suggestion(BaseModel):
     #: the decision comment; a failed apply also notes its error here (status stays
     #: pending so the item remains decidable once the cause is fixed).
     comment: str = ""
+    #: who proposed the value: "estimator" (captured from update()) or "operator"
+    #: (a human attached it to the run via Session.suggest / `scqo suggest` — e.g.
+    #: the estimator failed but the figure clearly shows the value). Records from
+    #: before this field existed default truthfully to "estimator".
+    origin: Literal["estimator", "operator"] = "estimator"
+    proposed_by: str | None = None  # OS login of the proposer (operator-authored only)
+    proposed_at: str | None = None  # when it was attached (a suggest can be days after the run)
 
 
 def field_spec(field: str) -> FieldSpec | None:
@@ -103,6 +117,23 @@ def _get(s: dict | Suggestion, key: str):
     return s.get(key) if isinstance(s, dict) else getattr(s, key)
 
 
+def decision_editor(touched: dict[int, dict]):
+    """Editor for :meth:`~scqo.datastore.DataStore.edit_suggestions` that replaces
+    ONLY the rows a decision touched. The stored list is append-only (suggest
+    appends, decisions mutate in place), so positions are stable across writers —
+    rows appended or decided by a concurrent session since our load are preserved
+    instead of being clobbered by a stale whole-list snapshot."""
+
+    def _apply(fresh: list[dict]) -> list[dict]:
+        merged = list(fresh)
+        for i, item in touched.items():
+            if i < len(merged):  # can only fail on a hand-truncated record
+                merged[i] = item
+        return merged
+
+    return _apply
+
+
 def reject_suggestions(
     store,
     run_id: str,
@@ -115,9 +146,10 @@ def reject_suggestions(
     """Decline pending suggestions on a saved run — metadata only, no instrument.
 
     ``store`` is a :class:`~scqo.datastore.DataStore` (duck-typed: ``load_run`` +
-    ``update_suggestions``); rejecting needs no backend, so ``scqo accept --reject``
+    ``edit_suggestions``); rejecting needs no backend, so ``scqo accept --reject``
     works anywhere the data drive is mounted. Same selection semantics as
-    ``Session.accept``. The decision is persisted on the run record.
+    ``Session.accept``. The decision is persisted on the run record via the
+    index-targeted editor, so a concurrent suggest/accept is never clobbered.
     """
     record = store.load_run(run_id)["record"]
     suggestions = [Suggestion(**s) for s in record.get("suggestions", [])]
@@ -128,13 +160,15 @@ def reject_suggestions(
         s.decided_at = _now()
         s.decided_by = _config._current_operator() or None
         s.comment = comment
-    store.update_suggestions(run_id, [s.model_dump(mode="json") for s in suggestions])
+    stored = store.edit_suggestions(
+        run_id, decision_editor({i: suggestions[i].model_dump(mode="json") for i in selected})
+    )
     return {
         "run_id": run_id,
         "rejected": [
             {"qubit": suggestions[i].qubit, "field": suggestions[i].field} for i in selected
         ],
-        "pending_left": sum(1 for s in suggestions if s.status == "pending"),
+        "pending_left": pending_count(stored["suggestions"]),
     }
 
 

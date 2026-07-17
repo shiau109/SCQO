@@ -1,7 +1,10 @@
 """Resonator spectroscopy — the worked reference experiment (backend-free half).
 
 Sweeps readout frequency around each qubit's current resonator frequency, locates the
-transmission dip, and updates ``readout_freq``. A driver only adds ``probe()``.
+transmission dip, and updates ``readout_freq``. The fit is also proposed as sample
+physics (``physical.json`` on accept): the dip position is the dressed resonator
+frequency ``f_r_hz`` and the power-Lorentzian FWHM is the resonator decay rate
+``kappa_hz``. A driver only adds ``probe()``.
 """
 
 from __future__ import annotations
@@ -33,7 +36,9 @@ class ResonatorSpectroscopyResult(Result):
     """Output of resonator spectroscopy.
 
     ``fit[qubit]`` carries ``readout_freq`` (new absolute Hz), ``dip_detuning_hz`` and
-    ``old_readout_freq``.
+    ``old_readout_freq``, plus the physical quantities ``f_r_hz`` (the dip is the
+    dressed resonator frequency) and ``kappa_hz`` (the fitted FWHM is the decay rate);
+    ``update()`` proposes those two as physical parameters.
     """
 
 
@@ -43,7 +48,8 @@ class ResonatorSpectroscopy(Experiment):
     name: ClassVar[str] = "resonator_spectroscopy"
     description: ClassVar[str] = (
         "Sweep readout frequency around each resonator and locate the transmission dip; "
-        "updates each qubit's readout_freq."
+        "updates each qubit's readout_freq and proposes the dip position (f_r_hz) and "
+        "linewidth (kappa_hz) as physical parameters."
     )
     Parameters: ClassVar[type] = ResonatorSpectroscopyParameters
     Result: ClassVar[type] = ResonatorSpectroscopyResult
@@ -94,10 +100,15 @@ class ResonatorSpectroscopy(Experiment):
             r = results[qubit]
             old = old_freqs[qubit]
             center = float(r["detuning"])  # fitted dip detuning (Hz, relative)
+            new_freq = float(r.get("full_freq", old + center))
             result.fit[qubit] = {
-                "readout_freq": float(r.get("full_freq", old + center)),
+                "readout_freq": new_freq,
                 "dip_detuning_hz": center,
                 "old_readout_freq": old,
+                # the same fit, under its PHYSICAL_FIELDS names: the dip IS the
+                # dressed resonator frequency, the power-Lorentzian FWHM IS kappa
+                "f_r_hz": new_freq,
+                "kappa_hz": float(r["fwhm"]),
             }
             result.outcomes[qubit] = Outcome.SUCCESSFUL if bool(r["success"]) else Outcome.FAILED
         return result
@@ -106,5 +117,12 @@ class ResonatorSpectroscopy(Experiment):
         if self.result is None:
             return
         for qubit, fit in self.result.fit.items():
-            if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
-                self.device.qubit(qubit).readout_freq = fit["readout_freq"]
+            if self.result.outcomes[qubit] is not Outcome.SUCCESSFUL:
+                continue
+            view = self.device.qubit(qubit)
+            view.readout_freq = fit["readout_freq"]
+            # sample physics (physical.json on accept); subclasses that override
+            # estimate() may omit them, so propose only what the fit carries
+            for field in ("f_r_hz", "kappa_hz"):
+                if field in fit:
+                    setattr(view, field, fit[field])

@@ -7,6 +7,7 @@ disposable cache — several tests delete/rebuild it to prove that.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from scqo import Outcome, Session, register, reindex
@@ -104,8 +105,8 @@ def test_default_run_stores_pending_suggestions(tmp_path):
 
     record = json.loads((run_dir / "record.json").read_text(encoding="utf-8"))
     assert record["updated_device"] is False
-    (s,) = record["suggestions"]
-    assert s["status"] == "pending" and s["field"] == "readout_freq"
+    assert [s["field"] for s in record["suggestions"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    assert {s["status"] for s in record["suggestions"]} == {"pending"}
 
     before = json.loads((run_dir / "device_before.json").read_text(encoding="utf-8"))
     after = json.loads((run_dir / "device_after.json").read_text(encoding="utf-8"))
@@ -115,6 +116,30 @@ def test_default_run_stores_pending_suggestions(tmp_path):
     assert sess.find_runs(pending=False) == []
     assert sess.datastore.reindex() == 1  # pending state lives in record.json
     assert [r["run_id"] for r in sess.find_runs(pending=True)] == [result["run_id"]]
+
+
+def test_update_suggestions_append_recomputes_pending(tmp_path):
+    """The contract Session.suggest relies on: update_suggestions accepts a LONGER
+    list (append) and recomputes the index's pending counter from it."""
+    sess = _session(tmp_path)
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    run_id = result["run_id"]
+    sess.accept(run_id)  # everything decided
+    assert sess.find_runs(pending=True) == []
+
+    record = sess.load_run(run_id)["record"]
+    appended = record["suggestions"] + [{
+        "qubit": "q0", "field": "pi_amp", "store": "instrument",
+        "before": 0.2, "after": 0.21, "status": "pending",
+        "origin": "operator", "proposed_by": "alice",
+    }]
+    sess.datastore.update_suggestions(run_id, appended)
+
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [run_id]
+    row = sess.find_runs()[0]
+    assert row["suggestions_pending"] == 1 and len(row["suggestions"]) == 4
+    assert sess.datastore.reindex() == 1  # record.json carries the appended item
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [run_id]
 
 
 def test_find_runs_filters(tmp_path):
@@ -154,6 +179,96 @@ def test_tags_default_and_retroactive(tmp_path):
     # record.json is the truth: a full rebuild keeps the retro-tag
     assert sess.datastore.reindex() == 1
     assert sess.find_runs(tag="thesis-fig3")
+
+
+def test_suggest_during_tag_window_survives(tmp_path, monkeypatch):
+    """REGRESSION (record.json race): an operator suggestion landing INSIDE a
+    concurrent tag_run's read->write window must survive — tag_run rewrites the WHOLE
+    record, so it re-reads under the record lock rather than storing a snapshot taken
+    before the suggestion existed. Mirrors the accept-vs-suggest pair in
+    tests/test_suggestions.py, with the tagger as the whole-record writer."""
+    from scqo import datastore as datastore_mod
+
+    sess_a = _session(tmp_path)
+    run_id = sess_a.run("resonator_spectroscopy", {"qubits": ["q0"]})["run_id"]
+    sess_b = _session(tmp_path)  # a second terminal on the same lab
+
+    errors: list[Exception] = []
+
+    def suggest_concurrently():
+        try:
+            sess_b.suggest(run_id, {"q0.pi_amp": 0.21}, comment="operator, mid-tag")
+        except Exception as err:  # pragma: no cover - the assertion below reports it
+            errors.append(err)
+
+    suggester = threading.Thread(target=suggest_concurrently)
+
+    at_store = threading.Event()  # b has read the record and is about to store its item
+    real_edit = sess_b.datastore.edit_suggestions
+
+    def edit_announcing_entry(*args, **kwargs):
+        at_store.set()
+        return real_edit(*args, **kwargs)
+
+    sess_b.datastore.edit_suggestions = edit_announcing_entry
+
+    real_write = datastore_mod._write_json
+    tagging = []
+
+    def write_with_concurrent_suggest(path, payload):
+        # Fires ONCE, on tag_run's own record write — b then races that very write.
+        if not tagging and Path(path).name == "record.json":
+            tagging.append(True)
+            suggester.start()
+            at_store.wait(5)
+            # Unlocked, b's item lands here and the write below erases it; locked, b
+            # is parked on the record lock and only proceeds once we release it.
+            suggester.join(1.0)
+        return real_write(path, payload)
+
+    monkeypatch.setattr(datastore_mod, "_write_json", write_with_concurrent_suggest)
+    sess_a.tag_run(run_id, add=["thesis-fig3"], note="tagged mid-suggest")
+    suggester.join(10)
+    assert not errors and not suggester.is_alive()
+
+    record = sess_a.load_run(run_id)["record"]
+    assert record["tags"] == ["thesis-fig3"] and record["note"] == "tagged mid-suggest"
+    assert [s["field"] for s in record["suggestions"]] == [  # nothing clobbered
+        "readout_freq", "f_r_hz", "kappa_hz", "pi_amp"]
+    assert record["suggestions"][-1]["origin"] == "operator"
+
+    # record.json is the truth: both writers' edits survive a full rebuild
+    assert sess_a.datastore.reindex() == 1
+    assert [r["run_id"] for r in sess_a.find_runs(tag="thesis-fig3", pending=True)] == [run_id]
+    assert sess_a.find_runs()[0]["suggestions_pending"] == 4
+
+
+def test_tag_during_suggest_window_survives(tmp_path):
+    """REGRESSION (record.json race, reverse order): a retro-tag completing inside
+    suggest's load->write window must keep its tags — suggest edits the FRESH stored
+    list under the record lock, and tag_run holds that lock only across its own
+    read-write (a lock held across the nested writer would deadlock, not clobber)."""
+    sess_a = _session(tmp_path)
+    run_id = sess_a.run("resonator_spectroscopy", {"qubits": ["q0"]})["run_id"]
+    sess_b = _session(tmp_path)
+
+    real_load = sess_b._load_run_record
+
+    def load_then_concurrent_tag(rid):
+        out = real_load(rid)
+        sess_a.tag_run(run_id, add=["thesis-fig3"], note="tagged mid-suggest")
+        return out
+
+    sess_b._load_run_record = load_then_concurrent_tag
+    summary = sess_b.suggest(run_id, {"q0.pi_amp": 0.21})
+    assert summary["pending_total"] == 4  # 3 estimator rows + the operator's
+
+    record = sess_b.load_run(run_id)["record"]
+    assert record["tags"] == ["thesis-fig3"]  # NOT reverted by the suggestion write
+    assert record["note"] == "tagged mid-suggest"
+    assert [s["field"] for s in record["suggestions"]] == [
+        "readout_freq", "f_r_hz", "kappa_hz", "pi_amp"]
+    assert [r["run_id"] for r in sess_b.find_runs(tag="thesis-fig3")] == [run_id]
 
 
 def test_reindex_rebuilds_deleted_index(tmp_path):
@@ -362,17 +477,13 @@ def test_cooldown_registry_loader(tmp_path):
 
     assert load_cooldowns(tmp_path, "devA") == {}  # absent -> no cycles, no stamps
 
-    (tmp_path / "cfgA").mkdir()
-    (tmp_path / "cfgB").mkdir()
     _write_cooldowns(
         tmp_path, "devA",
         "[cd1]\nstart = 2026-01-01\nend = 2026-02-01\n"
         '[cd1.setup.sim]\nbackend = "simulated"\n\n'
         '[cd2]\nstart = 2026-07-01\nfridge = "BlueforsA"\npackaging = "PCB v3"\n\n'
-        '[cd2.setup.qblox_main]\nbackend = "qblox"\n'
-        f"instrument_config = '{(tmp_path / 'cfgA').as_posix()}'\n\n"
-        '[cd2.setup.qblox_spare]\nnote = "out0 dead"\nbackend = "qblox"\n'
-        f"instrument_config = '{(tmp_path / 'cfgB').as_posix()}'\n",
+        '[cd2.setup.qblox_main]\nbackend = "qblox"\n\n'
+        '[cd2.setup.qblox_spare]\nnote = "out0 dead"\nbackend = "qblox"\n',
     )
     cycles = load_cooldowns(tmp_path, "devA")
     cid, cycle = active_cooldown(cycles)
@@ -385,12 +496,15 @@ def test_cooldown_registry_loader(tmp_path):
     name, setup = resolve_setup(cycles["cd1"])
     assert name == "sim" and setup["backend"] == "simulated"
 
-    # multi-setup cycle: selection by name returns THAT setup
+    # multi-setup cycle: selection by name returns THAT setup; the vendor folder is
+    # DERIVED from the keys and injected (absolute) — never typed in the registry
     name, setup = resolve_setup(cycle, "qblox_spare")
     assert name == "qblox_spare"
     assert setup["backend"] == "qblox"
     assert setup["note"] == "out0 dead"
-    assert setup["instrument_config"].endswith("cfgB")  # normalized, absolute
+    from pathlib import Path as _P
+    assert _P(setup["instrument_config"]) == (
+        tmp_path / "devA" / "cd2" / "qblox_spare" / "backend_config").resolve()
 
     # structured failures (reason + available drive the CLI's exact-fix messages)
     import pytest
@@ -442,7 +556,7 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
     with pytest.raises(ValueError, match=r"unknown key\(s\): since"):
         load_cooldowns(tmp_path, "devA")
 
-    # port-map pairs are retired (wiring lives in the vendor instrument_config folder)
+    # port-map pairs are retired (wiring lives in the vendor config folder)
     _write_cooldowns(tmp_path, "devA",
                      '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\nbackend = "simulated"\n'
                      '"q0.drive" = "cluster0.module2.out0"\n')
@@ -460,39 +574,13 @@ def test_cooldown_registry_validation_is_loud(tmp_path):
     with pytest.raises(ValueError, match="'backend' must be one of"):
         load_cooldowns(tmp_path, "devA")
 
+    # 'instrument_config' is retired in v0.9 — the vendor folder is DERIVED from the
+    # keys; a typed path (any backend) is refused naming the derived folder.
     _write_cooldowns(tmp_path, "devA",
-                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.sim]\n'
-                     'backend = "simulated"\ninstrument_config = "somewhere"\n')
-    with pytest.raises(ValueError, match="takes no instrument_config"):  # forbidden for the demo backend
+                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.main]\n'
+                     'backend = "qblox"\ninstrument_config = "somewhere"\n')
+    with pytest.raises(ValueError, match="retired in v0.9"):
         load_cooldowns(tmp_path, "devA")
-
-    _write_cooldowns(tmp_path, "devA",
-                     '[cd1]\nstart = 2026-01-01\n[cd1.setup.main]\nbackend = "qblox"\n')
-    with pytest.raises(ValueError, match="needs 'instrument_config'"):  # required for real backends
-        load_cooldowns(tmp_path, "devA")
-
-    # two setups sharing one folder — even via different spellings — corrupt live state;
-    # the error must name BOTH setups. A './' segment collapses on every OS; the
-    # case-folded spelling is Windows-only (case-insensitive paths) — on POSIX two
-    # casings ARE different folders and must pass.
-    import os
-
-    shared = tmp_path / "SharedCfg"
-    shared.mkdir()
-    spellings = [f"{tmp_path.as_posix()}/./SharedCfg"]
-    if os.name == "nt":
-        spellings.append(str(shared).lower())
-    for second in spellings:
-        _write_cooldowns(
-            tmp_path, "devA",
-            "[cd1]\nstart = 2026-01-01\n"
-            '[cd1.setup.main]\nbackend = "qblox"\n'
-            f"instrument_config = '{shared.as_posix()}'\n"
-            '[cd1.setup.spare]\nbackend = "qblox"\n'
-            f"instrument_config = '{second}'\n",
-        )
-        with pytest.raises(ValueError, match=r"'main' and 'spare'.*same"):
-            load_cooldowns(tmp_path, "devA")
 
     path = _write_cooldowns(tmp_path, "devA", "not [valid toml")
     with pytest.raises(ValueError, match="cooldowns.toml"):
@@ -610,10 +698,10 @@ def test_v6_index_auto_reindexes_to_v7(tmp_path):
     assert version == "7"
 
 
-def test_setup_validation_rejects_non_string_instrument_config(tmp_path):
-    """TOML parses unquoted dates/ints happily — the LOUD ValueError contract must
-    hold (a TypeError from Path() would escape every `except ValueError` consumer:
-    the CLI refusal text, the viewer device page, scqo doctor)."""
+def test_setup_validation_rejects_any_typed_instrument_config(tmp_path):
+    """The key is retired — even a non-string (unquoted TOML date) value must hit
+    the LOUD ValueError contract, never a TypeError that escapes `except ValueError`
+    consumers (CLI refusal text, viewer device page, scqo doctor)."""
     import pytest
 
     from scqo.datastore import load_cooldowns
@@ -621,7 +709,7 @@ def test_setup_validation_rejects_non_string_instrument_config(tmp_path):
     _write_cooldowns(tmp_path, "devT",
                      "[cd1]\nstart = 2026-07-01\n"
                      '[cd1.setup.qm_main]\nbackend = "qm"\ninstrument_config = 2026-07-12\n')
-    with pytest.raises(ValueError, match="quoted path string"):
+    with pytest.raises(ValueError, match="retired in v0.9"):
         load_cooldowns(tmp_path, "devT")
 
 

@@ -66,24 +66,28 @@ scqo/
   result.py       # Outcome enum + Result base (extraction surface)
   device.py       # QubitView / DeviceModel ABCs (neutral field names)
   physical.py     # PHYSICAL_FIELDS + PhysicalStore: the SAMPLE's instrument-independent
-                  #   measured physics (T1/T2, arch/dispersive fits) -> <device>/physical.json
+                  #   measured physics (T1/T2, arch/dispersive fits) -> the context's
+                  #   scqo/physical.json (+ physical.history.jsonl sidecar)
+  _state_io.py    # shared state-file plumbing: the .lock file + the .history.jsonl
+                  #   sidecar (read/write + pre-split embedded-history fallback)
   suggestions.py  # Suggestion + SuggestionCapture: update() writes become PENDING
-                  #   proposals on the run record; accept/reject decide them (v0.6)
+                  #   proposals on the run record; accept/reject decide them (v0.6);
+                  #   origin="operator" = human-attached via Session.suggest (v0.9)
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update) + backend half (probe)
   registry.py     # @register / get / catalog  (AI's menu of measurements)
-  session.py      # Session: catalog() / run() / accept() / reject() / find_runs() /
-                  #   load_run() / device_state() / physical_state() / history()
+  session.py      # Session: catalog() / run() / accept() / reject() / suggest() /
+                  #   find_runs() / load_run() / device_state() / physical_state() / history()
   datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
-  cli/            # the `scqo` command (run/find/accept/tag/state/user/
+  cli/            # the `scqo` command (run/find/accept/suggest/tag/state/user/
                   #   device/doctor): ONE engine, any-directory;
                   #   the device's SELECTED named setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; simulated is built in
                   #   (_backends.ensure_demo_experiments fills the catalog driver-less)
   experiments/
-    resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
+    resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq + f_r/kappa (physical store)
     qubit_spectroscopy.py       # two-tone peak search -> coarse drive_freq (bring-up step 2)
     qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
@@ -122,7 +126,12 @@ ONE data_root + ONE index for all samples (`find_runs(device=...)` / `--device` 
 per-sample DBs are rejected). Each user selects the sample and setup (`device`/`setup`
 in user.toml; `scqo user`); which instrument carries it — and where its vendor config
 folder lives — is a fact of the SELECTED named setup of the device's ACTIVE cooldown
-cycle (`[<cycle>.setup.<name>]` in its cooldowns.toml, v0.7.0), never a config key.
+cycle (`[<cycle>.setup.<name>]` in its cooldowns.toml), never a config key. ALL folder
+locations are DERIVED from the registry keys: a setup table is exactly `backend` +
+optional `note`; its vendor folder is the sibling `<cid>/<name>/backend_config/`,
+injected by `load_cooldowns` as `setup["instrument_config"]` (typed paths are refused —
+they can dangle). That sibling split is load-bearing: it keeps SCQO's own files out of
+QUAM's state-directory rglob by construction.
 Instrument-independent sample facts live in the optional human-edited registry
 `<data_root>/devices.toml` (`datastore.load_device_registry`; rendered by the viewer).
 Instrument-DEPENDENT measured values (thermal population etc.) stay in run records with
@@ -171,5 +180,4 @@ or per-command shims.
 - `D:\github\QBLOX_training` — read-only Qblox reference docs (`docs/applications/superconducting/single_qubit_experiment_helpers/experiment.py`, `cal*.py`, `custom_elements.py`).
 
 ## Status
-Current published release: **v0.8.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.
-Work in progress on `main`: **v0.9.0** — per-(cooldown, setup) SCQO state + physics folders (`<data_root>/<device>/<cooldown>/<setup>/scqo/`) so two users on two setups of one sample no longer share or clobber state.
+Current published release: **v0.9.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.

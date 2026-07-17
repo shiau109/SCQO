@@ -172,8 +172,9 @@ def test_session_catalog_and_run_are_json():
     after = sess.device_state()["q0"]["readout_freq"]
     assert after != before
     assert np.isclose(after, result["fit"]["q0"]["readout_freq"])
-    # ... and the applied update carries its audit trail
-    assert [(s["field"], s["status"]) for s in result["suggestions"]] == [("readout_freq", "accepted")]
+    # ... and the applied updates carry their audit trail (knob + sample physics)
+    assert [(s["field"], s["status"]) for s in result["suggestions"]] == [
+        ("readout_freq", "accepted"), ("f_r_hz", "accepted"), ("kappa_hz", "accepted")]
 
 
 def test_default_run_suggests_but_applies_nothing():
@@ -186,9 +187,12 @@ def test_default_run_suggests_but_applies_nothing():
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     assert sess.device_state() == state_before  # nothing applied
     assert sess.history() == []
-    (s,) = result["suggestions"]
-    assert s["status"] == "pending" and s["store"] == "instrument"
-    assert s["qubit"] == "q0" and s["field"] == "readout_freq"
+    suggestions = result["suggestions"]
+    assert [(s["field"], s["store"]) for s in suggestions] == [
+        ("readout_freq", "instrument"), ("f_r_hz", "physical"), ("kappa_hz", "physical")]
+    assert {s["status"] for s in suggestions} == {"pending"}
+    s = suggestions[0]
+    assert s["qubit"] == "q0"
     assert s["before"] == state_before["q0"]["readout_freq"]
     assert np.isclose(s["after"], result["fit"]["q0"]["readout_freq"])
 

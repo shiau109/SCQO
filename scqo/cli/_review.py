@@ -38,6 +38,8 @@ def format_table(suggestions: list[dict]) -> str:
         status = s.get("status", "pending")
         if s.get("decided_by"):
             status += f" (by {s['decided_by']})"
+        if s.get("origin") == "operator":  # human-proposed (scqo suggest), not a fit
+            status += f" [operator: {s['proposed_by']}]" if s.get("proposed_by") else " [operator]"
         note = f"  # {s['comment']}" if s.get("comment") else ""
         lines.append(
             f"  {i:>3} {s['qubit']:6} {s['field']:18} {s['store']:10} "

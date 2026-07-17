@@ -9,6 +9,7 @@ import json
 import numpy as np
 
 from scqo import Outcome, Session, register
+from scqo._state_io import write_history
 from scqo.experiments import QubitPowerRabi, QubitRamsey, QubitRelaxation, ResonatorSpectroscopy
 from scqo.testing import InMemoryDevice, SimulatedBackend
 
@@ -87,22 +88,24 @@ def test_state_round_trips(tmp_path):
 
 
 def _stale_state(tmp_path):
+    """Current (v0.9) on-disk shape: values-only JSON + .history.jsonl sidecar.
+    (The pre-split embedded-history fallback is pinned once, in
+    test_pre_v08_state_file_loads_in_push_mode.)"""
     path = tmp_path / "scqo_state.json"
     path.write_text(
         json.dumps(
-            {
-                "config": {"q0": {"readout_freq": 7.0e9, "drive_freq": 4.0e9, "pi_amp": 0.5, "readout_amp": 0.25}},
-                "history": [
-                    {
-                        "timestamp": "2026-01-01T00:00:00+00:00", "qubit": "q0",
-                        "field": "readout_freq", "old": 5.9e9, "new": 7.0e9,
-                        "experiment": "resonator_spectroscopy",
-                    }
-                ],
-            }
+            {"config": {"q0": {"readout_freq": 7.0e9, "drive_freq": 4.0e9,
+                               "pi_amp": 0.5, "readout_amp": 0.25}}}
         ),
         encoding="utf-8",
     )
+    write_history(path, [
+        {
+            "timestamp": "2026-01-01T00:00:00+00:00", "qubit": "q0",
+            "field": "readout_freq", "old": 5.9e9, "new": 7.0e9,
+            "experiment": "resonator_spectroscopy",
+        }
+    ])
     return str(path)
 
 
@@ -290,7 +293,6 @@ def test_pull_seed_merges_recorded_values_and_drops_legacy_fields(tmp_path):
                     "q0": {"readout_freq": 7.0e9, "readout_fidelity": 0.97, "t1_s": 25e-6},
                     "gone": {"readout_fidelity": 0.9},
                 },
-                "history": [],
             }
         ),
         encoding="utf-8",
@@ -312,8 +314,7 @@ def test_push_load_never_pushes_record_only(tmp_path):
 
     path = tmp_path / "scqo_state.json"
     path.write_text(
-        json.dumps({"config": {"q0": {"pi_amp": 0.5, "readout_fidelity": 0.97, "t1_s": 25e-6}},
-                    "history": []}),
+        json.dumps({"config": {"q0": {"pi_amp": 0.5, "readout_fidelity": 0.97, "t1_s": 25e-6}}}),
         encoding="utf-8",
     )
     vendor = _SpyDevice()
@@ -542,7 +543,6 @@ def test_push_load_reconciles_inconsistent_saved_pair(tmp_path):
         "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
                           "readout_amp": 0.9,               # inconsistent with the power below
                           "readout_power_dbm": -20.0}},     # -> amp must become ~0.5
-        "history": [],
     }), encoding="utf-8")
 
     dev = RecordingDevice(_coupled_device(), state_path=str(path), on_load="push")
@@ -552,9 +552,43 @@ def test_push_load_reconciles_inconsistent_saved_pair(tmp_path):
     assert [r.field for r in echoes] == ["readout_amp"]
 
 
+def test_push_mode_startup_reconciliation_rows_survive_save(tmp_path):
+    """REGRESSION (v0.9 history split): push-mode __init__ records coupled
+    reconciliations via _push_config BEFORE any save — those rows must count as
+    unsaved (the _saved watermark is set at load, not at the end of __init__) and
+    land in the history sidecar, or SCQO changes a value with no surviving record."""
+    import json as _json
+
+    from scqo import RecordingDevice
+    from scqo._state_io import read_history
+
+    path = tmp_path / "scqo_state.json"
+    path.write_text(_json.dumps({
+        "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                          "readout_amp": 0.9,               # inconsistent with the power below
+                          "readout_power_dbm": -20.0}},
+    }), encoding="utf-8")
+
+    dev = RecordingDevice(_coupled_device(), state_path=str(path), on_load="push")
+    echoes = [r for r in dev.history() if r.coupled_to == "readout_power_dbm"]
+    assert [r.field for r in echoes] == ["readout_amp"]  # recorded at init...
+    dev.save()
+
+    saved = read_history(path)
+    assert [r["field"] for r in saved if r.get("coupled_to")] == ["readout_amp"]  # ...persisted
+    # and still present in memory + on a fresh load (never silently dropped)
+    assert [r.field for r in dev.history() if r.coupled_to] == ["readout_amp"]
+    fresh = RecordingDevice(_coupled_device(), state_path=str(path), on_load="push")
+    assert any(r.coupled_to == "readout_power_dbm" for r in fresh.history())
+
+
 def test_pre_v08_state_file_loads_in_push_mode(tmp_path):
     """A v0.7 state file (no readout_power_dbm key, history rows without coupled_to)
-    loads in push mode: the missing field is backfilled from the vendor snapshot."""
+    loads in push mode: the missing field is backfilled from the vendor snapshot.
+
+    Deliberately the suite's ONE old-format writer: it also pins the pre-split
+    embedded-"history" fallback (scqo._state_io.read_history) on the device store.
+    Every other fixture writes the current values+sidecar layout."""
     import json as _json
 
     from scqo import RecordingDevice

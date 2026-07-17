@@ -26,6 +26,10 @@ before/current diff. In scripts (non-TTY) nobody can answer, so the flags decide
 (staleness is then irrelevant — overwriting the newer value is the point). All
 (re-)applications land in the change history like any other apply, linked to THIS
 run.
+
+Nothing to decide? If the estimator failed but the run's figure shows the value,
+``scqo suggest RUN_ID q0.readout_freq=5.912e9`` attaches YOUR value to the run as
+a pending suggestion — decided right here, with the same guards.
 """
 
 from __future__ import annotations
@@ -46,6 +50,20 @@ def _load_record(store: DataStore, run_id: str) -> dict:
         return store.load_run(run_id)["record"]
     except KeyError as err:
         raise SystemExit(err.args[0] if err.args else str(err))
+
+
+def _no_suggestions_hint(run_id: str, qubits: list[str]) -> str:
+    """The estimator proposed nothing (it failed, or --no-update): name the escape
+    hatch. Without this the fit-failed run is a dead end — the very moment someone
+    needs to learn `scqo suggest` exists. ASCII only: this text reaches consoles in
+    whatever codepage the lab runs."""
+    qubit = qubits[0] if qubits else "q0"  # the run's OWN first qubit: paste-ready
+    return (
+        f"{run_id}: no suggested updates recorded - the estimator proposed none.\n"
+        f"If the run's figure shows the value, attach it yourself:\n"
+        f"  scqo suggest {run_id} {qubit}.FIELD=VALUE   "
+        f"(e.g. {qubit}.readout_freq=5.912e9)"
+    )
 
 
 def main(argv: list[str] | None = None, prog: str | None = None) -> int:
@@ -92,7 +110,7 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
         record = _load_record(store, args.run_id)
         suggestions = record.get("suggestions", [])
         if not suggestions:
-            print(f"{args.run_id}: no suggested updates recorded")
+            print(_no_suggestions_hint(args.run_id, record.get("qubits", [])))
             return 0
         print(f"{args.run_id} ({pending_count(suggestions)} pending):")
         print(format_table(suggestions))
@@ -106,6 +124,18 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
         return 0
 
     # ------------------------------------------------------------ apply
+    # The record first (datastore-only): a run the estimator left without suggestions
+    # has nothing to decide, and saying so must not cost a driver import. The device
+    # term keeps every message truthful — a foreign run_id falls through to the
+    # session path, whose wrong-device error names the sample to select.
+    record = _load_record(store, args.run_id)
+    if not record.get("suggestions") and record.get("device") == store.device_name:
+        print(_no_suggestions_hint(args.run_id, record.get("qubits", [])), file=sys.stderr)
+        # stdout stays parseable: the same empty summary Session.accept would return
+        print(json.dumps({"run_id": args.run_id, "applied": [], "stale": [],
+                          "errors": [], "pending_left": 0}, indent=2))
+        return 0
+
     from ._backends import build_session  # imports drivers: only the apply path pays
 
     sess, _ = build_session(args.config)
@@ -113,7 +143,6 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
                    and sys.stdin.isatty() and sys.stderr.isatty())
     try:
         if interactive:
-            record = sess.load_run(args.run_id)["record"]
             summary = review_interactively(sess, args.run_id, record.get("suggestions", []),
                                            force=args.force, comment=args.comment,
                                            reapply=args.reapply)
