@@ -77,7 +77,7 @@ qubit_spectroscopy            Sweep a weak saturation drive ... recalibrates dri
 qubit_spectroscopy_flux       2D flux map ... proposes sweet spot / Ej_sum (physical parameters).
 readout_frequency             Per-shot fidelity vs freq ... updates readout_freq.
 readout_power                 Per-shot fidelity vs amp ... updates readout_amp.
-resonator_spectroscopy        Sweep readout frequency ... updates readout_freq.
+resonator_spectroscopy        Sweep readout frequency ... updates readout_freq; proposes f_r_hz + kappa_hz (physical parameters).
 resonator_spectroscopy_flux   2D resonator flux map ... proposes sweet spot / g (physical parameters).
 resonator_spectroscopy_power_amp    Fast punchout (FPGA amplitude sweep) ... proposes readout_power_dbm + readout_freq.
 resonator_spectroscopy_power_chain  Careful punchout (steps the output chain per point) ... proposes readout_power_dbm + readout_freq.
@@ -99,12 +99,16 @@ You get the structured result as JSON — extracted physics, not raw traces:
   "outcomes": { "q1": "successful" },
   "fit": { "q1": { "readout_freq": 5907471431.6,       // dip position (suggested update)
                     "dip_detuning_hz": -1795822.3,      // how far the dip sat from the old value
-                    "old_readout_freq": 5909267253.9 } },
+                    "old_readout_freq": 5909267253.9,
+                    "f_r_hz": 5907471431.6,             // the dip IS the dressed resonator freq
+                    "kappa_hz": 1327410.5 } },          // fitted FWHM = resonator decay rate
   "error": null,
   "run_id": "20260704-225450-SQ_demo-resonator_spectroscopy-01",
   "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\...-01",
   "suggestions": [ { "qubit": "q1", "field": "readout_freq", "store": "instrument",
-                     "before": 5909267253.9, "after": 5907471431.6, "status": "pending" } ]
+                     "before": 5909267253.9, "after": 5907471431.6, "status": "pending" },
+                   { "qubit": "q1", "field": "f_r_hz", "store": "physical", "..." : "..." },
+                   { "qubit": "q1", "field": "kappa_hz", "store": "physical", "..." : "..." } ]
 }
 ```
 
@@ -169,6 +173,23 @@ guard still applies. Every re-application is a fresh change-history entry linked
 the run it came from, so the viewer's Device page tells the whole story: A applied →
 B applied → A re-applied.
 
+**The estimator failed but the figure shows the value?** It happens — the dip is
+plainly visible, the fit chased a noise spike past it. Don't write the number into
+the device by hand (that loses the link to the data); attach it to the run instead:
+
+```bash
+scqo suggest <run_id> q0.readout_freq=5.912e9 --comment "read off the dip, fit missed it"
+scqo suggest <run_id> q0.f_r_hz=5.912e9 q0.kappa_hz=1.1e6    # several at once; either store
+```
+
+Your value lands on that run as a pending suggestion marked `[operator: <you>]`
+(the viewer shows the same badge), and from there everything above applies
+unchanged — the interactive picker follows immediately at a terminal, `scqo
+accept <run_id>` works later, era + stale guards included. The applied value is
+credited to the run whose figure justified it, so trends and `--sources` stay
+truthful. Hand-editing the state files instead would skip the instrument push and
+show up as `(externally changed)` — the honest label for an untraceable write.
+
 Once the readout is in place, the qubit experiments follow the same pattern:
 
 ```bash
@@ -179,15 +200,24 @@ scqo run qubit_ramsey --params my.json                            # parameters f
 ```
 
 One more distinction worth knowing: **instrument settings vs sample physics** —
-the suggestion table's `store` column says which side each value belongs to.
+the suggestion table's `store` column says which side each value belongs to. Both
+land in YOUR context's `<device>/<cooldown>/<setup>/scqo/` folder, so two users on
+two setups of one sample never see (or overwrite) each other's numbers.
 Calibration knobs (`readout_freq`, `pi_amp`, ...; `store: instrument`) are pushed
-to the instrument config on accept. Measured physics of the SAMPLE — T1, T2*,
-T2echo, and the flux maps' sweet spot / Ej_sum / f_r0 / g (`store: physical`) —
-is instrument-independent and lands in the device folder's `physical.json`
-instead (same accept flow, full history):
+to the instrument on accept and recorded in `scqo_state.json`. Measured physics —
+T1, T2*, T2echo, and the flux maps' sweet spot / Ej_sum / f_r0 / g
+(`store: physical`) — lands in `physical.json` beside it (same accept flow). Each
+values file keeps its full change history in an append-only sidecar
+(`scqo_state.history.jsonl` / `physical.history.jsonl`) — never edit any of them
+by hand: a hand-edit skips the instrument push and shows as `(externally
+changed)`; use `scqo suggest` instead. An estimate is only as clean as the chain it came through (a noisy drive
+line shortens the measured T2; flux volts depend on the wiring), so each context's
+physics stands on its own — compare across contexts via `scqo find` / the trends
+page, never average. The setup-independent "true" sample physics is a future
+*inference* over these measurements (`sample.json`, Phase 3).
 
 ```bash
-scqo state --physical               # the sample's measured physics per qubit
+scqo state --physical               # this context's measured physics (one row per qubit/field)
 scqo state --physical --history     # who accepted what, when, from which run
 scqo state --sources                # which run set each CURRENT value (both stores)
 ```
@@ -233,10 +263,12 @@ scqo run qubit_power_rabi       --qubits q0 q1 --tag cooldown1
 (The old `scqo calibrate` sequence command was removed in v0.8 — not used at this
 phase; a sequence runner returns with the AI loop, where it belongs.)
 
-And the device's calibration state / change log any time:
+And the device's calibration state / change log any time (the first output line
+names the device, YOUR resolved setup and its state file — state is per setup
+since v0.9.0, so that line says whose numbers follow):
 
 ```bash
-scqo state                      # current values per qubit
+scqo state                      # current values per qubit (your setup)
 scqo state --history 20         # who changed what, when, in which run
 ```
 
@@ -490,19 +522,22 @@ ds["I"].sel(qubit="q1").plot()
 store.tag_run("20260704-225450-SQ_demo-resonator_spectroscopy-01", add=["thesis-fig3"])
 ```
 
-**Running measurements** from a notebook is the same Session the scripts use:
+**Running measurements** from a notebook is the same Session the commands use —
+let `build_session` do the wiring (it resolves your device → ACTIVE cycle → YOUR
+setup, exactly like `scqo run`, and binds the per-setup state file):
 
 ```python
-from scqo import load_lab_config, make_session
-from scqo.testing import InMemoryDevice, SimulatedBackend
+from scqo.cli import build_session
 
-cfg = load_lab_config()
-backend = SimulatedBackend(InMemoryDevice({          # or QbloxBackend / QMBackend
-    "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.20},
-    "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18},
-}))
-sess = make_session(backend, cfg, backend_label="simulated")   # the label stamps each run's provenance
+sess, cfg = build_session()          # your config.toml + user.toml decide everything
+```
 
+(Hand-building instead — a custom backend object — still works, but a persisted
+session needs its context: `make_session(backend, cfg, backend_label=...,
+setup_name=..., cooldown_id=...)`, or pass `state_path` to `Session` directly for a
+free-form scratch file.)
+
+```python
 result = sess.run("resonator_spectroscopy", {"qubits": ["q1"]})
 result["suggestions"]                                    # the proposed updates (pending)
 sess.accept(result["run_id"], fields=["readout_freq"], comment="looks right")
@@ -512,8 +547,8 @@ sess.find_runs(experiment="resonator_spectroscopy", qubit="q1")  # list of dicts
 sess.find_runs(pending=True)                             # undecided suggestions
 sess.load_run(result["run_id"])                          # record + params + figure paths
 
-sess.device_state()             # current calibration of every qubit
-sess.physical_state()           # the sample's measured physics (physical.json)
+sess.device_state()             # current calibration of every qubit (this context)
+sess.physical_state()           # this context's measured physics
 sess.history()                  # every calibration change: who, what, old → new, which run
 sess.history(store="physical")  # same, for the physical-parameter ledger
 ```
@@ -541,7 +576,10 @@ with the error noted on it, so you can decide again once the cause is fixed.
    (`scqo device cooldown start`/`end`), the hand-added `[<cycle>.setup.<name>]`
    blocks in each device's `cooldowns.toml`, and `devices.toml` — and promotes
    proven experiments into `scqo/experiments/` + the driver repos (checklist in
-   [CLAUDE.md](CLAUDE.md)).
+   [CLAUDE.md](CLAUDE.md)). A setup block is just `backend` (+ `note`) — folder
+   locations are DERIVED from the keys: put each real setup's vendor files in
+   `<cooldown>/<setup>/backend_config/`; SCQO keeps its own state + physics in
+   the sibling `<cooldown>/<setup>/scqo/`, auto-created on first save.
 
 ## 9. Troubleshooting
 

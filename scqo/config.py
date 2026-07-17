@@ -21,6 +21,16 @@ exists, what happens depends on ``on_load``:
 Either way, a *write* during a run always records + pushes: a fresh fit result is
 always legitimate. Wiring/hardware stays vendor-owned and is never modelled here.
 
+The state is **per (cooldown, setup)** (:func:`scqo.datastore.setup_scqo_dir`:
+``<device>/<cooldown>/<setup>/scqo/scqo_state.json`` holding the current values,
+with the change history in the append-only sidecar ``scqo_state.history.jsonl`` —
+see :mod:`scqo._state_io`): every value is a fact about qubit + setup, so two users
+on two setups of one sample never share (or clobber) a file, and every
+:class:`ChangeRecord` is stamped with the writing session's setup name. Saves merge
+history under a lock file, so two same-setup sessions cannot erase each other's
+rows. The sample's measured physics lives beside it as ``physical.json`` (+ its own
+sidecar) in the same folder (:mod:`scqo.physical`).
+
 **Two classes of fields** (see :data:`FIELDS`): *pushed* calibration knobs
 (readout_freq, drive_freq, pi_amp, readout_amp, readout_power_dbm) behave as above;
 *record-only*
@@ -44,8 +54,10 @@ import math
 import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
+from ._state_io import _file_lock, read_history, write_history
 from .device import DeviceModel, QubitView
 
 
@@ -131,6 +143,9 @@ class ChangeRecord:
     #: re-solves the chain and moves readout_amp): names the field whose write
     #: caused it. None for direct writes.
     coupled_to: str | None = None
+    #: NAMED setup the writing session was bound to (v0.9.0) — attributes manual
+    #: writes too. None only for direct-API sessions built without a setup.
+    setup: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -204,11 +219,19 @@ class RecordingDevice(DeviceModel):
         *,
         state_path: str | None = None,
         on_load: Literal["push", "pull"] = "pull",
+        setup: str | None = None,
     ) -> None:
         self._inner = inner
         self._state_path = state_path
+        self._setup = setup or None  # stamped on every ChangeRecord (v0.9.0)
         self._config: dict[str, dict[str, float | None]] = {}
         self._history: list[ChangeRecord] = []
+        #: merge-on-save baseline: rows [:_saved] are already in the sidecar, rows
+        #: [_saved:] are ours and not yet persisted. Set at each load-from-disk site
+        #: BELOW the assignment of _history and BEFORE anything can append — push-mode
+        #: _push_config() records coupled reconciliations during __init__, and those
+        #: rows must land in the sidecar on the next save, not vanish under the mark.
+        self._saved = 0
         self._experiment: str | None = None  # set by the Session around a run
         self._run_id: str | None = None
 
@@ -236,6 +259,12 @@ class RecordingDevice(DeviceModel):
                 self._config = _merge_pull_seed(inner.snapshot(), saved)
         else:
             self._config = inner.snapshot()  # first time: seed (pull) from the vendor
+            if state_path is not None:
+                # Values file absent (fresh context, or the documented values-only
+                # reset) — the history sidecar, if any, still loads: calibration
+                # reseeds, provenance rows are never silently dropped.
+                self._history = [ChangeRecord(**r) for r in read_history(state_path)]
+                self._saved = len(self._history)
 
     # ---------------------------------------------------------------- DeviceModel
     def qubit(self, name: str) -> _RecordingQubitView:
@@ -283,6 +312,7 @@ class RecordingDevice(DeviceModel):
                 # a notebook tweaking pi_amp — are attributed too.
                 operator=_current_operator() or None,
                 coupled_to=coupled_to,
+                setup=self._setup,
             )
         )
         self._config.setdefault(qubit, {})[field] = value          # SCQO config (authoritative)
@@ -328,22 +358,55 @@ class RecordingDevice(DeviceModel):
 
     # ---------------------------------------------------------------- persistence
     def _persist(self, path: str) -> None:
+        """Two writes under the shared lock: merge-append history, rewrite values.
+
+        The history sidecar (``<path stem>.history.jsonl``) is merged with any
+        rows a co-running same-setup session appended — nobody's provenance is
+        clobbered — and committed to memory once durable, so a failed values
+        write cannot re-append the rows on retry. The ``config`` block stays a
+        blind last-writer-wins rewrite: pull mode reseeds it from the vendor at
+        startup anyway and push-mode devices have a single owner (merging values
+        would need PhysicalStore-style per-key dirty tracking — a follow-up if
+        ever needed).
+        """
         parent = os.path.dirname(path)
         if parent:
             os.makedirs(parent, exist_ok=True)  # a config'd path must not fail on first save
-        data = {"config": self._config, "history": [r.as_dict() for r in self._history]}
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        with _file_lock(Path(path)):
+            file_history = [ChangeRecord(**r) for r in read_history(path)]
+            ours = self._history[self._saved:]
+            merged = sorted(file_history + ours, key=lambda r: r.timestamp)  # stable
+            write_history(path, [r.as_dict() for r in merged])
+            self._history = merged
+            self._saved = len(merged)
+            data = {"config": self._config}
+            # Unique temp + replace: a save can no longer tear the JSON mid-write.
+            tmp = f"{path}.{os.getpid()}.tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                os.replace(tmp, path)
+            except OSError:
+                try:
+                    os.unlink(tmp)  # no orphan temp; the in-memory config stays intact
+                except OSError:
+                    pass
+                raise
 
     def _load_state(self, path: str) -> dict:
         """Load a saved state file: installs the history, returns the saved config.
 
-        Saved fields SCQO no longer tracks are simply not read (the fresh-start
+        History comes from the ``.history.jsonl`` sidecar (or, pre-split files,
+        the embedded ``"history"`` key — split out on the next save). Saved
+        fields SCQO no longer tracks are simply not read (the fresh-start
         rule) — e.g. pre-v0.6 t1_s/t2_*_s keys, whose home is now physical.json.
         Their history rows stay untouched (provenance is never rewritten)."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        self._history = [ChangeRecord(**r) for r in data.get("history", [])]
+        self._history = [ChangeRecord(**r) for r in read_history(path)]
+        # The watermark moves HERE, with the load: rows recorded later in __init__
+        # (push-mode coupled reconciliation) must count as unsaved.
+        self._saved = len(self._history)
         return {
             qubit: {f: v for f, v in fields.items() if f in FIELDS}
             for qubit, fields in data.get("config", {}).items()

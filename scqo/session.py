@@ -3,15 +3,18 @@
 Everything crosses this boundary as plain JSON-able Python (dicts / lists), so the
 same calls drive a manual notebook *and* an LLM tool-use loop:
 
-    sess = Session(backend, state_path="scqo_state.json", data_root="D:/qpu_data")
+    sess, cfg = build_session()        # the lab-config way (scqo.cli.build_session):
+                                       #   resolves device -> setup -> per-SETUP state file
     sess.catalog()                     # what can I measure? (with parameter schemas)
     sess.run("qubit_ramsey", {...})    # measure -> structured result (+ run_id + suggestions)
     sess.accept(run_id)                # apply the run's suggested updates (or a subset)
     sess.reject(run_id, comment="...") # decline them (metadata only)
+    sess.suggest(run_id, {"q0.readout_freq": 5.91e9})  # attach YOUR figure-read value
+                                       #   to a run (estimator failed); accept as usual
     sess.find_runs(experiment="qubit_ramsey", qubit="q0")   # find my data (pending=True too)
     sess.load_run(run_id)              # reload a saved run (record/params/result/figures)
-    sess.device_state()                # current calibration (the SCQO config)
-    sess.physical_state()              # the sample's measured physics (physical.json)
+    sess.device_state()                # current calibration (this setup's SCQO config)
+    sess.physical_state()              # the sample's measured physics (this setup's slice)
     sess.history()                     # every recorded change (the loop's memory)
 
 No vendor/hardware object is ever exposed here. The Session owns the **authoritative
@@ -24,6 +27,7 @@ result, device snapshots, and the scqat analysis artifacts (figures included).
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,13 +36,20 @@ from pydantic import ValidationError
 from . import config as _config
 from . import registry
 from .backend import Backend
-from .config import RecordingDevice, _now
+from .config import FIELDS, RecordingDevice, _now
 from .contract import ContractError
 from .datastore import DataStore
 from .experiment import Experiment
-from .physical import PHYSICAL_FILE, PhysicalStore
+from .physical import PHYSICAL_FIELDS, PHYSICAL_FILE, PhysicalStore
 from .result import Outcome, Result
-from .suggestions import Suggestion, SuggestionCapture, reject_suggestions, select_suggestions
+from .suggestions import (
+    Suggestion,
+    SuggestionCapture,
+    decision_editor,
+    pending_count,
+    reject_suggestions,
+    select_suggestions,
+)
 
 
 class Session:
@@ -68,23 +79,30 @@ class Session:
         #: went through build_session — they stamp the cycle's only setup, or "".
         self.setup_name = setup_name or ""
         self.cooldown_id = cooldown_id or ""
+        #: where the per-SETUP instrument state+history persists (None = in-memory).
+        self.state_path = state_path
         self._persist = state_path is not None
         #: authoritative SCQO config + history over the backend's vendor device. With
         #: ``state_sync="pull"`` (default) the vendor wins at startup and only history is
         #: loaded; ``"push"`` loads the saved SCQO config and pushes it into the vendor
-        #: (only for devices SCQO fully owns — see scqo.config).
-        self.device = RecordingDevice(backend.device, state_path=state_path, on_load=state_sync)
-        #: instrument-independent measured physics of the SAMPLE (T1, arch/dispersive
-        #: parameters, ...). Persists under <data_root>/<device>/ (the convention), or
-        #: next to a bare state_path — losing measured physics on restart is THE
-        #: regression the state files exist to prevent. In-memory only if neither.
-        if data_root is not None:  # expanduser like DataStore does — same input, same place
-            physical_path = Path(data_root).expanduser() / device_name / PHYSICAL_FILE
-        elif state_path is not None:
+        #: (only for devices SCQO fully owns — see scqo.config). The state file lives in
+        #: the setup's per-(cooldown, setup) ``scqo/`` folder; each ChangeRecord is
+        #: stamped with this session's setup.
+        self.device = RecordingDevice(backend.device, state_path=state_path,
+                                      on_load=state_sync, setup=self.setup_name or None)
+        #: measured physics of the SAMPLE (T1, arch/dispersive parameters, ...) — one
+        #: file per (cooldown, setup) context. When a state_path is set it sits beside
+        #: it in the same ``scqo/`` folder (the make_session/CLI path); a setup-less
+        #: direct-API session with a data_root falls back to a device-level
+        #: <data_root>/<device>/physical.json; a bare state_path lands it next door.
+        #: Losing measured physics on restart is THE regression the store prevents.
+        if state_path is not None:  # the scqo/ folder (CLI) or the bare state dir (direct API)
             physical_path = Path(state_path).expanduser().parent / PHYSICAL_FILE
+        elif data_root is not None:  # setup-less direct-API escape hatch: device-level
+            physical_path = Path(data_root).expanduser() / device_name / PHYSICAL_FILE
         else:
             physical_path = None
-        self.physical = PhysicalStore(physical_path)
+        self.physical = PhysicalStore(physical_path, setup=self.setup_name or None)
         #: run datastore (folders + rebuildable SQLite index); None disables persistence.
         self.datastore = (
             DataStore(data_root, device_name=device_name,
@@ -374,13 +392,7 @@ class Session:
         qubit, field, store, status, before, current, after, stale, decided_at,
         decided_by, comment}]}``. The wrong-device check still raises.
         """
-        store = self._require_datastore()
-        record = store.load_run(run_id)["record"]
-        if record.get("device") != store.device_name:
-            raise RuntimeError(
-                f"run {run_id} belongs to device {record.get('device')!r} but this session "
-                f"is bound to {store.device_name!r} — select that device and retry"
-            )
+        store, record = self._load_run_record(run_id)
         suggestions = [Suggestion(**s) for s in record.get("suggestions", [])]
         selected = select_suggestions(suggestions, qubits=qubits, fields=fields,
                                       indices=indices, include_decided=reapply or dry_run)
@@ -463,18 +475,25 @@ class Session:
                     f"(state files may lag the instrument): {type(err).__name__}: {err}"
                 )
         try:
-            store.update_suggestions(
+            # Index-targeted merge (not a whole-list replace): only the rows THIS
+            # accept decided (or annotated with an apply error) are written; a
+            # suggestion appended — or another item decided — by a concurrent
+            # session since our load survives.
+            stored = store.edit_suggestions(
                 run_id,
-                [s.model_dump(mode="json") for s in suggestions],
+                decision_editor(
+                    {i: suggestions[i].model_dump(mode="json") for i in selected}
+                ),
                 updated_device=True if applied else None,
             )
+            summary["pending_left"] = pending_count(stored["suggestions"])
         except Exception as err:
             summary["errors"].append(
                 f"values were applied to the device but persisting the decision failed — "
                 f"record.json still lists them as pending (a blind retry could double-apply): "
                 f"{type(err).__name__}: {err}"
             )
-        summary["pending_left"] = sum(1 for s in suggestions if s.status == "pending")
+            summary["pending_left"] = sum(1 for s in suggestions if s.status == "pending")
         return summary
 
     def reject(
@@ -496,6 +515,92 @@ class Session:
             self._require_datastore(), run_id,
             qubits=qubits, fields=fields, indices=indices, comment=comment,
         )
+
+    def suggest(self, run_id: str, assignments: dict[str, Any], comment: str = "") -> dict:
+        """Attach YOUR manually-read values to a saved run as pending suggestions.
+
+        The governed escape hatch for "the estimator failed but the figure clearly
+        shows the value": read the number off the run's saved figure and propose it
+        against that run, so the value stays linked to the data that justifies it.
+        Each ``assignments`` key is ``"qubit.field"`` where the field belongs to
+        either store (calibration knob or physical parameter); values must be
+        finite numbers. The items are APPENDED to the run's stored suggestion list
+        as ``origin="operator"`` rows (``proposed_by`` = your OS login) and decided
+        exactly like estimator suggestions — ``scqo accept <run_id>`` /
+        :meth:`accept`, same era + staleness guards (which run at ACCEPT time, not
+        here). ``before`` is captured from the current context's stores NOW —
+        exactly what the staleness guard compares against later. Nothing is
+        applied or pushed here.
+
+        Unlike :meth:`run` this raises (``ValueError`` for a bad assignment,
+        ``RuntimeError`` for another device's run, ``KeyError`` for an unknown
+        run_id): a proposal that cannot be stored correctly must fail loudly, like
+        :meth:`accept`. Returns ``{run_id, added: [{qubit, field, store, before,
+        after}], pending_total}``.
+        """
+        if not assignments:
+            raise ValueError("no assignments given — expected {'qubit.field': value, ...}")
+        store, record = self._load_run_record(run_id)
+        snapshot = self.device.snapshot()
+        proposed_at = _now()
+        new: list[Suggestion] = []
+        for key, value in assignments.items():
+            qubit, _, field = key.partition(".")
+            if not qubit or not field:
+                raise ValueError(
+                    f"assignment key {key!r} must be 'qubit.field' (e.g. q0.readout_freq)"
+                )
+            if field not in FIELDS and field not in PHYSICAL_FIELDS:
+                known = ", ".join(sorted([*FIELDS, *PHYSICAL_FIELDS]))
+                raise ValueError(f"unknown field {field!r} — known fields: {known}")
+            if qubit not in snapshot:
+                raise ValueError(
+                    f"unknown qubit {qubit!r} — this device has: {', '.join(snapshot)}"
+                )
+            # bool first: bool subclasses int, and True is not a proposable value.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{key}: value must be a number, got {value!r}")
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError(f"{key}: refusing to suggest non-finite value {value!r}")
+            physical = field in PHYSICAL_FIELDS
+            new.append(
+                Suggestion(
+                    qubit=qubit, field=field,
+                    store="physical" if physical else "instrument",
+                    before=(self.physical.get(qubit, field) if physical
+                            else snapshot.get(qubit, {}).get(field)),
+                    after=value, comment=comment,
+                    origin="operator",
+                    proposed_by=_config._current_operator() or None,
+                    proposed_at=proposed_at,
+                )
+            )
+        # Atomic append via the locked editor: ours land at the end of the FRESH
+        # stored list (never a stale snapshot), so a concurrent accept's decisions
+        # survive and displayed row numbers stay stable for the review grammar.
+        new_dicts = [s.model_dump(mode="json") for s in new]
+        stored = store.edit_suggestions(run_id, lambda fresh: fresh + new_dicts)
+        return {
+            "run_id": run_id,
+            "added": [
+                {"qubit": s.qubit, "field": s.field, "store": s.store,
+                 "before": s.before, "after": s.after}
+                for s in new
+            ],
+            "pending_total": pending_count(stored["suggestions"]),
+        }
+
+    def _load_run_record(self, run_id: str) -> tuple[DataStore, dict]:
+        """Load a saved run's record, refusing one that belongs to another device."""
+        store = self._require_datastore()
+        record = store.load_run(run_id)["record"]
+        if record.get("device") != store.device_name:
+            raise RuntimeError(
+                f"run {run_id} belongs to device {record.get('device')!r} but this session "
+                f"is bound to {store.device_name!r} — select that device and retry"
+            )
+        return store, record
 
     @staticmethod
     def _failure(cls: type[Experiment], exp: Experiment, err: Exception) -> Result:
@@ -561,7 +666,9 @@ class Session:
         return self.device.snapshot()
 
     def physical_state(self) -> dict:
-        """Return the sample's measured physical parameters (instrument-independent)."""
+        """The sample's measured physics for THIS SESSION'S (cooldown, setup) context
+        (flat ``{qubit: {field: value}}``). Other contexts' measurements live in their
+        own files; compare across them via the run index / trends."""
         return self.physical.snapshot()
 
     def live_sources(self) -> dict:
@@ -570,7 +677,8 @@ class Session:
         ``{"instrument": {qubit: {field: info}}, "physical": {...}}`` under the
         strict-match rule of :mod:`scqo.provenance`: a run is credited only while
         its recorded value still equals the live one — vendor reseeds and other
-        tools' writes show as ``"external"``, never a false credit.
+        tools' writes show as ``"external"``, never a false credit. Both stores are
+        per (cooldown, setup), so their whole history belongs to this context.
         """
         from .provenance import live_sources as _live_sources
 
