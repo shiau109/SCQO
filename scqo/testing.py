@@ -92,9 +92,17 @@ class SimulatedBackend(Backend):
 
     def acquire(self, experiment: Experiment) -> xr.Dataset:
         sweep = experiment.sweep_axes
-        raw = experiment.simulate(sweep)  # {var: ndarray of shape (n_qubits, *sweep)}
+        raw = experiment.simulate(sweep)  # {var: ndarray or (dims, ndarray)}
         qubits = experiment.params.qubits  # type: ignore[attr-defined]
-        dims = ["qubit", *sweep.keys()]
         coords = {"qubit": list(qubits), **sweep}
-        data_vars = {var: (dims, array) for var, array in raw.items()}
+        
+        data_vars = {}
+        for var, val in raw.items():
+            if isinstance(val, tuple) and len(val) == 2:
+                data_vars[var] = val
+            else:
+                dims = ["qubit", *sweep.keys()]
+                data_vars[var] = (dims, val)
+                
         return xr.Dataset(data_vars, coords=coords)
+
