@@ -8,6 +8,7 @@ these and implement ``probe()`` for their instrument, then ``@register`` the sub
 from .qubit_power_rabi import QubitPowerRabi, QubitPowerRabiParameters, QubitPowerRabiResult
 from .qubit_ramsey import QubitRamsey, QubitRamseyParameters, QubitRamseyResult
 from .qubit_tomography import QubitTomography, QubitTomographyParameters, QubitTomographyResult
+<<<<<<< Updated upstream
 from .qubit_sqrb import QubitSQRB, QubitSQRBParameters, QubitSQRBResult
 from .qubit_relaxation_flux import QubitRelaxationFlux, QubitRelaxationFluxParameters, QubitRelaxationFluxResult
 from .qubit_echo_flux import QubitEchoFlux, QubitEchoFluxParameters, QubitEchoFluxResult
