@@ -62,6 +62,8 @@ PHYSICAL_FIELDS: dict[str, FieldSpec] = {
     "f_q_max_hz": FieldSpec("Hz", "Qubit 0-1 frequency at the sweet spot (arch top).", push=False),
     "f_r0_hz": FieldSpec("Hz", "Bare resonator frequency (dispersive fit).", push=False),
     "g_hz": FieldSpec("Hz", "Qubit-resonator coupling (dispersive fit).", push=False),
+    "f_r_hz": FieldSpec("Hz", "Dressed resonator frequency: the spectroscopy dip position.", push=False),
+    "kappa_hz": FieldSpec("Hz", "Resonator linewidth kappa (power-Lorentzian FWHM): the photon decay rate.", push=False),
 }
 
 # A field name must resolve to exactly ONE store (suggestion routing + the shared

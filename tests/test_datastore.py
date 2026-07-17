@@ -104,8 +104,8 @@ def test_default_run_stores_pending_suggestions(tmp_path):
 
     record = json.loads((run_dir / "record.json").read_text(encoding="utf-8"))
     assert record["updated_device"] is False
-    (s,) = record["suggestions"]
-    assert s["status"] == "pending" and s["field"] == "readout_freq"
+    assert [s["field"] for s in record["suggestions"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    assert {s["status"] for s in record["suggestions"]} == {"pending"}
 
     before = json.loads((run_dir / "device_before.json").read_text(encoding="utf-8"))
     after = json.loads((run_dir / "device_after.json").read_text(encoding="utf-8"))

@@ -93,24 +93,24 @@ def test_default_run_suggests_then_accept_by_run_id(tmp_path):
     proc = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0")
     assert proc.returncode == 0, proc.stderr
     result = _result(proc)  # stdout parses despite the extra stderr output
-    (s,) = result["suggestions"]
-    assert s["status"] == "pending" and s["field"] == "readout_freq"
+    assert [s["field"] for s in result["suggestions"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    assert {s["status"] for s in result["suggestions"]} == {"pending"}
     assert "suggested updates" in proc.stderr
     assert f"scqo accept {result['run_id']}" in proc.stderr
 
     # the pending run is findable three ways (all datastore-only)
     listing = _run_cli(tmp_path, "accept")
-    assert result["run_id"] in listing.stdout and "pending:1" in listing.stdout
+    assert result["run_id"] in listing.stdout and "pending:3" in listing.stdout
     table = _run_cli(tmp_path, "accept", result["run_id"], "--list")
     assert table.returncode == 0 and "readout_freq" in table.stdout
     found = _run_cli(tmp_path, "find", "--pending")
-    assert result["run_id"] in found.stdout and "pend:1" in found.stdout
+    assert result["run_id"] in found.stdout and "pend:3" in found.stdout
 
     # non-TTY accept with no selectors applies ALL pending
     accept = _run_cli(tmp_path, "accept", result["run_id"], "--comment", "looks right")
     assert accept.returncode == 0, accept.stderr
     summary = json.loads(accept.stdout)
-    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
     assert summary["pending_left"] == 0
 
     # the change history carries the ORIGINATING run id
@@ -163,7 +163,7 @@ def test_reapply_rolls_back_from_the_cli(tmp_path):
     proc = _run_cli(tmp_path, "accept", run_a, "--reapply", "--comment", "rollback")
     assert proc.returncode == 0, proc.stderr
     summary = json.loads(proc.stdout)
-    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
     assert summary["applied"][0]["after"] == value_a
 
     history = _run_cli(tmp_path, "state", "--history")

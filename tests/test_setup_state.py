@@ -360,12 +360,13 @@ def test_two_users_two_setups_end_to_end(tmp_path, monkeypatch):
     assert file_b["config"]["q0"]["readout_freq"] == res_b["fit"]["q0"]["readout_freq"]
     assert not (ddir / "scqo_state.json").exists()  # no retired per-device file
 
-    # independent physical files, each FLAT with only its own T1
+    # independent physical files, each FLAT with only its own setup's measurements
+    # (the resonator run also proposes f_r/kappa sample physics)
     phys_a = json.loads((scqo_a / "physical.json").read_text(encoding="utf-8"))
     phys_b = json.loads((scqo_b / "physical.json").read_text(encoding="utf-8"))
     assert isinstance(phys_a["values"]["q0"]["t1_s"], float)
-    assert {r["run_id"] for r in phys_a["history"]} == {t1_a["run_id"]}
-    assert {r["run_id"] for r in phys_b["history"]} == {t1_b["run_id"]}
+    assert {r["run_id"] for r in phys_a["history"]} == {res_a["run_id"], t1_a["run_id"]}
+    assert {r["run_id"] for r in phys_b["history"]} == {res_b["run_id"], t1_b["run_id"]}
     assert not (ddir / "physical.json").exists()  # no device-level ledger
 
     # the era guard refuses transferring alpha's values into a beta session

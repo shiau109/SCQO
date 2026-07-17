@@ -227,7 +227,7 @@ def test_runs_page_pending_filter_and_updates_column(lab):
     assert lab["pend"]["run_id"] in page
     assert lab["res"]["run_id"] not in page  # applied at run time -> nothing pending
     full = c.get("/").text
-    assert "1 pending" in full  # the updates column flags the undecided run
+    assert "3 pending" in full  # the updates column flags the undecided run
 
 
 def test_trends_offer_descriptor_quantities(lab):
@@ -316,9 +316,9 @@ def test_runs_page_live_column(lab):
     live_row = _row_chunk(page, lab["res2"]["run_id"])
     assert "live:" in live_row and "readout_freq (q0)" in live_row
     superseded_row = _row_chunk(page, lab["res"]["run_id"])
-    assert "live:" not in superseded_row and "1/1 applied" in superseded_row
+    assert "live:" not in superseded_row and "3/3 applied" in superseded_row
     pending_row = _row_chunk(page, lab["pend"]["run_id"])
-    assert "1 pending" in pending_row
+    assert "3 pending" in pending_row
 
 
 def test_device_page_values_link_to_source_runs(lab):

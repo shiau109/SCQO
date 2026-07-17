@@ -77,7 +77,7 @@ qubit_spectroscopy            Sweep a weak saturation drive ... recalibrates dri
 qubit_spectroscopy_flux       2D flux map ... proposes sweet spot / Ej_sum (physical parameters).
 readout_frequency             Per-shot fidelity vs freq ... updates readout_freq.
 readout_power                 Per-shot fidelity vs amp ... updates readout_amp.
-resonator_spectroscopy        Sweep readout frequency ... updates readout_freq.
+resonator_spectroscopy        Sweep readout frequency ... updates readout_freq; proposes f_r_hz + kappa_hz (physical parameters).
 resonator_spectroscopy_flux   2D resonator flux map ... proposes sweet spot / g (physical parameters).
 resonator_spectroscopy_power_amp    Fast punchout (FPGA amplitude sweep) ... proposes readout_power_dbm + readout_freq.
 resonator_spectroscopy_power_chain  Careful punchout (steps the output chain per point) ... proposes readout_power_dbm + readout_freq.
@@ -99,12 +99,16 @@ You get the structured result as JSON — extracted physics, not raw traces:
   "outcomes": { "q1": "successful" },
   "fit": { "q1": { "readout_freq": 5907471431.6,       // dip position (suggested update)
                     "dip_detuning_hz": -1795822.3,      // how far the dip sat from the old value
-                    "old_readout_freq": 5909267253.9 } },
+                    "old_readout_freq": 5909267253.9,
+                    "f_r_hz": 5907471431.6,             // the dip IS the dressed resonator freq
+                    "kappa_hz": 1327410.5 } },          // fitted FWHM = resonator decay rate
   "error": null,
   "run_id": "20260704-225450-SQ_demo-resonator_spectroscopy-01",
   "data_path": "D:\\qpu_data\\SQ_demo\\2026-07-04\\...-01",
   "suggestions": [ { "qubit": "q1", "field": "readout_freq", "store": "instrument",
-                     "before": 5909267253.9, "after": 5907471431.6, "status": "pending" } ]
+                     "before": 5909267253.9, "after": 5907471431.6, "status": "pending" },
+                   { "qubit": "q1", "field": "f_r_hz", "store": "physical", "..." : "..." },
+                   { "qubit": "q1", "field": "kappa_hz", "store": "physical", "..." : "..." } ]
 }
 ```
 

@@ -83,7 +83,7 @@ scqo/
                   #   the scqo.backends entry-point group; simulated is built in
                   #   (_backends.ensure_demo_experiments fills the catalog driver-less)
   experiments/
-    resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq
+    resonator_spectroscopy.py   # frequency sweep, Lorentzian dip -> updates readout_freq + f_r/kappa (physical store)
     qubit_spectroscopy.py       # two-tone peak search -> coarse drive_freq (bring-up step 2)
     qubit_ramsey.py             # time sweep, decaying-cosine fit -> updates drive_freq + T2*
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp

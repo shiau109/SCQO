@@ -154,8 +154,10 @@ def test_apply_mode_equals_old_behavior_with_audit_trail(tmp_path):
     assert np.isclose(sess.device_state()["q0"]["readout_freq"], result["fit"]["q0"]["readout_freq"])
     (h,) = sess.history()
     assert h["run_id"] == result["run_id"] and h["experiment"] == "resonator_spectroscopy"
-    (s,) = result["suggestions"]
-    assert s["status"] == "accepted" and s["decided_by"]
+    assert [s["field"] for s in result["suggestions"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    assert all(s["status"] == "accepted" and s["decided_by"] for s in result["suggestions"])
+    # the sample physics landed in the physical store, stamped with the same run
+    assert {h["field"] for h in sess.history(store="physical")} == {"f_r_hz", "kappa_hz"}
     row = sess.find_runs()[0]
     assert row["updated_device"] is True and row["suggestions_pending"] == 0
 
@@ -244,7 +246,7 @@ def test_accept_in_fresh_session_days_later(tmp_path):
 
     sess2 = _session(tmp_path)  # fresh session, same lab
     summary = sess2.accept(result["run_id"])
-    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
     assert sess2.device_state()["q0"]["readout_freq"] == result["fit"]["q0"]["readout_freq"]
     (h,) = sess2.history()
     assert h["run_id"] == result["run_id"]
@@ -260,7 +262,9 @@ def test_accept_staleness_guard(tmp_path):
     sess.device.qubit("q0").readout_freq = 6.2e9  # someone recalibrated in between
 
     summary = sess.accept(run_id)
-    assert summary["applied"] == [] and len(summary["stale"]) == 1
+    # only the recalibrated knob is stale; the (untouched) physical items apply
+    assert [a["field"] for a in summary["applied"]] == ["f_r_hz", "kappa_hz"]
+    assert len(summary["stale"]) == 1 and summary["stale"][0]["field"] == "readout_freq"
     assert summary["stale"][0]["current"] == 6.2e9
     assert summary["pending_left"] == 1  # still decidable
     assert sess.device_state()["q0"]["readout_freq"] == 6.2e9
@@ -288,7 +292,7 @@ def test_accept_cooldown_era_guard(tmp_path):
     assert sess.history() == []
 
     forced = sess.accept(result["run_id"], force=True)
-    assert [a["field"] for a in forced["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in forced["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
 
 
 def test_accept_refuses_wrong_device(tmp_path):
@@ -343,7 +347,8 @@ def test_reapply_rolls_back_to_older_run(tmp_path):
     assert plain["applied"] == [] and sess.device_state()["q0"]["readout_freq"] == value_b
 
     rollback = sess.accept(run_a["run_id"], reapply=True, comment="B's fit chased a spike")
-    (item,) = rollback["applied"]
+    assert [a["field"] for a in rollback["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    (item,) = [a for a in rollback["applied"] if a["field"] == "readout_freq"]
     assert item["current"] == value_b  # what the rollback overwrote — shown, not blocked
     assert rollback["stale"] == []  # staleness guard is OFF in reapply mode
     assert sess.device_state()["q0"]["readout_freq"] == value_a
@@ -353,8 +358,8 @@ def test_reapply_rolls_back_to_older_run(tmp_path):
     assert [h["run_id"] for h in hist] == [run_a["run_id"], run_b["run_id"], run_a["run_id"]]
     assert hist[-1]["old"] == value_b and hist[-1]["new"] == value_a
     record = sess.load_run(run_a["run_id"])["record"]
-    (s,) = record["suggestions"]
-    assert s["status"] == "accepted" and s["comment"] == "B's fit chased a spike"
+    assert {s["status"] for s in record["suggestions"]} == {"accepted"}
+    assert {s["comment"] for s in record["suggestions"]} == {"B's fit chased a spike"}
 
 
 def test_reapply_accepts_previously_rejected(tmp_path):
@@ -438,9 +443,10 @@ def test_accept_dry_run_includes_decided_items(tmp_path):
     sess.accept(result["run_id"], comment="first")
 
     plan = sess.accept(result["run_id"], dry_run=True)  # no reapply flag needed
-    (item,) = plan["items"]
-    assert item["status"] == "accepted" and item["decided_by"]
-    assert item["current"] == item["after"]  # its value IS the current one
+    assert [item["field"] for item in plan["items"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
+    for item in plan["items"]:
+        assert item["status"] == "accepted" and item["decided_by"]
+        assert item["current"] == item["after"]  # its value IS the current one
     # ("stale" compares against the capture-time BEFORE, so a decided item is
     # stale by construction — the confirmation flow never stale-checks those.)
 
@@ -488,7 +494,7 @@ def test_review_confirms_stale_overwrite(tmp_path, monkeypatch):
     tty = _interactive(monkeypatch, ["a", "y", "checked the trace"])
     summary = _review.review_interactively(sess, result["run_id"], result["suggestions"])
 
-    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
     assert summary["stale"] == []  # confirmed, not blocked
     assert sess.device_state()["q0"]["readout_freq"] == result["fit"]["q0"]["readout_freq"]
     prompted = tty.getvalue()
@@ -496,17 +502,19 @@ def test_review_confirms_stale_overwrite(tmp_path, monkeypatch):
 
 
 def test_review_declines_stale_stays_pending(tmp_path, monkeypatch):
-    """Enter at the stale confirmation = No: the item stays pending, device unchanged."""
+    """Enter at the stale confirmation = No: that item stays pending and the knob is
+    unchanged; the other (non-stale) selected items still apply."""
     from scqo.cli import _review
 
     sess = _session(tmp_path)
     result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
     sess.device.qubit("q0").readout_freq = 6.2e9
 
-    _interactive(monkeypatch, ["a", ""])  # select all, Enter declines the overwrite
+    # select all, Enter declines the stale readout_freq overwrite, empty comment
+    _interactive(monkeypatch, ["a", "", ""])
     summary = _review.review_interactively(sess, result["run_id"], result["suggestions"])
 
-    assert summary is None
+    assert [a["field"] for a in summary["applied"]] == ["f_r_hz", "kappa_hz"]
     assert sess.device_state()["q0"]["readout_freq"] == 6.2e9
     record = sess.load_run(result["run_id"])["record"]
     assert record["suggestions"][0]["status"] == "pending"
@@ -555,7 +563,7 @@ def test_review_era_mismatch_asks_once_and_no_aborts(tmp_path, monkeypatch):
 
     _interactive(monkeypatch, ["a", "y", ""])  # confirm it this time
     summary = _review.review_interactively(sess, result["run_id"], result["suggestions"])
-    assert [a["field"] for a in summary["applied"]] == ["readout_freq"]
+    assert [a["field"] for a in summary["applied"]] == ["readout_freq", "f_r_hz", "kappa_hz"]
 
 
 def test_review_interactively_applies_selection(tmp_path, monkeypatch):
