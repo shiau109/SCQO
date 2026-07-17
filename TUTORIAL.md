@@ -173,6 +173,23 @@ guard still applies. Every re-application is a fresh change-history entry linked
 the run it came from, so the viewer's Device page tells the whole story: A applied →
 B applied → A re-applied.
 
+**The estimator failed but the figure shows the value?** It happens — the dip is
+plainly visible, the fit chased a noise spike past it. Don't write the number into
+the device by hand (that loses the link to the data); attach it to the run instead:
+
+```bash
+scqo suggest <run_id> q0.readout_freq=5.912e9 --comment "read off the dip, fit missed it"
+scqo suggest <run_id> q0.f_r_hz=5.912e9 q0.kappa_hz=1.1e6    # several at once; either store
+```
+
+Your value lands on that run as a pending suggestion marked `[operator: <you>]`
+(the viewer shows the same badge), and from there everything above applies
+unchanged — the interactive picker follows immediately at a terminal, `scqo
+accept <run_id>` works later, era + stale guards included. The applied value is
+credited to the run whose figure justified it, so trends and `--sources` stay
+truthful. Hand-editing the state files instead would skip the instrument push and
+show up as `(externally changed)` — the honest label for an untraceable write.
+
 Once the readout is in place, the qubit experiments follow the same pattern:
 
 ```bash
@@ -189,8 +206,11 @@ two setups of one sample never see (or overwrite) each other's numbers.
 Calibration knobs (`readout_freq`, `pi_amp`, ...; `store: instrument`) are pushed
 to the instrument on accept and recorded in `scqo_state.json`. Measured physics —
 T1, T2*, T2echo, and the flux maps' sweet spot / Ej_sum / f_r0 / g
-(`store: physical`) — lands in `physical.json` beside it (same accept flow, full
-history). An estimate is only as clean as the chain it came through (a noisy drive
+(`store: physical`) — lands in `physical.json` beside it (same accept flow). Each
+values file keeps its full change history in an append-only sidecar
+(`scqo_state.history.jsonl` / `physical.history.jsonl`) — never edit any of them
+by hand: a hand-edit skips the instrument push and shows as `(externally
+changed)`; use `scqo suggest` instead. An estimate is only as clean as the chain it came through (a noisy drive
 line shortens the measured T2; flux volts depend on the wiring), so each context's
 physics stands on its own — compare across contexts via `scqo find` / the trends
 page, never average. The setup-independent "true" sample physics is a future

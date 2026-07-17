@@ -78,6 +78,8 @@ def lab(tmp_path_factory):
     r_ram = sess.run("qubit_ramsey", {"qubits": ["q1"], "num_points": 201}, update="apply",
                      tags=["cool1", "special"])
     r_t1 = sess.run("qubit_relaxation", {"qubits": ["q1"]}, update="apply", tags=["cool1"])
+    # a HUMAN-attached proposal on the T1 run (scqo suggest; left pending)
+    sess.suggest(r_t1["run_id"], {"q1.t1_s": 2.4e-5}, comment="read off the decay")
     r_pend = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, tags=["cool1"])  # left pending
     # a q0-only physical value -> a "(manual)" source in this context's ledger
     sess.physical.record("q0", "g_hz", 80e6)
@@ -219,6 +221,37 @@ def test_run_page_shows_suggestions_table(lab):
     # an applied run still shows its audit trail
     page_applied = c.get(f"/run/{lab['res']['run_id']}").text
     assert "Suggested updates" in page_applied and "accepted" in page_applied
+
+
+def test_device_page_history_survives_values_only_reset(tmp_path):
+    """REGRESSION: after the documented values-only reset (delete scqo_state.json,
+    keep its .history.jsonl sidecar) the device page must still render the change
+    history — the split's guarantee is that provenance is never silently hidden."""
+    (tmp_path / "devR").mkdir()
+    (tmp_path / "devR" / "cooldowns.toml").write_text(
+        '[cdR]\nstart = 2026-07-01\n[cdR.setup.main]\nbackend = "simulated"\n',
+        encoding="utf-8")
+    sess = Session(
+        SimulatedBackend(_device()), data_root=tmp_path, device_name="devR",
+        state_path=_scqo_state(tmp_path, "devR", "cdR", "main"), state_sync="push",
+        setup_name="main", cooldown_id="cdR",
+    )
+    r = sess.run("resonator_spectroscopy", {"qubits": ["q0"]}, update="apply")
+    Path(_scqo_state(tmp_path, "devR", "cdR", "main")).unlink()  # sidecar survives
+
+    page = TestClient(create_app(tmp_path, device_name="devR")).get("/device").text
+    assert "Change history" in page
+    assert r["run_id"] in page  # rows render from the surviving sidecar
+
+
+def test_run_page_marks_operator_suggestion(lab):
+    """A human-attached value (Session.suggest / scqo suggest) renders with the
+    operator badge; estimator rows never carry it."""
+    page = lab["client"].get(f"/run/{lab['t1']['run_id']}").text
+    assert 'class="badge operator"' in page
+    assert "read off the decay" in page  # the proposal comment is shown
+    page_estimator = lab["client"].get(f"/run/{lab['res']['run_id']}").text
+    assert "badge operator" not in page_estimator
 
 
 def test_runs_page_pending_filter_and_updates_column(lab):

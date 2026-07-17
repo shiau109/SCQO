@@ -9,6 +9,8 @@ same calls drive a manual notebook *and* an LLM tool-use loop:
     sess.run("qubit_ramsey", {...})    # measure -> structured result (+ run_id + suggestions)
     sess.accept(run_id)                # apply the run's suggested updates (or a subset)
     sess.reject(run_id, comment="...") # decline them (metadata only)
+    sess.suggest(run_id, {"q0.readout_freq": 5.91e9})  # attach YOUR figure-read value
+                                       #   to a run (estimator failed); accept as usual
     sess.find_runs(experiment="qubit_ramsey", qubit="q0")   # find my data (pending=True too)
     sess.load_run(run_id)              # reload a saved run (record/params/result/figures)
     sess.device_state()                # current calibration (this setup's SCQO config)
@@ -25,6 +27,7 @@ result, device snapshots, and the scqat analysis artifacts (figures included).
 from __future__ import annotations
 
 import copy
+import math
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,13 +36,20 @@ from pydantic import ValidationError
 from . import config as _config
 from . import registry
 from .backend import Backend
-from .config import RecordingDevice, _now
+from .config import FIELDS, RecordingDevice, _now
 from .contract import ContractError
 from .datastore import DataStore
 from .experiment import Experiment
-from .physical import PHYSICAL_FILE, PhysicalStore
+from .physical import PHYSICAL_FIELDS, PHYSICAL_FILE, PhysicalStore
 from .result import Outcome, Result
-from .suggestions import Suggestion, SuggestionCapture, reject_suggestions, select_suggestions
+from .suggestions import (
+    Suggestion,
+    SuggestionCapture,
+    decision_editor,
+    pending_count,
+    reject_suggestions,
+    select_suggestions,
+)
 
 
 class Session:
@@ -382,13 +392,7 @@ class Session:
         qubit, field, store, status, before, current, after, stale, decided_at,
         decided_by, comment}]}``. The wrong-device check still raises.
         """
-        store = self._require_datastore()
-        record = store.load_run(run_id)["record"]
-        if record.get("device") != store.device_name:
-            raise RuntimeError(
-                f"run {run_id} belongs to device {record.get('device')!r} but this session "
-                f"is bound to {store.device_name!r} — select that device and retry"
-            )
+        store, record = self._load_run_record(run_id)
         suggestions = [Suggestion(**s) for s in record.get("suggestions", [])]
         selected = select_suggestions(suggestions, qubits=qubits, fields=fields,
                                       indices=indices, include_decided=reapply or dry_run)
@@ -471,18 +475,25 @@ class Session:
                     f"(state files may lag the instrument): {type(err).__name__}: {err}"
                 )
         try:
-            store.update_suggestions(
+            # Index-targeted merge (not a whole-list replace): only the rows THIS
+            # accept decided (or annotated with an apply error) are written; a
+            # suggestion appended — or another item decided — by a concurrent
+            # session since our load survives.
+            stored = store.edit_suggestions(
                 run_id,
-                [s.model_dump(mode="json") for s in suggestions],
+                decision_editor(
+                    {i: suggestions[i].model_dump(mode="json") for i in selected}
+                ),
                 updated_device=True if applied else None,
             )
+            summary["pending_left"] = pending_count(stored["suggestions"])
         except Exception as err:
             summary["errors"].append(
                 f"values were applied to the device but persisting the decision failed — "
                 f"record.json still lists them as pending (a blind retry could double-apply): "
                 f"{type(err).__name__}: {err}"
             )
-        summary["pending_left"] = sum(1 for s in suggestions if s.status == "pending")
+            summary["pending_left"] = sum(1 for s in suggestions if s.status == "pending")
         return summary
 
     def reject(
@@ -504,6 +515,92 @@ class Session:
             self._require_datastore(), run_id,
             qubits=qubits, fields=fields, indices=indices, comment=comment,
         )
+
+    def suggest(self, run_id: str, assignments: dict[str, Any], comment: str = "") -> dict:
+        """Attach YOUR manually-read values to a saved run as pending suggestions.
+
+        The governed escape hatch for "the estimator failed but the figure clearly
+        shows the value": read the number off the run's saved figure and propose it
+        against that run, so the value stays linked to the data that justifies it.
+        Each ``assignments`` key is ``"qubit.field"`` where the field belongs to
+        either store (calibration knob or physical parameter); values must be
+        finite numbers. The items are APPENDED to the run's stored suggestion list
+        as ``origin="operator"`` rows (``proposed_by`` = your OS login) and decided
+        exactly like estimator suggestions — ``scqo accept <run_id>`` /
+        :meth:`accept`, same era + staleness guards (which run at ACCEPT time, not
+        here). ``before`` is captured from the current context's stores NOW —
+        exactly what the staleness guard compares against later. Nothing is
+        applied or pushed here.
+
+        Unlike :meth:`run` this raises (``ValueError`` for a bad assignment,
+        ``RuntimeError`` for another device's run, ``KeyError`` for an unknown
+        run_id): a proposal that cannot be stored correctly must fail loudly, like
+        :meth:`accept`. Returns ``{run_id, added: [{qubit, field, store, before,
+        after}], pending_total}``.
+        """
+        if not assignments:
+            raise ValueError("no assignments given — expected {'qubit.field': value, ...}")
+        store, record = self._load_run_record(run_id)
+        snapshot = self.device.snapshot()
+        proposed_at = _now()
+        new: list[Suggestion] = []
+        for key, value in assignments.items():
+            qubit, _, field = key.partition(".")
+            if not qubit or not field:
+                raise ValueError(
+                    f"assignment key {key!r} must be 'qubit.field' (e.g. q0.readout_freq)"
+                )
+            if field not in FIELDS and field not in PHYSICAL_FIELDS:
+                known = ", ".join(sorted([*FIELDS, *PHYSICAL_FIELDS]))
+                raise ValueError(f"unknown field {field!r} — known fields: {known}")
+            if qubit not in snapshot:
+                raise ValueError(
+                    f"unknown qubit {qubit!r} — this device has: {', '.join(snapshot)}"
+                )
+            # bool first: bool subclasses int, and True is not a proposable value.
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{key}: value must be a number, got {value!r}")
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError(f"{key}: refusing to suggest non-finite value {value!r}")
+            physical = field in PHYSICAL_FIELDS
+            new.append(
+                Suggestion(
+                    qubit=qubit, field=field,
+                    store="physical" if physical else "instrument",
+                    before=(self.physical.get(qubit, field) if physical
+                            else snapshot.get(qubit, {}).get(field)),
+                    after=value, comment=comment,
+                    origin="operator",
+                    proposed_by=_config._current_operator() or None,
+                    proposed_at=proposed_at,
+                )
+            )
+        # Atomic append via the locked editor: ours land at the end of the FRESH
+        # stored list (never a stale snapshot), so a concurrent accept's decisions
+        # survive and displayed row numbers stay stable for the review grammar.
+        new_dicts = [s.model_dump(mode="json") for s in new]
+        stored = store.edit_suggestions(run_id, lambda fresh: fresh + new_dicts)
+        return {
+            "run_id": run_id,
+            "added": [
+                {"qubit": s.qubit, "field": s.field, "store": s.store,
+                 "before": s.before, "after": s.after}
+                for s in new
+            ],
+            "pending_total": pending_count(stored["suggestions"]),
+        }
+
+    def _load_run_record(self, run_id: str) -> tuple[DataStore, dict]:
+        """Load a saved run's record, refusing one that belongs to another device."""
+        store = self._require_datastore()
+        record = store.load_run(run_id)["record"]
+        if record.get("device") != store.device_name:
+            raise RuntimeError(
+                f"run {run_id} belongs to device {record.get('device')!r} but this session "
+                f"is bound to {store.device_name!r} — select that device and retry"
+            )
+        return store, record
 
     @staticmethod
     def _failure(cls: type[Experiment], exp: Experiment, err: Exception) -> Result:

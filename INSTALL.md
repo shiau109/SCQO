@@ -461,9 +461,13 @@ sample no longer share (or clobber) a file, and the on-disk tree mirrors
 - **The per-device `scqo_state.json` and device-level `physical.json` are RETIRED —
   simply not read.** Each (cooldown, setup) context has a
   `<data_root>\<device>\<cooldown>\<setup>\scqo\` folder holding its own
-  `scqo_state.json` (calibration + history) and `physical.json` (measured physics +
-  history). Delete old files at will; in pull mode calibration reseeds from the
-  vendor config anyway. History starts fresh per context (rows carry `setup=`).
+  `scqo_state.json` (calibration values) and `physical.json` (measured physics),
+  **each with its change history in an append-only sidecar** —
+  `scqo_state.history.jsonl` / `physical.history.jsonl`, one ChangeRecord JSON
+  object per line. Delete old files at will; in pull mode calibration reseeds from
+  the vendor config anyway. History starts fresh per context (rows carry `setup=`).
+  (Dev machines that ran main's WIP before the split: a per-context file with an
+  embedded `"history"` key is read once and split out on the next save.)
 - **The `instrument_config` key is RETIRED — the vendor folder is DERIVED from the
   keys**: `<device>\<cooldown>\<setup>\backend_config\` (a setup table is just
   `backend` + optional `note`). Delete any `instrument_config` lines and keep the
@@ -479,10 +483,16 @@ sample no longer share (or clobber) a file, and the on-disk tree mirrors
   files. `scqo state --physical` shows THIS context's values (flat); compare across
   setups/cooldowns via `scqo find` or the viewer trends page (both stamp cooldown +
   setup). The setup-independent "true" physics stays the Phase-3 `sample.json`
-  roll-up. Saves MERGE under a lock file, so two same-context sessions can't erase
-  each other's rows.
+  roll-up. Saves MERGE the history under a lock file — for BOTH stores — so two
+  same-context sessions can't erase each other's rows.
 - **`scqo state` prints a context header** (device / setup / cooldown / state
   file) so you always know whose numbers you're reading.
+- **New `scqo suggest <run_id> QUBIT.FIELD=VALUE ...`** — attach a manually-read
+  value to a saved run (the estimator failed, the figure didn't) as a pending
+  suggestion marked `[operator: <you>]`; decided via the normal `scqo accept`
+  flow and credited to that run. Straddling-main caveat: an OLDER scqo deciding
+  such an item rewrites the record without the origin marker — upgrade every
+  machine that decides suggestions.
 - **Nothing else to migrate:** the run index is unchanged (schema v7, no reindex);
   no entry-point changes — `git pull` suffices on dev machines, tagged servers
   follow §5. `scqo doctor` lists every setup's `scqo_state.json` path.
@@ -522,11 +532,14 @@ Most "clean-up" needs are lighter than a factory reset. The ladder, mildest firs
    `python -m scqo <data_root>`. Fixes a stale/corrupt index; loses nothing.
 2. **Reset a context's state**: delete that (cooldown, setup)'s
    `<data_root>\<device>\<cooldown>\<setup>\scqo\scqo_state.json` — calibration
-   reseeds from the vendor config at the next session (fresh-start rule; the change
-   history in it is lost). **Do NOT reflexively delete `physical.json` next to it**:
-   that file IS that context's measured-physics ledger (T1/T2, arch/dispersive fits +
-   their history) and does NOT reseed from anywhere — delete it only if you truly
-   mean to discard those measurements.
+   reseeds from the vendor config at the next session. The change history lives in
+   `scqo_state.history.jsonl` beside it and SURVIVES a values-only delete
+   (provenance stays continuous); delete the sidecar too only for a true
+   history-and-all reset. **Do NOT reflexively delete `physical.json` or
+   `physical.history.jsonl` next to them**: that pair IS that context's
+   measured-physics ledger (T1/T2, arch/dispersive fits + their history) and does
+   NOT reseed from anywhere — delete it only if you truly mean to discard those
+   measurements.
 3. **Factory reset** — everything below.
 
 ### Factory reset (make a machine "new" again)

@@ -149,6 +149,60 @@ def test_reject_needs_no_backend(tmp_path):
     assert "no physical parameters recorded yet" in physical.stdout
 
 
+def test_suggest_attaches_operator_value_then_accept(tmp_path):
+    """`scqo suggest` end-to-end, non-TTY: the estimator was told not to update
+    (--no-update stands in for a failed fit), the operator attaches figure-read
+    values, the run becomes pending, and a later accept applies them."""
+    proc = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--no-update")
+    run_id = _result(proc)["run_id"]
+    assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
+
+    suggest = _run_cli(tmp_path, "suggest", run_id,
+                       "q0.readout_freq=5.912e9", "q0.f_r_hz=5.912e9",
+                       "--comment", "read off the dip")
+    assert suggest.returncode == 0, suggest.stderr
+    summary = json.loads(suggest.stdout)  # stdout stays parseable JSON
+    assert summary["pending_total"] == 2
+    assert [a["field"] for a in summary["added"]] == ["readout_freq", "f_r_hz"]
+    # non-TTY: table + operator marker + decide-later hint on stderr, nothing applied
+    assert "[operator:" in suggest.stderr and "read off the dip" in suggest.stderr
+    assert f"scqo accept {run_id}" in suggest.stderr
+
+    assert run_id in _run_cli(tmp_path, "find", "--pending").stdout
+    table = _run_cli(tmp_path, "accept", run_id, "--list")
+    assert "[operator:" in table.stdout
+
+    accept = _run_cli(tmp_path, "accept", run_id)
+    assert accept.returncode == 0, accept.stderr
+    assert [a["field"] for a in json.loads(accept.stdout)["applied"]] == ["readout_freq", "f_r_hz"]
+    history = _run_cli(tmp_path, "state", "--history")
+    assert run_id in history.stdout  # credited to the run whose figure justified it
+
+    # a bad assignment fails loudly, with the fix in the message and no traceback
+    bad = _run_cli(tmp_path, "suggest", run_id, "q0.t1_sec=1e-6")
+    assert bad.returncode != 0
+    assert "unknown field 't1_sec'" in bad.stderr and "Traceback" not in bad.stderr
+    malformed = _run_cli(tmp_path, "suggest", run_id, "q0.readout_freq")
+    assert malformed.returncode != 0 and "QUBIT.FIELD=VALUE" in malformed.stderr
+
+
+def test_accept_points_at_suggest_when_the_estimator_proposed_nothing(tmp_path):
+    """The dead end: a run with no suggestions (the fit failed) used to print NOTHING
+    at a terminal / a bare '0 applied' in a script, pointing nowhere. Both paths must
+    name `scqo suggest` — that is the moment a user needs to learn it exists."""
+    run_id = _result(_run_cli(tmp_path, "run", "resonator_spectroscopy",
+                              "--qubits", "q0", "--no-update"))["run_id"]
+
+    listed = _run_cli(tmp_path, "accept", run_id, "--list")
+    assert listed.returncode == 0, listed.stderr
+    assert f"scqo suggest {run_id} q0." in listed.stdout  # the run's OWN qubit
+
+    accept = _run_cli(tmp_path, "accept", run_id)
+    assert accept.returncode == 0, accept.stderr
+    assert f"scqo suggest {run_id} q0." in accept.stderr
+    assert json.loads(accept.stdout)["pending_left"] == 0  # stdout stays parseable
+
+
 def test_reapply_rolls_back_from_the_cli(tmp_path):
     """Two accepted runs; `scqo accept <first> --reapply` restores the first value."""
     proc_a = _run_cli(tmp_path, "run", "resonator_spectroscopy", "--qubits", "q0", "--accept")

@@ -21,8 +21,9 @@ What is manual vs automatic when a sample arrives:
 
   AUTOMATIC (no action needed):
     - <data_root>/<name>/ folders, run folders, each context's
-      <cooldown>/<setup>/scqo/ folder (scqo_state.json + physical.json), the index
-      row, viewer pages — all created on first use.
+      <cooldown>/<setup>/scqo/ folder (scqo_state.json + physical.json + their
+      .history.jsonl sidecars), the index row, viewer pages — all created on
+      first use.
     - NO shared-config edit: users select the sample and setup with
       `scqo user --device <name> [--setup <name>]`.
 

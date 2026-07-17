@@ -5,11 +5,13 @@ setup*"; this store answers "what IS this qubit" — coherence times, transmon a
 parameters, dispersive-fit quantities. Every value is a measurement of the sample
 **through a setup, in a cooldown** (a noisy drive line shortens the measured T2
 through no fault of the sample; ``dv_phi0_v`` is volts at the DAC, wiring-dependent),
-so the file is PER (cooldown, setup) — one context, flat values::
+so the store is PER (cooldown, setup) — one context, flat values, with the change
+history in an append-only sidecar (:mod:`scqo._state_io`)::
 
     <data_root>/<device>/<cooldown>/<setup>/scqo/physical.json
-        {"values":  {"q0": {"t1_s": 2.5e-05}},
-         "history": [ChangeRecord, ...]}          # rows also carry setup=
+        {"values": {"q0": {"t1_s": 2.5e-05}}}
+    <data_root>/<device>/<cooldown>/<setup>/scqo/physical.history.jsonl
+        one ChangeRecord JSON object per line   # rows also carry setup=
 
 A setup's estimate never overwrites another's — they are different files. Compare
 across setups/cooldowns by querying the run index (every run stamps cooldown + setup)
@@ -34,20 +36,16 @@ from __future__ import annotations
 import json
 import math
 import os
-import time
-from contextlib import contextmanager
 from pathlib import Path
 
 from . import config as _config
+from ._state_io import _file_lock, read_history, write_history
 from .config import FIELDS, ChangeRecord, FieldSpec, _now
 
 #: File name inside a context's ``.../<cooldown>/<setup>/scqo/`` folder (per context).
+#: The change history lives beside it in ``physical.history.jsonl``
+#: (:mod:`scqo._state_io`).
 PHYSICAL_FILE = "physical.json"
-
-#: Lock acquisition gives up after this many seconds (another writer is stuck).
-_LOCK_TIMEOUT_S = 10.0
-#: A lock file older than this is a crashed writer's leftover and is taken over.
-_LOCK_STALE_S = 10.0
 
 #: The physical (sample-owned, instrument-independent) fields SCQO tracks.
 #: Adding one requires an entry here and nothing else — no ABC, no driver code.
@@ -71,66 +69,6 @@ PHYSICAL_FIELDS: dict[str, FieldSpec] = {
 _overlap = set(PHYSICAL_FIELDS) & set(FIELDS)
 assert not _overlap, f"PHYSICAL_FIELDS must not overlap config.FIELDS: {sorted(_overlap)}"
 del _overlap
-
-
-@contextmanager
-def _file_lock(target: Path):
-    """`O_CREAT|O_EXCL` lock file next to ``target`` — cross-platform, no deps.
-
-    Retries for :data:`_LOCK_TIMEOUT_S`; a lock older than :data:`_LOCK_STALE_S`
-    is a crashed writer's leftover. Physical accepts are rare and saves are
-    milliseconds, so contention is the exception, not the rule — but the file is
-    shared by every setup's user, so two subtle races are closed:
-
-    * **Stale takeover is atomic.** Two waiters must not both "break" one stale
-      lock and then both enter the section. The stale lock is claimed by
-      ``os.replace``-renaming it to a per-waiter unique name: exactly one waiter's
-      rename succeeds (the OS guarantees it), the losers' raise and simply retry.
-    * **A lock is only ever released by its owner.** Each acquisition writes a
-      unique token into the lock file; release unlinks ONLY if the token still
-      matches. So if our lock were ever deemed stale and taken over while we
-      paused, we do not delete the new holder's lock out from under it.
-    """
-    lock = target.with_name(target.name + ".lock")
-    token = f"{os.getpid()}.{os.urandom(6).hex()}".encode()
-    deadline = time.monotonic() + _LOCK_TIMEOUT_S
-    while True:
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            try:
-                os.write(fd, token)
-            finally:
-                os.close(fd)
-            break
-        except FileExistsError:
-            try:
-                stale = time.time() - lock.stat().st_mtime > _LOCK_STALE_S
-            except OSError:
-                stale = False  # raced with the holder's release — just retry
-            if stale:
-                # Atomic claim: only ONE waiter's rename of the stale lock can
-                # succeed; the winner removes it and retries the O_EXCL create,
-                # the losers' os.replace raises (already gone) and they retry too.
-                claim = lock.with_name(f"{lock.name}.stale.{os.getpid()}.{os.urandom(4).hex()}")
-                try:
-                    os.replace(lock, claim)
-                    claim.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                continue
-            if time.monotonic() > deadline:
-                raise TimeoutError(
-                    f"could not lock {target} within {_LOCK_TIMEOUT_S:.0f}s — if no other "
-                    f"scqo process is saving physical values, delete the stale {lock}")
-            time.sleep(0.05)
-    try:
-        yield
-    finally:
-        try:
-            if lock.read_bytes() == token:  # still OURS — never free a takeover's lock
-                lock.unlink(missing_ok=True)
-        except OSError:
-            pass
 
 
 def _clean_values(raw: dict) -> dict[str, dict[str, float]]:
@@ -166,10 +104,12 @@ class PhysicalStore:
         #: (qubit, field) pairs we wrote since the last load/save — the only value
         #: keys `save()` may overwrite (a co-running same-context writer keeps its own).
         self._dirty: set[tuple[str, str]] = set()
-        if self._path is not None and self._path.is_file():
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-            self._values = _clean_values(data.get("values", {}))
-            self._history = [ChangeRecord(**r) for r in data.get("history", [])]
+        if self._path is not None:
+            if self._path.is_file():
+                data = json.loads(self._path.read_text(encoding="utf-8"))
+                self._values = _clean_values(data.get("values", {}))
+            # sidecar first; pre-split files with an embedded "history" load too
+            self._history = [ChangeRecord(**r) for r in read_history(self._path)]
             self._saved = len(self._history)
 
     def get(self, qubit: str, field: str) -> float | None:
@@ -186,6 +126,10 @@ class PhysicalStore:
         run_id: str | None = None,
     ) -> None:
         """Record a measured physical value: history + values, never any vendor."""
+        if field not in PHYSICAL_FIELDS:  # a typo must not silently become ledger truth
+            raise ValueError(
+                f"unknown physical field {field!r} for {qubit} — known: {', '.join(PHYSICAL_FIELDS)}"
+            )
         value = float(value)
         if not math.isfinite(value):  # the JSON must stay strictly parseable
             raise ValueError(f"refusing to record non-finite {field}={value!r} for {qubit}")
@@ -215,28 +159,38 @@ class PhysicalStore:
     def save(self) -> None:
         """Merge-persist under a lock (no-op in-memory).
 
-        The file is one (cooldown, setup) context, but two same-context sessions
+        The files are one (cooldown, setup) context, but two same-context sessions
         (two terminals) could still race, so a blind rewrite could erase rows the
-        other appended. Under the lock the file is re-read; its history plus OUR
-        unsaved rows are unioned (ordered by timestamp — ISO strings with the lab's
-        fixed UTC offset sort chronologically, the :func:`scqo.config._now`
-        guarantee) and only the value keys WE wrote overwrite the file's. In-memory
-        state becomes the merged truth ONLY after the write lands, so a failed
-        replace (locked file, full disk) leaves our unsaved rows intact for the next
-        save() to retry — never a silently dropped accept.
+        other appended. Under the lock the on-disk state is re-read; its history
+        plus OUR unsaved rows are unioned (ordered by timestamp — ISO strings with
+        the lab's fixed UTC offset sort chronologically, the
+        :func:`scqo.config._now` guarantee) and only the value keys WE wrote
+        overwrite the file's.
+
+        Two writes, history sidecar FIRST: a failed sidecar write commits nothing
+        (our rows stay pending for the next save() to retry — never a silently
+        dropped accept). Once the sidecar lands the merge is committed to memory,
+        so a failure of the values write cannot re-append the rows on retry; the
+        values then briefly lag the durable history and the next save() recomputes
+        them from it (self-healing — provenance's strict-match rule reports the
+        lag as "external" at worst, never a false credit).
         """
         if self._path is None:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(self._path):
             file_values: dict = {}
-            file_history: list[ChangeRecord] = []
             if self._path.is_file():
                 data = json.loads(self._path.read_text(encoding="utf-8"))
                 file_values = _clean_values(data.get("values", {}))
-                file_history = [ChangeRecord(**r) for r in data.get("history", [])]
+            file_history = [ChangeRecord(**r) for r in read_history(self._path)]
             ours = self._history[self._saved:]
             merged = sorted(file_history + ours, key=lambda r: r.timestamp)  # stable
+            # Write 1 — the history sidecar (also splits a pre-split file's
+            # embedded history out; the values rewrite below drops the old key).
+            write_history(self._path, [r.as_dict() for r in merged])
+            self._history = merged
+            self._saved = len(merged)
             # For each key WE wrote, the persisted value is the LATEST-timestamp
             # record for it across the merged history — not blindly our own. So if a
             # concurrent same-context session recorded a newer value for the same
@@ -248,16 +202,14 @@ class PhysicalStore:
                 latest[(r.qubit, r.field)] = r.new
             for qubit, field in self._dirty:
                 file_values.setdefault(qubit, {})[field] = latest[(qubit, field)]
-            # Persist FIRST — commit the merge to memory only once it is durable.
-            payload = {"values": file_values, "history": [r.as_dict() for r in merged]}
+            # Write 2 — the values file, values-only.
+            payload = {"values": file_values}
             tmp = self._path.with_suffix(f"{self._path.suffix}.{os.getpid()}.tmp")
             try:
                 tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
                 os.replace(tmp, self._path)
             except OSError:
-                tmp.unlink(missing_ok=True)  # no orphan temp; our rows stay pending
+                tmp.unlink(missing_ok=True)  # no orphan temp; values self-heal next save
                 raise
             self._values = file_values
-            self._history = merged
-            self._saved = len(merged)
             self._dirty.clear()

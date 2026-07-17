@@ -7,6 +7,7 @@ disposable cache — several tests delete/rebuild it to prove that.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from scqo import Outcome, Session, register, reindex
@@ -117,6 +118,30 @@ def test_default_run_stores_pending_suggestions(tmp_path):
     assert [r["run_id"] for r in sess.find_runs(pending=True)] == [result["run_id"]]
 
 
+def test_update_suggestions_append_recomputes_pending(tmp_path):
+    """The contract Session.suggest relies on: update_suggestions accepts a LONGER
+    list (append) and recomputes the index's pending counter from it."""
+    sess = _session(tmp_path)
+    result = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
+    run_id = result["run_id"]
+    sess.accept(run_id)  # everything decided
+    assert sess.find_runs(pending=True) == []
+
+    record = sess.load_run(run_id)["record"]
+    appended = record["suggestions"] + [{
+        "qubit": "q0", "field": "pi_amp", "store": "instrument",
+        "before": 0.2, "after": 0.21, "status": "pending",
+        "origin": "operator", "proposed_by": "alice",
+    }]
+    sess.datastore.update_suggestions(run_id, appended)
+
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [run_id]
+    row = sess.find_runs()[0]
+    assert row["suggestions_pending"] == 1 and len(row["suggestions"]) == 4
+    assert sess.datastore.reindex() == 1  # record.json carries the appended item
+    assert [r["run_id"] for r in sess.find_runs(pending=True)] == [run_id]
+
+
 def test_find_runs_filters(tmp_path):
     sess = _session(tmp_path)
     r1 = sess.run("resonator_spectroscopy", {"qubits": ["q0"]})
@@ -154,6 +179,96 @@ def test_tags_default_and_retroactive(tmp_path):
     # record.json is the truth: a full rebuild keeps the retro-tag
     assert sess.datastore.reindex() == 1
     assert sess.find_runs(tag="thesis-fig3")
+
+
+def test_suggest_during_tag_window_survives(tmp_path, monkeypatch):
+    """REGRESSION (record.json race): an operator suggestion landing INSIDE a
+    concurrent tag_run's read->write window must survive — tag_run rewrites the WHOLE
+    record, so it re-reads under the record lock rather than storing a snapshot taken
+    before the suggestion existed. Mirrors the accept-vs-suggest pair in
+    tests/test_suggestions.py, with the tagger as the whole-record writer."""
+    from scqo import datastore as datastore_mod
+
+    sess_a = _session(tmp_path)
+    run_id = sess_a.run("resonator_spectroscopy", {"qubits": ["q0"]})["run_id"]
+    sess_b = _session(tmp_path)  # a second terminal on the same lab
+
+    errors: list[Exception] = []
+
+    def suggest_concurrently():
+        try:
+            sess_b.suggest(run_id, {"q0.pi_amp": 0.21}, comment="operator, mid-tag")
+        except Exception as err:  # pragma: no cover - the assertion below reports it
+            errors.append(err)
+
+    suggester = threading.Thread(target=suggest_concurrently)
+
+    at_store = threading.Event()  # b has read the record and is about to store its item
+    real_edit = sess_b.datastore.edit_suggestions
+
+    def edit_announcing_entry(*args, **kwargs):
+        at_store.set()
+        return real_edit(*args, **kwargs)
+
+    sess_b.datastore.edit_suggestions = edit_announcing_entry
+
+    real_write = datastore_mod._write_json
+    tagging = []
+
+    def write_with_concurrent_suggest(path, payload):
+        # Fires ONCE, on tag_run's own record write — b then races that very write.
+        if not tagging and Path(path).name == "record.json":
+            tagging.append(True)
+            suggester.start()
+            at_store.wait(5)
+            # Unlocked, b's item lands here and the write below erases it; locked, b
+            # is parked on the record lock and only proceeds once we release it.
+            suggester.join(1.0)
+        return real_write(path, payload)
+
+    monkeypatch.setattr(datastore_mod, "_write_json", write_with_concurrent_suggest)
+    sess_a.tag_run(run_id, add=["thesis-fig3"], note="tagged mid-suggest")
+    suggester.join(10)
+    assert not errors and not suggester.is_alive()
+
+    record = sess_a.load_run(run_id)["record"]
+    assert record["tags"] == ["thesis-fig3"] and record["note"] == "tagged mid-suggest"
+    assert [s["field"] for s in record["suggestions"]] == [  # nothing clobbered
+        "readout_freq", "f_r_hz", "kappa_hz", "pi_amp"]
+    assert record["suggestions"][-1]["origin"] == "operator"
+
+    # record.json is the truth: both writers' edits survive a full rebuild
+    assert sess_a.datastore.reindex() == 1
+    assert [r["run_id"] for r in sess_a.find_runs(tag="thesis-fig3", pending=True)] == [run_id]
+    assert sess_a.find_runs()[0]["suggestions_pending"] == 4
+
+
+def test_tag_during_suggest_window_survives(tmp_path):
+    """REGRESSION (record.json race, reverse order): a retro-tag completing inside
+    suggest's load->write window must keep its tags — suggest edits the FRESH stored
+    list under the record lock, and tag_run holds that lock only across its own
+    read-write (a lock held across the nested writer would deadlock, not clobber)."""
+    sess_a = _session(tmp_path)
+    run_id = sess_a.run("resonator_spectroscopy", {"qubits": ["q0"]})["run_id"]
+    sess_b = _session(tmp_path)
+
+    real_load = sess_b._load_run_record
+
+    def load_then_concurrent_tag(rid):
+        out = real_load(rid)
+        sess_a.tag_run(run_id, add=["thesis-fig3"], note="tagged mid-suggest")
+        return out
+
+    sess_b._load_run_record = load_then_concurrent_tag
+    summary = sess_b.suggest(run_id, {"q0.pi_amp": 0.21})
+    assert summary["pending_total"] == 4  # 3 estimator rows + the operator's
+
+    record = sess_b.load_run(run_id)["record"]
+    assert record["tags"] == ["thesis-fig3"]  # NOT reverted by the suggestion write
+    assert record["note"] == "tagged mid-suggest"
+    assert [s["field"] for s in record["suggestions"]] == [
+        "readout_freq", "f_r_hz", "kappa_hz", "pi_amp"]
+    assert [r["run_id"] for r in sess_b.find_runs(tag="thesis-fig3")] == [run_id]
 
 
 def test_reindex_rebuilds_deleted_index(tmp_path):

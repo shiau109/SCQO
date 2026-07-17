@@ -66,18 +66,22 @@ scqo/
   result.py       # Outcome enum + Result base (extraction surface)
   device.py       # QubitView / DeviceModel ABCs (neutral field names)
   physical.py     # PHYSICAL_FIELDS + PhysicalStore: the SAMPLE's instrument-independent
-                  #   measured physics (T1/T2, arch/dispersive fits) -> <device>/physical.json
+                  #   measured physics (T1/T2, arch/dispersive fits) -> the context's
+                  #   scqo/physical.json (+ physical.history.jsonl sidecar)
+  _state_io.py    # shared state-file plumbing: the .lock file + the .history.jsonl
+                  #   sidecar (read/write + pre-split embedded-history fallback)
   suggestions.py  # Suggestion + SuggestionCapture: update() writes become PENDING
-                  #   proposals on the run record; accept/reject decide them (v0.6)
+                  #   proposals on the run record; accept/reject decide them (v0.6);
+                  #   origin="operator" = human-attached via Session.suggest (v0.9)
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update) + backend half (probe)
   registry.py     # @register / get / catalog  (AI's menu of measurements)
-  session.py      # Session: catalog() / run() / accept() / reject() / find_runs() /
-                  #   load_run() / device_state() / physical_state() / history()
+  session.py      # Session: catalog() / run() / accept() / reject() / suggest() /
+                  #   find_runs() / load_run() / device_state() / physical_state() / history()
   datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend (run with no instrument)
-  cli/            # the `scqo` command (run/find/accept/tag/state/user/
+  cli/            # the `scqo` command (run/find/accept/suggest/tag/state/user/
                   #   device/doctor): ONE engine, any-directory;
                   #   the device's SELECTED named setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; simulated is built in
@@ -172,4 +176,4 @@ or per-command shims.
 
 ## Status
 Current published release: **v0.8.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.
-Work in progress on `main`: **v0.9.0** — per-(cooldown, setup) SCQO state + physics folders (`<data_root>/<device>/<cooldown>/<setup>/scqo/`) so two users on two setups of one sample no longer share or clobber state. ALL folder locations are DERIVED from the registry keys: a `[<cid>.setup.<name>]` table is exactly `backend` + optional `note`; the vendor folder is the sibling `<cid>/<name>/backend_config/`, injected by `load_cooldowns` as `setup["instrument_config"]` (typed paths are refused — they can dangle). The sibling split keeps SCQO files out of QUAM's state-directory rglob by construction.
+Work in progress on `main`: **v0.9.0** — per-(cooldown, setup) SCQO state + physics folders (`<data_root>/<device>/<cooldown>/<setup>/scqo/`) so two users on two setups of one sample no longer share or clobber state. ALL folder locations are DERIVED from the registry keys: a `[<cid>.setup.<name>]` table is exactly `backend` + optional `note`; the vendor folder is the sibling `<cid>/<name>/backend_config/`, injected by `load_cooldowns` as `setup["instrument_config"]` (typed paths are refused — they can dangle). The sibling split keeps SCQO files out of QUAM's state-directory rglob by construction. Also in v0.9.0: change history lives in append-only `.history.jsonl` sidecars next to the values-only `scqo_state.json`/`physical.json` (`scqo/_state_io.py`; both stores merge history under a lock — same-setup sessions never clobber rows), and `scqo suggest <run_id> q.field=value` attaches a human-read value to a run as an `origin="operator"` pending suggestion (the estimator-failed-but-the-figure-didn't flow), decided via the normal accept guards.

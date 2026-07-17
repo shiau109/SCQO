@@ -52,7 +52,10 @@ def test_round_trip_and_provenance(tmp_path, monkeypatch):
 
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["values"]["q0"]["t1_s"] == 26e-6  # FLAT — the file is one context
-    assert [h["old"] for h in data["history"]] == [None, 25e-6]  # old -> new chain
+    assert "history" not in data  # values-only; the sidecar holds the history
+    from scqo._state_io import read_history
+
+    assert [h["old"] for h in read_history(path)] == [None, 25e-6]  # old -> new chain
 
     reloaded = PhysicalStore(path, setup="qm_main")
     assert reloaded.snapshot() == {"q0": {"t1_s": 26e-6}}
@@ -70,6 +73,14 @@ def test_in_memory_mode_and_non_finite_guard(tmp_path):
     with pytest.raises(ValueError, match="non-finite"):
         store.record("q0", "g_hz", float("inf"))
     assert len(store.history()) == 1
+
+
+def test_record_rejects_unknown_field():
+    """A typo'd field name must not silently become ledger truth."""
+    store = PhysicalStore(None)
+    with pytest.raises(ValueError, match="unknown physical field 't1_sec'"):
+        store.record("q0", "t1_sec", 1e-6)
+    assert store.history() == [] and store.snapshot() == {}
 
 
 def test_flux_experiments_physics_lands_on_accept(tmp_path):

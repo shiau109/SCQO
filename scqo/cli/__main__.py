@@ -17,6 +17,7 @@ _COMMANDS = {
     "run": ("run", "run any cataloged experiment (no name = show the catalog)"),
     "find": ("find", "query saved runs (no instrument touched)"),
     "accept": ("accept", "review / apply / reject a run's suggested updates (by run id)"),
+    "suggest": ("suggest", "attach YOUR manually-read value to a run (fit failed, figure didn't)"),
     "tag": ("tag", "retro-tag / annotate a saved run"),
     "state": ("state", "current calibration table + change history (who/what/when)"),
     "user": ("user", "show or set YOUR selection: device + setup (writes user.toml)"),

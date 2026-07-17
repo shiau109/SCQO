@@ -39,7 +39,8 @@ folder <code>{{ path }}</code></p>
     <td>{{ s.qubit }}</td><td>{{ s.field }}</td><td>{{ s.store }}</td>
     <td>{{ "%.8g" | format(s.before) if s.before is number else (s.before if s.before is not none else "(unmeasured)") }}</td>
     <td>{{ "%.8g" | format(s.after) if s.after is number else s.after }}</td>
-    <td>{% if s.status == "pending" %}<b>pending</b>{% else %}{{ s.status }}{% endif %}</td>
+    <td>{% if s.status == "pending" %}<b>pending</b>{% else %}{{ s.status }}{% endif %}
+        {%- if s.origin == "operator" %} <span class="badge operator" title="proposed by a human ({{ s.proposed_at or '?' }}), not a fit">operator{% if s.proposed_by %} · {{ s.proposed_by }}{% endif %}</span>{% endif %}</td>
     <td>{% if od and od.kind == "live" %}<span class="live">LIVE on device</span>
         {%- elif od and od.kind == "superseded" %}<a href="/run/{{ od.run_id }}" title="{{ od.run_id }}">superseded</a>
         {%- elif od and od.kind == "external" %}superseded <span class="ext">(externally changed)</span>

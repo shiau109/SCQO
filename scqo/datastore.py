@@ -47,6 +47,7 @@ from typing import Any, Iterator
 
 from pydantic import BaseModel, Field
 
+from ._state_io import _file_lock
 from .config import _current_operator
 
 SCHEMA_VERSION = 7  # v7: named setups — setup_since column/field renamed setup (the setup's NAME)
@@ -54,7 +55,9 @@ RECORD_FILE = "record.json"
 INDEX_FILE = "index.sqlite"
 DEVICES_FILE = "devices.toml"  # optional human-edited sample registry (see load_device_registry)
 COOLDOWNS_FILE = "cooldowns.toml"  # per device: <data_root>/<device>/cooldowns.toml (see load_cooldowns)
-STATE_FILE = "scqo_state.json"  # SCQO calibration state, inside the setup's scqo/ folder
+STATE_FILE = "scqo_state.json"  # SCQO calibration values, inside the setup's scqo/
+                                # folder; history sits beside it in
+                                # scqo_state.history.jsonl (scqo._state_io)
 SCQO_SUBDIR = "scqo"  # per (device, cooldown, setup): <device>/<cooldown>/<setup>/scqo/ (see setup_scqo_dir)
 BACKEND_CONFIG_SUBDIR = "backend_config"  # the vendor-config sibling: <cooldown>/<setup>/backend_config/
 SETUP_BACKENDS = ("qblox", "qm", "simulated")  # legal [<cycle>.setup.<name>] backend values
@@ -444,15 +447,22 @@ class DataStore:
         remove: list[str] | None = None,
         note: str | None = None,
     ) -> dict:
-        """Retro-tag a run. ``record.json`` (the truth) is updated first, then the index."""
+        """Retro-tag a run. ``record.json`` (the truth) is updated first, then the index.
+
+        Lock, re-read, edit, write — the same discipline as :meth:`edit_suggestions`,
+        and for the same reason: the write covers the WHOLE record, so a snapshot
+        loaded before a concurrent writer's suggestion (``scqo suggest``) or accept
+        decision landed would silently erase it on the way back out.
+        """
         run_dir = self._run_dir(run_id)
-        record = json.loads((run_dir / RECORD_FILE).read_text(encoding="utf-8"))
-        tags = [t for t in record.get("tags", []) if t not in set(remove or [])]
-        tags += [t for t in (add or []) if t not in tags]
-        record["tags"] = tags
-        if note is not None:
-            record["note"] = note
-        _write_json(run_dir / RECORD_FILE, record)
+        with _file_lock(run_dir / RECORD_FILE):
+            record = json.loads((run_dir / RECORD_FILE).read_text(encoding="utf-8"))
+            tags = [t for t in record.get("tags", []) if t not in set(remove or [])]
+            tags += [t for t in (add or []) if t not in tags]
+            record["tags"] = tags
+            if note is not None:
+                record["note"] = note
+            _write_json(run_dir / RECORD_FILE, record)
         with self._connect() as db:
             db.execute(
                 "UPDATE runs SET tags = ?, note = ? WHERE run_id = ?",
@@ -463,7 +473,28 @@ class DataStore:
     def update_suggestions(
         self, run_id: str, suggestions: list[dict], updated_device: bool | None = None
     ) -> dict:
-        """Retro-update a run's suggestion list (accept/reject decisions) by run_id.
+        """Retro-REPLACE a run's suggestion list by run_id (see :meth:`edit_suggestions`).
+
+        Whole-list replace: the caller's list wins over anything a concurrent
+        writer stored since the caller loaded — use :meth:`edit_suggestions` when
+        the run may have several live writers (``scqo suggest`` vs an accept)."""
+        return self.edit_suggestions(run_id, lambda _rows: suggestions,
+                                     updated_device=updated_device)
+
+    def edit_suggestions(
+        self,
+        run_id: str,
+        editor,
+        updated_device: bool | None = None,
+    ) -> dict:
+        """Edit a run's suggestion list ATOMICALLY: lock, re-read, edit, write.
+
+        ``editor(rows)`` receives the FRESH stored list (never a stale snapshot)
+        and returns the list to store. The read-edit-write runs under the run
+        record's lock file, so two live writers — an operator attaching a value
+        via ``scqo suggest`` while someone else accepts — cannot silently erase
+        each other's items or decisions (the list is append-only and positions
+        are stable, so index-targeted edits stay valid across writers).
 
         Same discipline as :meth:`tag_run`: ``record.json`` — the truth — is
         rewritten first, then the index row is patched, so decisions survive any
@@ -471,11 +502,12 @@ class DataStore:
         (a later accept makes the run a device-updating run); None leaves it alone.
         """
         run_dir = self._run_dir(run_id)
-        record = json.loads((run_dir / RECORD_FILE).read_text(encoding="utf-8"))
-        record["suggestions"] = _scrub(suggestions)
-        if updated_device is not None:
-            record["updated_device"] = bool(updated_device)
-        _write_json(run_dir / RECORD_FILE, record)
+        with _file_lock(run_dir / RECORD_FILE):
+            record = json.loads((run_dir / RECORD_FILE).read_text(encoding="utf-8"))
+            record["suggestions"] = _scrub(editor(list(record.get("suggestions", []))))
+            if updated_device is not None:
+                record["updated_device"] = bool(updated_device)
+            _write_json(run_dir / RECORD_FILE, record)
         pending = sum(1 for s in record["suggestions"] if s.get("status") == "pending")
         with self._connect() as db:
             db.execute(
@@ -805,8 +837,9 @@ def setup_scqo_dir(data_root: str | Path, device: str, cooldown: str,
     """The SCQO-owned folder for one (device, cooldown, setup):
     ``<data_root>/<device>/<cooldown>/<setup_name>/scqo/``.
 
-    It holds this context's ``scqo_state.json`` (calibration + history) and
-    ``physical.json`` (measured physics + history). It is the FIXED SIBLING of the
+    It holds this context's ``scqo_state.json`` (calibration values) and
+    ``physical.json`` (measured physics), each with its ``.history.jsonl``
+    change-history sidecar. It is the FIXED SIBLING of the
     setup's vendor-config folder (:func:`setup_backend_config_dir`), never inside
     it: the QM backend's vendor folder IS QUAM's state directory and ``Quam.load()``
     ``rglob("*.json")``-merges everything under it, so SCQO files must live OUTSIDE

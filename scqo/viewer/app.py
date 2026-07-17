@@ -1,7 +1,8 @@
 """The SCQO run-viewer — the lab's daily data GUI (port 8080 by convention).
 
 Reads ONLY the datastore (run folders + index) and the per-(cooldown, setup)
-SCQO files — ``scqo_state.json`` + ``physical.json`` in each context's
+SCQO files — ``scqo_state.json`` + ``physical.json`` (each with its
+``.history.jsonl`` sidecar) in each context's
 ``<device>/<cooldown>/<setup>/scqo/`` folder (always under data_root, resolved by
 ``scqo.datastore.setup_scqo_dir``). No Session, no backend, no vendor imports — it
 runs anywhere the data drive is mounted. The single mutating route is tag/note
@@ -18,6 +19,7 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from .._state_io import read_history
 from ..config import FIELDS
 from ..datastore import (
     STATE_FILE,
@@ -84,19 +86,30 @@ def create_app(
         cid, cycle = active
         return cid, {name: _scqo_dir(dev, cid, name) for name in cycle.get("setup", {})}
 
+    def _read_history(values_path: Path) -> list[dict]:
+        """A values file's change history (``.history.jsonl`` sidecar, or embedded
+        in pre-split files — :mod:`scqo._state_io`); [] where unreadable: the
+        viewer must render regardless."""
+        try:
+            return read_history(values_path)
+        except (OSError, json.JSONDecodeError):
+            return []
+
     def _instrument_sources(scqo_dir: Path | None) -> dict:
         """Live-source map over a context's ``scqo_state.json`` ({} where absent).
         The state file is the viewer's current-value authority — the strict-match
         rule credits a run only while its recorded value still equals the live one."""
         data = (_read_json(scqo_dir / STATE_FILE) if scqo_dir else None) or {}
-        return live_sources(data.get("config", {}), data.get("history", []))
+        history = _read_history(scqo_dir / STATE_FILE) if scqo_dir else []
+        return live_sources(data.get("config", {}), history)
 
     def _physical_sources(scqo_dir: Path | None) -> dict:
         """Live-source map over a context's ``physical.json`` ({} where absent). The
-        file is one (cooldown, setup) context, so values are flat and its whole
+        store is one (cooldown, setup) context, so values are flat and its whole
         history belongs to it — no setup slicing needed."""
         data = (_read_json(scqo_dir / PHYSICAL_FILE) if scqo_dir else None) or {}
-        return live_sources(data.get("values", {}), data.get("history", []))
+        history = _read_history(scqo_dir / PHYSICAL_FILE) if scqo_dir else []
+        return live_sources(data.get("values", {}), history)
 
     @app.get("/", response_class=HTMLResponse)
     def runs_page(
@@ -257,16 +270,17 @@ def create_app(
         """A section's physical block from its ``scqo/physical.json`` (flat, one
         context): stable field order + per-qubit rows + live-source provenance."""
         data = (_read_json(scqo_dir / PHYSICAL_FILE) if scqo_dir else None) or {}
+        history = _read_history(scqo_dir / PHYSICAL_FILE) if scqo_dir else []
         values = data.get("values", {})
         observed = {f for fields in values.values() for f in fields}
         fields = [f for f in PHYSICAL_FIELDS if f in observed] + sorted(observed - set(PHYSICAL_FIELDS))
-        sources = live_sources(values, data.get("history", []))
+        sources = live_sources(values, history)
         rows = [
             {"qubit": q, "field": f, "value": values[q][f],
              "source": sources.get(q, {}).get(f)}
             for q in sorted(values) for f in fields if f in values[q]
         ]
-        return {"rows": rows, "history": list(reversed(data.get("history", [])))[:200]}
+        return {"rows": rows, "history": list(reversed(history))[:200]}
 
     def _state_section(dev: str, cooldown: str, name: str, backend: str) -> dict:
         """One device-page block per ACTIVE-cycle setup: its ``scqo/`` folder's
@@ -278,10 +292,14 @@ def create_app(
         own_latest = store.find_runs(device=dev, cooldown=cooldown, setup=name, limit=1)
         own_latest = own_latest[0] if own_latest else None
         data = _read_json(scqo_dir / STATE_FILE) if scqo_dir else None
-        state, history, authority, snapshot_run = {}, [], "", None
+        state, authority, snapshot_run = {}, "", None
+        # History is read UNCONDITIONALLY: the sidecar survives a values-only
+        # reset (INSTALL's cleaning ladder), so the page must keep showing the
+        # provenance even while the values file is gone (snapshot authority).
+        history = (list(reversed(_read_history(scqo_dir / STATE_FILE)))[:200]
+                   if scqo_dir else [])
         if data:
             state = data.get("config") or {}
-            history = list(reversed(data.get("history", [])))[:200]
             authority = "state"
         elif own_latest:  # no state file yet: that context's last run snapshot
             state = _read_json(_run_dir(own_latest) / "device_after.json") or {}
