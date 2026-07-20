@@ -11,6 +11,8 @@ from .qubit_tomography import QubitTomography, QubitTomographyParameters, QubitT
 from .qubit_sqrb import QubitSQRB, QubitSQRBParameters, QubitSQRBResult
 from .qubit_relaxation_flux import QubitRelaxationFlux, QubitRelaxationFluxParameters, QubitRelaxationFluxResult
 from .qubit_echo_flux import QubitEchoFlux, QubitEchoFluxParameters, QubitEchoFluxResult
+from .qubit_drag_equator import QubitDragEquator, QubitDragEquatorParameters, QubitDragEquatorResult
+from .qubit_drag_alternating import QubitDragAlternating, QubitDragAlternatingParameters, QubitDragAlternatingResult
 
 from .qubit_spectroscopy import (
     QubitSpectroscopy,
@@ -108,5 +110,11 @@ __all__ = [
     "QubitEchoFlux",
     "QubitEchoFluxParameters",
     "QubitEchoFluxResult",
+    "QubitDragEquator",
+    "QubitDragEquatorParameters",
+    "QubitDragEquatorResult",
+    "QubitDragAlternating",
+    "QubitDragAlternatingParameters",
+    "QubitDragAlternatingResult",
 ]
 
