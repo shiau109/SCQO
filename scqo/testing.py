@@ -120,9 +120,18 @@ class SimulatedBackend(Backend):
 
     def acquire(self, experiment: Experiment) -> xr.Dataset:
         sweep = experiment.sweep_axes
-        raw = experiment.simulate(sweep)  # {var: ndarray of shape (n_targets, *sweep)}
+        raw = experiment.simulate(sweep)
         targets = experiment.params.targets  # type: ignore[attr-defined]
-        dims = ["target", *sweep.keys()]
+        default_dims = ["target", *sweep.keys()]
         coords = {"target": list(targets), **sweep}
-        data_vars = {var: (dims, array) for var, array in raw.items()}
+        # A simulate() var is EITHER a bare ndarray spanning (target, *sweeps) — the
+        # common case — OR a ``(dims_tuple, ndarray)`` when the var spans only a
+        # SUBSET of the axes (e.g. tomography's I_train over (target, prepared_state,
+        # train_shot_idx) alongside I_tomo over a different axis set).
+        data_vars = {}
+        for var, val in raw.items():
+            if isinstance(val, tuple) and len(val) == 2 and isinstance(val[0], tuple):
+                data_vars[var] = val
+            else:
+                data_vars[var] = (default_dims, val)
         return xr.Dataset(data_vars, coords=coords)

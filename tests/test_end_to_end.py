@@ -715,3 +715,53 @@ def test_flux_component_runs_record_only():
     # without a source the flux-less target still refuses (own-z rule intact)
     refused = sess.run("resonator_spectroscopy_flux", {"targets": ["q0"]})
     assert "lacks operation(s) ['flux_bias']" in refused["error"]
+
+
+# --- Yuhowlin's ported single-qubit experiments (forward-ported to v0.10.0) ---
+
+import pytest  # noqa: E402
+from scqo.experiments import (  # noqa: E402
+    QubitDragAlternating, QubitDragEquator, QubitEchoFlux, QubitPiPulseError,
+    QubitRelaxationFlux, QubitSQRB, QubitTomography,
+)
+
+
+def _demo(cls):
+    """Register a probe-less Demo subclass (SimulatedBackend drives simulate())."""
+    return register(type(f"Demo{cls.__name__}", (cls,),
+                         {"probe": lambda self: None, "__doc__": cls.__doc__}))
+
+
+_demo(QubitSQRB); _demo(QubitTomography); _demo(QubitDragAlternating)
+_demo(QubitDragEquator); _demo(QubitEchoFlux); _demo(QubitRelaxationFlux)
+_demo(QubitPiPulseError)
+
+
+def test_pi_pulse_error_end_to_end():
+    """pi_pulse_error fits inline (no scqat estimator) and refines pi_amp — runs
+    fully offline; verifies the port + the update() -> component().pi_amp path."""
+    sess = Session(SimulatedBackend(_device()), demo_roster())
+    before = sess.device_state()["q0"]["pi_amp"]
+    result = sess.run("qubit_pi_pulse_error", {"targets": ["q0"], "num_averages": 50},
+                      update="apply")
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    assert sess.device_state()["q0"]["pi_amp"] != before  # refined + pushed
+
+
+@pytest.mark.parametrize("name,estimator_mod,flux", [
+    ("qubit_sqrb", "scqat.estimators.qubit_sqrb", False),
+    ("qubit_tomography", "scqat.estimators.qubit_tomography", False),
+    ("qubit_drag_alternating", "scqat.estimators.qubit_drag_alternating", False),
+    ("qubit_drag_equator", "scqat.estimators.qubit_drag_equator", False),
+    ("qubit_echo_flux", "scqat.estimators.qubit_echo_flux", True),
+    ("qubit_relaxation_flux", "scqat.estimators.qubit_relaxation_flux", True),
+])
+def test_ported_experiment_runs(name, estimator_mod, flux):
+    """Each ported experiment runs on the simulated backend. Guarded by the scqat
+    estimator's availability (scqat #15 must be pulled locally / present on CI)."""
+    pytest.importorskip(estimator_mod)
+    roster = _flux_roster() if flux else demo_roster()
+    sess = Session(SimulatedBackend(_device()), roster)
+    result = sess.run(name, {"targets": ["q0"], "num_averages": 30})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    assert list(result["fit"]) == ["q0"]  # fit keyed by the run target name

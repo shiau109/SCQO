@@ -3,6 +3,15 @@
 # scqat at its pinned tag (scqat versions independently: its own pyproject/tag line).
 # Hand-edited at release time by the manager (see RELEASING.md).
 
+[v0-10-1]
+date = 2026-07-21
+scqo = "v0.10.1"                 # 7 single-qubit experiments (Yuhowlin) + the drag_beta pushed field
+lchqbdriver = "v0.10.1"          # drag_beta declared Unrealized (ripple from the promotion)
+lchqmdriver = "v0.10.1"          # 7 QM probes + wrappers; drag_beta realized on the DragCosine node
+scqo-contrib = "v0.10.1"         # no-change re-tag
+scqat = "v0.1.7"                 # NEW: 6 estimators the experiments depend on (sqrb/tomography/drag x2/echo+relaxation flux)
+notes = "Seven single-qubit experiments contributed by Yuhowlin, forward-ported onto the v0.10.0 component model: qubit_sqrb (randomized benchmarking), qubit_pi_pulse_error (inline fit -> refines pi_amp), qubit_tomography, qubit_drag_alternating + qubit_drag_equator (calibrate drag_beta), and qubit_echo_flux + qubit_relaxation_flux (record-only T2-echo / T1 vs flux spectra). NEW pushed ReadableTransmon field drag_beta (dimensionless DRAG coefficient): QM realizes it on the x180_DragCosine node (QUAM stores DRAG as alpha); Qblox declares it Unrealized (rxy.beta exists but no Qblox DRAG experiment writes it yet). The estimators live in scqat, bumped to v0.1.7 (the combo MUST pin it — the experiments import scqat.estimators.qubit_sqrb etc., which the older v0.1.6 tag lacks). UPGRADE REQUIRES: git fetch --tags && git checkout v0.10.1 in the four scqo-versioned repos AND scqat at v0.1.7, then re-run `uv pip install -e . --no-deps` in each editable env -- this refreshes the version string scqo doctor reports (the frozen .dist-info is not updated by git pull) and registers the new experiment/estimator modules. No data action: a device's scqo_state.json gains a drag_beta entry that seeds from the vendor in pull mode (QM) or stays unset (Qblox, Unrealized); old run folders and the index are unchanged. BEHAVIOR: additive and non-breaking; the two flux experiments (qubit_echo_flux / qubit_relaxation_flux) require FluxTunableTransmon targets declaring the flux_bias operation, so they are machine-refused pre-probe on a fixed-frequency chip. NOTE: set_pi_amp on the QM backend is now DragCosine-aware (writes the x180_DragCosine storage node) while still honoring the operation / lock_x90 contract."
+
 [v0-10-0]
 date = 2026-07-20
 scqo = "v0.10.0"                 # the component model: categories.py + roster.py, per-category stores, --targets, field catalog + scqo set, placement rule, duration/integration, pairs

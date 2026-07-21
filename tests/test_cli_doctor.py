@@ -63,7 +63,7 @@ def test_healthy_simulated_setup_passes(tmp_path):
     assert "'sim_main' (auto)" in proc.stdout  # single-setup cycle auto-selects
     # the per-(cooldown, setup) state file: named even before its first save
     assert "sim_main" in proc.stdout and "scqo_state.json (not created yet)" in proc.stdout
-    assert "14 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
+    assert "21 experiment(s)" in proc.stdout  # simulated fills the catalog driver-less
 
 
 def test_missing_registry_or_setup_fails(tmp_path):

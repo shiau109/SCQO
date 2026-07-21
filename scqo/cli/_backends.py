@@ -27,11 +27,11 @@ from scqo.backend import Backend
 #: ROSTER (scqo.testing.demo_roster) adds the satellite components (q*_res, q*_ro,
 #: q*_xy) so every code path exercises the component model.
 DEMO_QUBITS = {
-    "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.20, "readout_amp": 0.25,
-           "readout_power_dbm": -25.0, "readout_duration_s": 2.0e-6,
+    "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.20, "drag_beta": 0.0,
+           "readout_amp": 0.25, "readout_power_dbm": -25.0, "readout_duration_s": 2.0e-6,
            "readout_integration_s": 2.0e-6},
-    "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18, "readout_amp": 0.22,
-           "readout_power_dbm": -27.0, "readout_duration_s": 2.0e-6,
+    "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18, "drag_beta": 0.0,
+           "readout_amp": 0.22, "readout_power_dbm": -27.0, "readout_duration_s": 2.0e-6,
            "readout_integration_s": 2.0e-6},
     # the demo QCQ pair (roster: demo_roster's q0_q1 Coupling/TransmonPair)
     "q0_q1": {"coupler_decouple_v": 0.08, "coupler_interaction_v": -0.12},

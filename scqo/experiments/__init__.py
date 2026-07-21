@@ -6,7 +6,30 @@ these and implement ``probe()`` for their instrument, then ``@register`` the sub
 """
 
 from .pair_zz_coupler import PairZZCoupler, PairZZCouplerParameters, PairZZCouplerResult
+from .qubit_drag_alternating import (
+    QubitDragAlternating,
+    QubitDragAlternatingParameters,
+    QubitDragAlternatingResult,
+)
+from .qubit_drag_equator import (
+    QubitDragEquator,
+    QubitDragEquatorParameters,
+    QubitDragEquatorResult,
+)
+from .qubit_echo_flux import QubitEchoFlux, QubitEchoFluxParameters, QubitEchoFluxResult
+from .qubit_pi_pulse_error import (
+    QubitPiPulseError,
+    QubitPiPulseErrorParameters,
+    QubitPiPulseErrorResult,
+)
 from .qubit_power_rabi import QubitPowerRabi, QubitPowerRabiParameters, QubitPowerRabiResult
+from .qubit_relaxation_flux import (
+    QubitRelaxationFlux,
+    QubitRelaxationFluxParameters,
+    QubitRelaxationFluxResult,
+)
+from .qubit_sqrb import QubitSQRB, QubitSQRBParameters, QubitSQRBResult
+from .qubit_tomography import QubitTomography, QubitTomographyParameters, QubitTomographyResult
 from .qubit_ramsey import QubitRamsey, QubitRamseyParameters, QubitRamseyResult
 from .qubit_spectroscopy import (
     QubitSpectroscopy,
@@ -56,6 +79,27 @@ __all__ = [
     "PairZZCoupler",
     "PairZZCouplerParameters",
     "PairZZCouplerResult",
+    "QubitSQRB",
+    "QubitSQRBParameters",
+    "QubitSQRBResult",
+    "QubitPiPulseError",
+    "QubitPiPulseErrorParameters",
+    "QubitPiPulseErrorResult",
+    "QubitTomography",
+    "QubitTomographyParameters",
+    "QubitTomographyResult",
+    "QubitDragAlternating",
+    "QubitDragAlternatingParameters",
+    "QubitDragAlternatingResult",
+    "QubitDragEquator",
+    "QubitDragEquatorParameters",
+    "QubitDragEquatorResult",
+    "QubitEchoFlux",
+    "QubitEchoFluxParameters",
+    "QubitEchoFluxResult",
+    "QubitRelaxationFlux",
+    "QubitRelaxationFluxParameters",
+    "QubitRelaxationFluxResult",
     "ResonatorSpectroscopy",
     "ResonatorSpectroscopyParameters",
     "ResonatorSpectroscopyResult",

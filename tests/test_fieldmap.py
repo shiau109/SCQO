@@ -79,7 +79,7 @@ def test_fieldspec_portable_metadata():
         for spec in CATEGORIES.values() if spec.side == "instrument"
         for name, fs in spec.fields.items() if not fs.portable
     }
-    assert non_portable == {"pi_amp", "readout_amp", "idle_flux_v",
+    assert non_portable == {"pi_amp", "drag_beta", "readout_amp", "idle_flux_v",
                             "coupler_decouple_v", "coupler_interaction_v"}
     for spec in CATEGORIES.values():
         if spec.side == "physical":
