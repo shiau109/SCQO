@@ -63,8 +63,8 @@ class QubitTomographyParameters(QubitSelection, AveragingParameters):
         description="Qubit configurations mapping qubit name to init_state ('0','1','+','-','+i','-i') and target_gate ('I','X','X90','Y','Y90')"
     )
     gate_counts: list[int] = Field(
-        default_factory=lambda: [0, 1, 2, 5, 10],
-        description="Gate counts to sweep (e.g. [0, 1, 2]). Can also be a string 'start:stop[:step]' or a dict."
+        default_factory=lambda: list(range(0, 11)),
+        description="Gate counts to sweep from 0 to 10 inclusive."
     )
 
     @field_validator("gate_counts", mode="before")
