@@ -218,6 +218,11 @@ CATEGORIES: dict[str, CategorySpec] = {
             "pi_amp": FieldSpec(
                 "", "Amplitude of the calibrated pi (x180) pulse.",
                 push=True, portable=False),
+            "drag_beta": FieldSpec(
+                "", "DRAG coefficient / pre-factor (dimensionless drive-chain knob; "
+                    "QM realizes it as the DragCosine pulse coefficient, Qblox as "
+                    "rxy.beta). Calibrated by qubit_drag_equator / qubit_drag_alternating.",
+                push=True, portable=False),
             "readout_amp": FieldSpec(
                 "", "Amplitude of the readout pulse (dimensionless, within the "
                     "backend's current output-power configuration).",

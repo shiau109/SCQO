@@ -72,7 +72,7 @@ def test_catalog_invariants_hold():
     assert CATEGORIES["ReadableTransmon"].side == "instrument"
     assert CATEGORIES["ZControl"].member_roles == {"transmon": ("FluxTunableTransmon",)}
     assert pushed_fields("ReadableTransmon") == (
-        "readout_freq", "drive_freq", "pi_amp", "readout_amp",
+        "readout_freq", "drive_freq", "pi_amp", "drag_beta", "readout_amp",
         "readout_power_dbm", "readout_duration_s", "readout_integration_s",
         "idle_flux_v")
     assert "FixedTransmon" in field_categories()["t1_s"]
@@ -99,10 +99,10 @@ def test_requires_physical_pruning(tmp_path):
     r = _roster(tmp_path)
     assert "idle_flux_v" not in r.fields_of("q1")   # FixedTransmon
     assert "idle_flux_v" in r.fields_of("q2")        # FluxTunableTransmon
-    assert r.pushed("q1") == ("readout_freq", "drive_freq", "pi_amp",
+    assert r.pushed("q1") == ("readout_freq", "drive_freq", "pi_amp", "drag_beta",
                               "readout_amp", "readout_power_dbm",
                               "readout_duration_s", "readout_integration_s")
-    assert r.pushed("q2") == ("readout_freq", "drive_freq", "pi_amp",
+    assert r.pushed("q2") == ("readout_freq", "drive_freq", "pi_amp", "drag_beta",
                               "readout_amp", "readout_power_dbm",
                               "readout_duration_s", "readout_integration_s",
                               "idle_flux_v")
