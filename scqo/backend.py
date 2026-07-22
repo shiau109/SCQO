@@ -37,13 +37,15 @@ class Backend(ABC):
         """
 
     def power_context(self, qubits: list[str]) -> dict:
-        """Raw per-qubit output-chain values behind ``readout_power_dbm`` at run end.
+        """Raw per-qubit READOUT and DRIVE chain values at run end.
 
-        Vendor-specific keys (QM: full_scale_power_dbm + readout amplitude +
-        readout LO; Qblox: output_att + pulse_amp + the nominal full scale +
-        readout LO), stamped into each run record as PROVENANCE ONLY — never
-        re-applied. The default is ``{}``: the simulated backend has no output
-        chain.
+        Vendor-specific keys behind ``readout_power_dbm`` (QM:
+        full_scale_power_dbm + readout amplitude + readout LO; Qblox:
+        output_att + pulse_amp + the nominal full scale + readout LO) and
+        ``drive_power_dbm`` (QM: drive_full_scale_power_dbm + saturation_amp +
+        drive LO; Qblox: drive_output_att_db + spec_amp + drive LO), stamped
+        into each run record as PROVENANCE ONLY — never re-applied. The default
+        is ``{}``: the simulated backend has no output chain.
         """
         return {}
 

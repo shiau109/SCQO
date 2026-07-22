@@ -173,10 +173,11 @@ setup era. The operator's checklist:
    Device page (it reads saved snapshots, so it works after the old instrument is
    disconnected) and copy `readout_freq` / `drive_freq` per qubit — these are sample
    properties and transfer well.
-3. Do **NOT** transfer `pi_amp` / `readout_amp` — they encode the setup (line
-   attenuation, output gain). Re-derive them with the standard bring-up runs on the
-   new instrument (`scqo run resonator_spectroscopy` → `qubit_spectroscopy` →
-   `qubit_power_rabi`, accepting each step).
+3. Do **NOT** transfer `pi_amp` / `readout_amp` / `drive_amp` — they encode the
+   setup (line attenuation, output gain). Re-derive them with the standard
+   bring-up runs on the new instrument (`scqo run resonator_spectroscopy` →
+   `qubit_spectroscopy` → `qubit_power_rabi`, accepting each step); the absolute
+   twins (`readout_power_dbm`, `drive_power_dbm`) transfer as starting points.
 4. Keep **qubit names identical across instruments** — `q1` must mean the same
    physical qubit in `dut_config.json` AND in the QUAM `state.json`. Names belong to
    the sample; different names would split its trends and history.

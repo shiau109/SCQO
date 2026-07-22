@@ -403,9 +403,11 @@ def test_suggestions_skipped_for_failed_qubit():
 # ---------------------------------------------------------------- coupled-write sync
 # (v0.8: one vendor knob feeds several neutral fields — setting readout_power_dbm
 # re-solves the output chain and moves readout_amp. RecordingDevice._sync_coupled
-# reconciles the echo so the config/staleness guard never desync.)
+# reconciles the echo so the config/staleness guard never desync. v0.11 adds the
+# drive twin: drive_power_dbm <-> drive_amp on its own fake chain.)
 
-_CHAIN_TOP_DBM = -14.0  # the fake chain's power at digital amplitude 1.0
+_CHAIN_TOP_DBM = -14.0  # the fake readout chain's power at digital amplitude 1.0
+_DRIVE_TOP_DBM = -8.0   # the fake drive chain's power at digital amplitude 1.0
 
 
 class _CoupledView:
@@ -449,6 +451,28 @@ class _CoupledView:
         self._state["readout_amp"] = float(value)
 
     @property
+    def drive_amp(self) -> float:
+        return self._state["drive_amp"]
+
+    @drive_amp.setter
+    def drive_amp(self, value: float) -> None:
+        self._state["drive_amp"] = float(value)
+
+    @property
+    def drive_power_dbm(self) -> float:
+        import math
+
+        amp = self._state.get("drive_amp")
+        if not amp:
+            raise ValueError("drive amp unset — power undefined")
+        return _DRIVE_TOP_DBM + 20.0 * math.log10(amp)
+
+    @drive_power_dbm.setter
+    def drive_power_dbm(self, value: float) -> None:
+        # the drive-chain solve: drive_amp becomes the residual
+        self._state["drive_amp"] = 10.0 ** ((float(value) - _DRIVE_TOP_DBM) / 20.0)
+
+    @property
     def readout_power_dbm(self) -> float:
         import math
 
@@ -482,13 +506,20 @@ class _CoupledDevice:
                 entry["readout_power_dbm"] = view.readout_power_dbm
             except ValueError:
                 entry["readout_power_dbm"] = None
+            try:
+                entry["drive_power_dbm"] = view.drive_power_dbm
+            except ValueError:
+                entry["drive_power_dbm"] = None
             out[name] = entry
         return out
 
 
 def _coupled_device() -> _CoupledDevice:
+    # drive_amp 0.1 <-> -28.0 dBm round-trips EXACTLY in floats (10**-1.0 == 0.1,
+    # log10(0.1) == -1.0), so reconcile passes never see phantom last-ulp drift.
     return _CoupledDevice(
-        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25}}
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "drive_amp": 0.1}}
     )
 
 
@@ -558,6 +589,7 @@ def test_push_load_reconciles_inconsistent_saved_pair(tmp_path):
     path.write_text(_json.dumps({
         "schema": 2,
         "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                          "drive_amp": 0.1, "drive_power_dbm": -28.0,  # consistent pair
                           "readout_amp": 0.9,               # inconsistent with the power below
                           "readout_power_dbm": -20.0}},     # -> amp must become ~0.5
     }), encoding="utf-8")
@@ -567,6 +599,37 @@ def test_push_load_reconciles_inconsistent_saved_pair(tmp_path):
     assert np.isclose(dev.snapshot()["q0"]["readout_amp"], expected_amp)
     echoes = [r for r in dev.history() if r.coupled_to == "readout_power_dbm"]
     assert [r.field for r in echoes] == ["readout_amp"]
+
+
+def test_push_load_reconciles_both_chains_with_own_anchors(tmp_path):
+    """Two chains, two anchors: a push-mode load with BOTH saved pairs
+    inconsistent reconciles each residual amp under ITS OWN absolute power —
+    the drive echo is attributed to drive_power_dbm, never swept into the
+    readout anchor's reconcile."""
+    import json as _json
+
+    from scqo import RecordingDevice
+
+    path = tmp_path / "scqo_state.json"
+    path.write_text(_json.dumps({
+        "schema": 2,
+        "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                          "drive_amp": 0.9,                 # inconsistent with -28 dBm
+                          "drive_power_dbm": -28.0,         # -> drive_amp must become 0.1
+                          "readout_amp": 0.9,               # inconsistent with -20 dBm
+                          "readout_power_dbm": -20.0}},     # -> readout_amp ~0.5
+    }), encoding="utf-8")
+
+    dev = RecordingDevice(_coupled_device(), _q0_roster(), state_path=str(path), on_load="push")
+    snap = dev.snapshot()["q0"]
+    assert np.isclose(snap["drive_amp"], 0.1)
+    assert np.isclose(snap["readout_amp"], 10.0 ** ((-20.0 - _CHAIN_TOP_DBM) / 20.0))
+    by_anchor = {}
+    for r in dev.history():
+        if r.coupled_to:
+            by_anchor.setdefault(r.coupled_to, []).append(r.field)
+    assert by_anchor == {"drive_power_dbm": ["drive_amp"],
+                         "readout_power_dbm": ["readout_amp"]}
 
 
 def test_push_mode_startup_reconciliation_rows_survive_save(tmp_path):
@@ -583,6 +646,7 @@ def test_push_mode_startup_reconciliation_rows_survive_save(tmp_path):
     path.write_text(_json.dumps({
         "schema": 2,
         "config": {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                          "drive_amp": 0.1, "drive_power_dbm": -28.0,  # consistent pair
                           "readout_amp": 0.9,               # inconsistent with the power below
                           "readout_power_dbm": -20.0}},
     }), encoding="utf-8")

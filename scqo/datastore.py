@@ -123,9 +123,10 @@ class RunRecord(BaseModel):
     #: dicts, kept opaque here): qubit/field/store/before/after + decision status.
     #: Stored in record.json — the truth — so decisions survive any index rebuild.
     suggestions: list[dict] = Field(default_factory=list)
-    #: raw per-qubit output-chain values behind readout_power_dbm at run END
-    #: (Backend.power_context: vendor-specific keys, provenance only, never
-    #: re-applied). record.json-only — deliberately NOT an index column.
+    #: raw per-qubit readout + drive chain values behind readout_power_dbm /
+    #: drive_power_dbm at run END (Backend.power_context: vendor-specific keys,
+    #: provenance only, never re-applied). record.json-only — deliberately NOT
+    #: an index column.
     power_context: dict = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     note: str = ""

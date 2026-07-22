@@ -9,6 +9,7 @@ frequency (Ramsey is the fine-tuning follow-up, not the bring-up tool).
 
 from __future__ import annotations
 
+import math
 from typing import ClassVar
 
 import numpy as np
@@ -29,8 +30,12 @@ class QubitSpectroscopyParameters(TargetSelection, AveragingParameters):
         60.0e6, gt=0, description="Full drive-detuning span swept around the current drive_freq."
     )
     num_points: int = Field(201, gt=1, description="Number of frequency points.")
-    drive_amp: float = Field(
-        0.1, gt=0, description="Saturation drive amplitude (backend units: amplitude factor on QM, voltage offset on Qblox)."
+    drive_power_dbm: float = Field(
+        -25.0,
+        le=10.0,
+        description="Absolute saturation-drive power (dBm at the instrument drive port), "
+        "applied as a recorded boundary write through the drive chain and reverted after "
+        "the run. QM caps at +10 dBm; Qblox above ~-1 dBm needs amplitude > 0.5.",
     )
     drive_len_ns: float | None = Field(
         None, gt=0, description="Saturation pulse length in ns where the backend needs one (QM); None = backend's configured length. Continuous-drive backends ignore it."
@@ -64,6 +69,56 @@ class QubitSpectroscopy(Experiment):
     def define_sweep(self) -> dict[str, np.ndarray]:
         span = self.params.frequency_span_hz
         return {"detuning_hz": np.linspace(-span / 2, span / 2, self.params.num_points)}
+
+    def run(self) -> Result:
+        """Boundary-recorded drive-chain set -> acquire -> revert.
+
+        The saturation power is a per-run STIMULUS, not a calibration proposal:
+        ``drive_power_dbm`` is written through ``self.device`` (the Session's
+        RecordingDevice) at the start and reverted in ``finally`` — 2
+        ChangeRecords + coupled ``drive_amp`` echoes per qubit, the punchout
+        discipline of ``resonator_spectroscopy_power_amp``. While the chain is
+        off its standing value the stored pi_amp means a different power; no pi
+        pulse is played here, and the revert is exact (discrete chain knob, the
+        amplitude restored verbatim).
+        """
+        self.sweep_axes = self.define_sweep()
+        target_dbm = float(self.params.drive_power_dbm)
+        targets = list(self.params.targets)
+        views = {q: self.device.component(q) for q in targets}
+
+        previous: dict[str, float] = {}
+        for q, view in views.items():
+            try:
+                before = view.drive_power_dbm
+            except (KeyError, ValueError):
+                before = None
+            if before is None or not math.isfinite(float(before)):
+                raise RuntimeError(
+                    f"{q}: drive_power_dbm is unknown (unconfigured drive chain / zero "
+                    f"saturation amplitude) — the revert target would be undefined; set "
+                    f"drive_power_dbm (or fix drive_amp) first"
+                )
+            previous[q] = float(before)
+        for view in views.values():
+            view.drive_power_dbm = target_dbm  # recorded boundary write (+ coupled echo)
+
+        try:
+            self.dataset = self.backend.acquire(self)
+        finally:
+            revert_errors = []
+            for q, view in views.items():  # recorded boundary revert (+ coupled echo)
+                try:
+                    view.drive_power_dbm = previous[q]
+                except Exception as err:  # noqa: BLE001 - collected and re-raised below
+                    revert_errors.append(f"{q}: {type(err).__name__}: {err}")
+            if revert_errors:
+                raise RuntimeError(
+                    "drive chain revert failed for " + "; ".join(revert_errors)
+                )
+        self.Contract.validate(self.dataset)
+        self.result = self.estimate()
+        return self.result
 
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         detuning = coords["detuning_hz"]

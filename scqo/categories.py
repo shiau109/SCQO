@@ -38,9 +38,11 @@ class FieldSpec:
     #: False = only meaningful within ONE backend's current output-chain
     #: configuration (the dimensionless amplitudes) — never carry it to the other
     #: backend. Every portable=False field must either NAME a portable twin
-    #: (readout_amp -> readout_power_dbm, the absolute quantity that wins on
-    #: conflict) or have its untracked chain scale CATALOGUED in the driver's
-    #: VENDOR_ONLY (pi_amp -> the drive-port scale knobs; no twin exists).
+    #: (readout_amp -> readout_power_dbm, drive_amp -> drive_power_dbm — the
+    #: absolute quantity that wins on conflict) or have its chain scale
+    #: CATALOGUED in the driver's VENDOR_ONLY (pi_amp -> the drive-port scale
+    #: knobs, now the tracked drive_power_dbm realizers; pi_amp itself still
+    #: has no power twin).
     #: Metadata for `scqo state --fields` and the AI loop; no code path enforces
     #: it (the era guard already blocks cross-setup accepts at apply time).
     portable: bool = True
@@ -203,7 +205,7 @@ CATEGORIES: dict[str, CategorySpec] = {
     # -------------------------------------------------------- instrument/single
     "ReadableTransmon": CategorySpec(
         side="instrument", kind="single",
-        doc="A transmon we can drive and read out. The five established pushed "
+        doc="A transmon we can drive and read out. The established pushed "
             "knobs plus the fidelity monitor; idle_flux_v exists only on "
             "flux-tunable realizations.",
         fields={
@@ -223,6 +225,24 @@ CATEGORIES: dict[str, CategorySpec] = {
                     "QM realizes it as the DragCosine pulse coefficient, Qblox as "
                     "rxy.beta). Calibrated by qubit_drag_equator / qubit_drag_alternating.",
                 push=True, portable=False),
+            # Keep drive_power_dbm AFTER drive_amp: pushes go in declaration
+            # order and the absolute power must win (drive_amp is the chain
+            # solve's residual).
+            "drive_amp": FieldSpec(
+                "", "Amplitude of the saturation (spec) drive pulse (dimensionless, "
+                    "within the backend's current drive-chain configuration) — the "
+                    "drive_power_dbm chain solve's residual.",
+                push=True, portable=False),
+            "drive_power_dbm": FieldSpec(
+                "dBm",
+                "Absolute saturation (spec) drive power at the instrument drive "
+                "port. Setting it re-solves the DRIVE chain (QM xy "
+                "full_scale_power_dbm / Qblox drive-port output_att) keeping the "
+                "saturation amplitude <= 0.5 full scale; drive_amp changes as a "
+                "COUPLED side effect. The chain scale is shared by every xy "
+                "operation: while it is off its standing value the stored pi_amp "
+                "means a different power (an exact revert restores it).",
+                push=True),
             "readout_amp": FieldSpec(
                 "", "Amplitude of the readout pulse (dimensionless, within the "
                     "backend's current output-power configuration).",

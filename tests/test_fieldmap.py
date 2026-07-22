@@ -20,6 +20,7 @@ from scqo.session import Session
 from scqo.testing import InMemoryDevice, SimulatedBackend, demo_roster
 
 QUBITS = {"q0": {"readout_freq": 5.9e9, "drive_freq": 4.8e9, "pi_amp": 0.2,
+                 "drive_amp": 0.2, "drive_power_dbm": -21.0,
                  "readout_amp": 0.1, "readout_power_dbm": -30.0}}
 NO_DEVICE_CFG = SimpleNamespace(device=None)
 
@@ -79,8 +80,9 @@ def test_fieldspec_portable_metadata():
         for spec in CATEGORIES.values() if spec.side == "instrument"
         for name, fs in spec.fields.items() if not fs.portable
     }
-    assert non_portable == {"pi_amp", "drag_beta", "readout_amp", "idle_flux_v",
-                            "coupler_decouple_v", "coupler_interaction_v"}
+    assert non_portable == {"pi_amp", "drag_beta", "drive_amp", "readout_amp",
+                            "idle_flux_v", "coupler_decouple_v",
+                            "coupler_interaction_v"}
     for spec in CATEGORIES.values():
         if spec.side == "physical":
             assert all(fs.portable for fs in spec.fields.values())

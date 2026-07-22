@@ -69,8 +69,8 @@ class _InMemoryComponent(ComponentView):
 
     def __setattr__(self, field: str, value) -> None:
         # Deliberately permissive: the simulated vendor accepts whatever the
-        # neutral layer pushes (readout_power_dbm stays uncoupled from
-        # readout_amp here — no output chain exists).
+        # neutral layer pushes (readout_power_dbm / drive_power_dbm stay
+        # uncoupled from readout_amp / drive_amp here — no output chain exists).
         self._state[field] = float(value)
 
 

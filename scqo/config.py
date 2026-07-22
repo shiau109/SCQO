@@ -372,20 +372,25 @@ class RecordingDevice(DeviceModel):
         self._record(component, field, value)
         self._sync_coupled(component, field)
 
-    def _sync_coupled(self, component: str, changed_field: str) -> None:
+    def _sync_coupled(
+        self, component: str, changed_field: str, fields: tuple[str, ...] | None = None
+    ) -> None:
         """Reconcile vendor-side write echoes so the SCQO config never desyncs.
 
         One vendor knob may feed several neutral fields (setting readout_power_dbm
         re-solves the output chain, which moves readout_amp). After a push of one
         field, re-read the component's OTHER pushed fields from the vendor; any
         drifted value gets its own ChangeRecord (``coupled_to`` = the written
-        field) and a config update."""
+        field) and a config update. ``fields`` restricts the reconcile to those
+        pushed fields (used when two chain-owning anchors coexist)."""
         try:
             view = self._inner.component(component)
         except KeyError:
             return  # roster name the vendor does not realize: nothing to reconcile
         for other in self._pushed(component):
             if other == changed_field:
+                continue
+            if fields is not None and other not in fields:
                 continue
             try:
                 current = getattr(view, other)
@@ -470,7 +475,18 @@ class RecordingDevice(DeviceModel):
                         # doctor witnesses) must not brick session construction.
                         break
             if pushed:
-                # Reconcile against the chain-owning field (the absolute power)
+                # Reconcile against the chain-owning fields (the absolute powers)
                 # so coupled provenance is attributed to the write that wins.
+                # Two chains, two anchors: the drive pair reconciles first and
+                # only within itself; the readout anchor covers the rest (the
+                # drive pair is excluded there — the readout chain cannot move
+                # it, and re-reading a power getter risks last-ulp phantom
+                # drift, the same reason the anchor skips itself).
+                rest = pushed
+                if "drive_power_dbm" in pushed:
+                    self._sync_coupled(name, "drive_power_dbm", fields=("drive_amp",))
+                    rest = tuple(
+                        f for f in pushed if f not in ("drive_amp", "drive_power_dbm")
+                    )
                 anchor = "readout_power_dbm" if "readout_power_dbm" in pushed else pushed[-1]
-                self._sync_coupled(name, anchor)
+                self._sync_coupled(name, anchor, fields=rest)

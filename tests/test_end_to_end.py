@@ -136,9 +136,9 @@ def _device() -> InMemoryDevice:
     return InMemoryDevice(
         {
             "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25,
-                   "readout_power_dbm": -25.0},
+                   "readout_power_dbm": -25.0, "drive_amp": 0.2, "drive_power_dbm": -21.0},
             "q1": {"readout_freq": 6.05e9, "drive_freq": 4.01e9, "pi_amp": 0.18, "readout_amp": 0.22,
-                   "readout_power_dbm": -27.0},
+                   "readout_power_dbm": -27.0, "drive_amp": 0.15, "drive_power_dbm": -23.0},
             "q0_q1": {"coupler_decouple_v": 0.08, "coupler_interaction_v": -0.1},
         },
         {"q0_q1": "TransmonPair"},
@@ -253,18 +253,59 @@ def test_ramsey_generalizes_pattern():
 
 
 def test_qubit_spectroscopy_finds_peak_and_updates_drive_freq():
-    """Two-tone: peak search within the swept window -> coarse drive_freq update."""
+    """Two-tone: peak search within the swept window -> coarse drive_freq update.
+    The saturation power is a reverted STIMULUS (punchout discipline): the
+    set/revert pair is recorded, the standing drive_power_dbm survives the run."""
     sess = Session(SimulatedBackend(_device()), demo_roster())
 
-    before = sess.device_state()["q0"]["drive_freq"]
+    before = sess.device_state()["q0"]
     result = sess.run("qubit_spectroscopy", {"targets": ["q0"], "frequency_span_hz": 60e6},
                       update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     assert abs(fit["peak_detuning_hz"]) <= 60e6 / 2  # inside the swept window
     assert fit["fwhm_hz"] > 0 and fit["n_peaks"] >= 1
-    after = sess.device_state()["q0"]["drive_freq"]
-    assert np.isclose(after, before + fit["peak_detuning_hz"])
+    after = sess.device_state()["q0"]
+    assert np.isclose(after["drive_freq"], before["drive_freq"] + fit["peak_detuning_hz"])
+    # stimulus reverted: the standing power (and its residual amp) are unchanged
+    assert after["drive_power_dbm"] == before["drive_power_dbm"]
+    assert after["drive_amp"] == before["drive_amp"]
+    # ...and the set-top/revert pair is honestly recorded (default -25 dBm target)
+    power_moves = [h for h in sess.history() if h["field"] == "drive_power_dbm"]
+    assert [h["new"] for h in power_moves] == [-25.0, before["drive_power_dbm"]]
+    assert all(h["experiment"] == "qubit_spectroscopy" for h in power_moves)
+
+
+def test_qubit_spectroscopy_refuses_unconfigured_drive_chain():
+    """drive_power_dbm unknown -> structured failure (the revert target would be
+    undefined), the same semantics as the punchouts' readout guard."""
+    device = InMemoryDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "readout_power_dbm": -25.0,
+                "drive_amp": 0.2, "drive_power_dbm": None}}
+    )
+    sess = Session(SimulatedBackend(device), demo_roster(qubits=("q0",)))
+    result = sess.run("qubit_spectroscopy", {"targets": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.FAILED.value
+    assert "drive_power_dbm is unknown" in (result["error"] or "")
+    assert result["suggestions"] == []
+
+
+def test_qubit_spectroscopy_reverts_drive_power_on_acquire_failure():
+    """A mid-acquisition crash must still restore the standing drive chain: the
+    revert runs in finally, and both boundary records land in the history."""
+
+    class _ExplodingBackend(SimulatedBackend):
+        def acquire(self, experiment):
+            raise RuntimeError("cryostat gremlin")
+
+    sess = Session(_ExplodingBackend(_device()), demo_roster())
+    before = sess.device_state()
+    result = sess.run("qubit_spectroscopy", {"targets": ["q0"], "frequency_span_hz": 60e6})
+    assert "cryostat gremlin" in (result["error"] or "")
+    assert sess.device_state() == before  # reverted despite the crash
+    power_moves = [h for h in sess.history() if h["field"] == "drive_power_dbm"]
+    assert [h["new"] for h in power_moves] == [-25.0, before["q0"]["drive_power_dbm"]]
 
 
 def test_qubit_relaxation_records_t1():
@@ -413,7 +454,8 @@ def test_resonator_flux_map_recovers_dispersive_model():
     """Resonator-vs-flux: dip trace + dispersive fit -> sweet spot inside the swept
     window, coupling g near the simulated range; the dispersive quantities land in
     the PHYSICAL store on their owning components (ZControl / Resonator /
-    ReadoutLine) — no instrument knob. f_r0/g are proposed only when the fit was
+    ReadoutLine), and the two pushed transmon knobs idle_flux_v + readout_freq set
+    the operating point at the sweet spot. f_r0/g are proposed only when the fit was
     constrained by a supplied f_q_max_hz, and the assumed/input f_q_max is never
     recorded as measured physics."""
     sess = Session(SimulatedBackend(_device()), _flux_roster())
@@ -434,8 +476,17 @@ def test_resonator_flux_map_recovers_dispersive_model():
     assert -0.3 <= fit["v_offset_v"] <= 0.3
     assert 40e6 < fit["g_hz"] < 200e6  # sim truth 70-100 MHz, loose fit tolerance
     assert abs(fit["f_r0_hz"] - fit["old_readout_freq"]) < 20e6  # bare near dressed
-    assert sess.device_state() == state_before  # instrument config untouched
-    assert sess.history() == []
+    # The operating-point knobs: idle_flux_v = v_offset_v (park at the sweet spot)
+    # and readout_freq = sweet_spot_res_hz (the dip there) — the ONLY device-state
+    # changes, and the only fields in history.
+    after = sess.device_state()
+    assert after["q0"]["idle_flux_v"] == fit["v_offset_v"]
+    assert after["q0"]["readout_freq"] == fit["sweet_spot_res_hz"]
+    changed = {(c, k) for c in set(state_before) | set(after)
+               for k in set(state_before.get(c, {})) | set(after.get(c, {}))
+               if state_before.get(c, {}).get(k) != after.get(c, {}).get(k)}
+    assert changed == {("q0", "idle_flux_v"), ("q0", "readout_freq")}, changed
+    assert {h["field"] for h in sess.history()} == {"idle_flux_v", "readout_freq"}
     physical = sess.physical_state()
     assert physical["q0_z"]["v_offset_v"] == fit["v_offset_v"]
     assert physical["q0_z"]["v_per_phi0_v"] == fit["v_per_phi0_v"]

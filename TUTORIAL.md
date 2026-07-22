@@ -698,10 +698,12 @@ measurement from the same dip — two roles, two homes, on purpose).
    convert to each other). Two value conventions:
    - absolute at the closest **declared** calibratable plane (Hz; dBm at the
      instrument output port; s) → `portable=True`;
-   - dimensionless fraction of an untracked chain scale → `portable=False`,
+   - dimensionless fraction of a chain scale → `portable=False`,
      never copied across backends; it must name a portable twin
-     (`readout_amp` → `readout_power_dbm`) or have its chain scale catalogued
-     (`pi_amp` → the drive-port scale entries).
+     (`readout_amp` → `readout_power_dbm`, `drive_amp` → `drive_power_dbm`) or
+     have its chain scale catalogued (`pi_amp` → the drive-port scale entries,
+     now the tracked `drive_power_dbm` realizers; `pi_amp` itself still has no
+     power twin).
    Scope limits: emission-side only (acquisition-IQ-frame values — thresholds,
    demod rotation, weights — have no declarable plane, ever), and per-qubit
    only (portable-looking setup plumbing like a TWPA pump is still vendor).
