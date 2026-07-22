@@ -422,13 +422,35 @@ def test_qubit_flux_map_recovers_arch():
     assert fit["f01_at_sweet_spot_hz"] == np.float64(fit["f01_at_sweet_spot_hz"])
     assert abs(fit["f01_at_sweet_spot_hz"] - fit["old_drive_freq"]) < 40e6
     assert fit["ej_sum_hz"] > 0
-    assert sess.device_state() == state_before  # instrument config untouched
-    assert sess.history() == []
+    assert sess.device_state() == state_before  # net-zero: the drive stimulus is reverted
+    # the saturation-power stimulus is set (-25 dBm default) then reverted to the
+    # standing value — recorded in the instrument history though the device is unchanged;
+    # the arch proposals themselves are physical (applied to physical.json, below)
+    power_moves = [h for h in sess.history() if h["field"] == "drive_power_dbm"]
+    assert [h["new"] for h in power_moves] == [-25.0, state_before["q0"]["drive_power_dbm"]]
+    assert all(h["experiment"] == "qubit_spectroscopy_flux" for h in power_moves)
+    assert {h["field"] for h in sess.history()} == {"drive_power_dbm"}  # nothing else instrument-side
     physical = sess.physical_state()
     assert physical["q0"]["ej_sum_hz"] == fit["ej_sum_hz"]
     assert physical["q0"]["f_q_max_hz"] == fit["f01_at_sweet_spot_hz"]
     assert physical["q0_z"]["v_offset_v"] == fit["v_offset_v"]
     assert physical["q0_z"]["v_per_phi0_v"] == fit["v_per_phi0_v"]
+
+
+def test_qubit_spectroscopy_flux_refuses_unconfigured_drive_chain():
+    """The flux map shares qubit_spectroscopy's drive-power guard (the shared
+    drive_power_boundary): an unknown drive_power_dbm fails structurally before
+    any acquisition — the revert target would be undefined."""
+    device = InMemoryDevice(
+        {"q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2,
+                "readout_amp": 0.25, "readout_power_dbm": -25.0,
+                "drive_amp": 0.2, "drive_power_dbm": None}}
+    )
+    sess = Session(SimulatedBackend(device), _flux_roster(qubits=("q0",)))
+    result = sess.run("qubit_spectroscopy_flux", {"targets": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.FAILED.value
+    assert "drive_power_dbm is unknown" in (result["error"] or "")
+    assert result["suggestions"] == []
 
 
 def test_single_shot_readout_fidelity():

@@ -13,6 +13,11 @@ in the run index (``fit_trend``).
 Flux safety: the flux axis is in volts on the qubit's flux line, bounded to
 |V| <= 0.5 by the parameter schema; probes must return the line to its idle
 value after the sweep.
+
+Drive power: the weak saturation drive is a per-run STIMULUS set via
+``drive_power_dbm`` (a recorded boundary write, reverted after — the same
+discipline as ``qubit_spectroscopy``); both backends play a saturation drive at
+that absolute power (no calibrated pi pulse is needed).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ._drive_power import drive_power_boundary
 from ._sim import stable_seed
 from ..contract import DatasetContract
 from ..experiment import Experiment
@@ -39,6 +45,13 @@ class QubitSpectroscopyFluxParameters(TargetSelection, AveragingParameters):
     max_flux_v: float = Field(0.3, le=0.5, description="Highest flux bias (V).")
     num_flux_points: int = Field(21, gt=4, description="Number of flux points (the arch fit needs >= 5 good slices).")
     ec_ghz: float = Field(0.2, gt=0, description="Charging energy (GHz) held fixed in the arch model.")
+    drive_power_dbm: float = Field(
+        -25.0,
+        le=10.0,
+        description="Absolute saturation-drive power (dBm at the instrument drive port), set "
+        "as a recorded boundary write through the drive chain before the flux map and reverted "
+        "after. QM caps at +10 dBm; Qblox above ~-1 dBm needs amplitude > 0.5.",
+    )
     flux_component: str | None = Field(
         None,
         description="QUBIT whose z-line is swept instead of each target's own (the "
@@ -83,6 +96,22 @@ class QubitSpectroscopyFlux(Experiment):
             "flux_bias_v": np.linspace(self.params.min_flux_v, self.params.max_flux_v, self.params.num_flux_points),
             "detuning_hz": np.linspace(-span / 2, span / 2, self.params.num_freq_points),
         }
+
+    def run(self) -> Result:
+        """Boundary-recorded drive-chain set -> acquire -> revert (shared helper).
+
+        Same saturation-power stimulus discipline as ``qubit_spectroscopy``:
+        ``drive_power_boundary`` parks ``drive_power_dbm`` before the flux map and
+        reverts it exactly afterwards, so both backends drive the arch sweep at the
+        requested absolute power (QM: the saturation op; Qblox: the CW spec drive).
+        The arch proposals are physical facts, unrelated to this stimulus.
+        """
+        self.sweep_axes = self.define_sweep()
+        with drive_power_boundary(self, self.params.drive_power_dbm):
+            self.dataset = self.backend.acquire(self)
+        self.Contract.validate(self.dataset)
+        self.result = self.estimate()
+        return self.result
 
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         flux = coords["flux_bias_v"]

@@ -9,13 +9,13 @@ frequency (Ramsey is the fine-tuning follow-up, not the bring-up tool).
 
 from __future__ import annotations
 
-import math
 from typing import ClassVar
 
 import numpy as np
 from pydantic import Field
 
 from .._scqat import per_qubit_results
+from ._drive_power import drive_power_boundary
 from ._sim import stable_seed
 from ..contract import DatasetContract
 from ..experiment import Experiment
@@ -71,51 +71,17 @@ class QubitSpectroscopy(Experiment):
         return {"detuning_hz": np.linspace(-span / 2, span / 2, self.params.num_points)}
 
     def run(self) -> Result:
-        """Boundary-recorded drive-chain set -> acquire -> revert.
+        """Boundary-recorded drive-chain set -> acquire -> revert (shared helper).
 
         The saturation power is a per-run STIMULUS, not a calibration proposal:
-        ``drive_power_dbm`` is written through ``self.device`` (the Session's
-        RecordingDevice) at the start and reverted in ``finally`` — 2
+        ``drive_power_boundary`` writes ``drive_power_dbm`` through ``self.device``
+        (the Session's RecordingDevice) and reverts it exactly afterwards — 2
         ChangeRecords + coupled ``drive_amp`` echoes per qubit, the punchout
-        discipline of ``resonator_spectroscopy_power_amp``. While the chain is
-        off its standing value the stored pi_amp means a different power; no pi
-        pulse is played here, and the revert is exact (discrete chain knob, the
-        amplitude restored verbatim).
+        discipline of ``resonator_spectroscopy_power_amp``.
         """
         self.sweep_axes = self.define_sweep()
-        target_dbm = float(self.params.drive_power_dbm)
-        targets = list(self.params.targets)
-        views = {q: self.device.component(q) for q in targets}
-
-        previous: dict[str, float] = {}
-        for q, view in views.items():
-            try:
-                before = view.drive_power_dbm
-            except (KeyError, ValueError):
-                before = None
-            if before is None or not math.isfinite(float(before)):
-                raise RuntimeError(
-                    f"{q}: drive_power_dbm is unknown (unconfigured drive chain / zero "
-                    f"saturation amplitude) — the revert target would be undefined; set "
-                    f"drive_power_dbm (or fix drive_amp) first"
-                )
-            previous[q] = float(before)
-        for view in views.values():
-            view.drive_power_dbm = target_dbm  # recorded boundary write (+ coupled echo)
-
-        try:
+        with drive_power_boundary(self, self.params.drive_power_dbm):
             self.dataset = self.backend.acquire(self)
-        finally:
-            revert_errors = []
-            for q, view in views.items():  # recorded boundary revert (+ coupled echo)
-                try:
-                    view.drive_power_dbm = previous[q]
-                except Exception as err:  # noqa: BLE001 - collected and re-raised below
-                    revert_errors.append(f"{q}: {type(err).__name__}: {err}")
-            if revert_errors:
-                raise RuntimeError(
-                    "drive chain revert failed for " + "; ".join(revert_errors)
-                )
         self.Contract.validate(self.dataset)
         self.result = self.estimate()
         return self.result

@@ -29,7 +29,8 @@ class _PhResonatorSpectroscopyFlux(ResonatorSpectroscopyFlux):
 def _device() -> InMemoryDevice:
     return InMemoryDevice(
         {
-            "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25},
+            "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25,
+                   "drive_amp": 0.2, "drive_power_dbm": -21.0},
         }
     )
 
@@ -133,8 +134,11 @@ def test_flux_experiments_physics_lands_on_accept(tmp_path):
     assert physical["q0"]["ej_sum_hz"] == result["fit"]["q0"]["ej_sum_hz"]
     assert physical["q0_z"]["v_per_phi0_v"] == result["fit"]["q0"]["v_per_phi0_v"]
     assert all(h.run_id == result["run_id"] for h in sess.physical.history())
-    assert sess.device_state() == state_before  # no instrument knob involved
-    assert sess.history() == []
+    assert sess.device_state() == state_before  # net-zero: the drive stimulus reverts
+    # the only instrument-history rows are the flux run's saturation-power stimulus
+    # (set -> revert), which leaves the config unchanged (device_state above)
+    assert {h["field"] for h in sess.history()} == {"drive_power_dbm"}
+    assert all(h["experiment"] == "qubit_spectroscopy_flux" for h in sess.history())
 
     # persisted on disk at the device-level fallback (a setup-less direct-API
     # session with a data_root but no cooldown/setup), flat values
