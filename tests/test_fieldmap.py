@@ -82,7 +82,11 @@ def test_fieldspec_portable_metadata():
     }
     assert non_portable == {"pi_amp", "drag_beta", "drive_amp", "readout_amp",
                             "idle_flux_v", "coupler_decouple_v",
-                            "coupler_interaction_v"}
+                            "coupler_interaction_v",
+                            # measured blob centers: acquisition-frame units,
+                            # chain-dependent monitors (push=False)
+                            "readout_pos_g_i", "readout_pos_g_q",
+                            "readout_pos_e_i", "readout_pos_e_q"}
     for spec in CATEGORIES.values():
         if spec.side == "physical":
             assert all(fs.portable for fs in spec.fields.values())

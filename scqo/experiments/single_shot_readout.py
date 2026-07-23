@@ -145,12 +145,22 @@ class SingleShotReadout(Experiment):
         return result
 
     def update(self) -> None:
-        # Record the assignment fidelity as device state (record-only field). The
-        # confusion entries (p_e_given_g = thermal population etc.) deliberately stay
-        # run-record-only: they are instrument-dependent — compare across instruments
-        # by query, never as device state.
+        # Record the assignment fidelity + the measured |g>/|e> blob centers as device
+        # state (record-only monitor fields). The centers are the stored REFERENCE the
+        # IQ->1D reductions consume (radial ref / axial positions) and the input of the
+        # volts->population conversion; consumers must staleness-gate them (they drift
+        # with the readout condition). The confusion entries (p_e_given_g = thermal
+        # population etc.) deliberately stay run-record-only: they are
+        # instrument-dependent — compare across instruments by query, never as device
+        # state.
         if self.result is None:
             return
+        pos_fields = (("readout_pos_g_i", "mean_g_i"), ("readout_pos_g_q", "mean_g_q"),
+                      ("readout_pos_e_i", "mean_e_i"), ("readout_pos_e_q", "mean_e_q"))
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
-                self.device.component(qubit).readout_fidelity = fit["readout_fidelity"]
+                view = self.device.component(qubit)
+                view.readout_fidelity = fit["readout_fidelity"]
+                if np.all(np.isfinite([fit[key] for _, key in pos_fields])):
+                    for field, key in pos_fields:
+                        setattr(view, field, fit[key])

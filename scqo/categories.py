@@ -279,6 +279,29 @@ CATEGORIES: dict[str, CategorySpec] = {
                 "", "Single-shot assignment fidelity (0.5..1) — measured monitor, "
                     "never pushed.",
                 push=False),
+            # The measured |g>/|e> readout blob centers (single_shot_readout GMM),
+            # acquisition-frame units (instrument-dependent; raw demod on QM, V on
+            # Qblox) — measured monitors, never pushed. The stored REFERENCE the
+            # IQ->1D reductions consume (radial ref = the |g> point; axial axis =
+            # the |g>->|e> line) and the volts->population conversion
+            # P = Re[(z-S_g)conj(S_e-S_g)]/|S_e-S_g|^2; staleness-gated by the
+            # consumer (they drift with the readout condition).
+            "readout_pos_g_i": FieldSpec(
+                "", "Measured |g> readout blob center, I component "
+                    "(acquisition-frame units) — measured monitor, never pushed.",
+                push=False, portable=False),
+            "readout_pos_g_q": FieldSpec(
+                "", "Measured |g> readout blob center, Q component "
+                    "(acquisition-frame units) — measured monitor, never pushed.",
+                push=False, portable=False),
+            "readout_pos_e_i": FieldSpec(
+                "", "Measured |e> readout blob center, I component "
+                    "(acquisition-frame units) — measured monitor, never pushed.",
+                push=False, portable=False),
+            "readout_pos_e_q": FieldSpec(
+                "", "Measured |e> readout blob center, Q component "
+                    "(acquisition-frame units) — measured monitor, never pushed.",
+                push=False, portable=False),
             "idle_flux_v": FieldSpec(
                 "V", "Standing flux-bias voltage at idle. Volts (what is pushed); "
                      "the portable Phi0 representation is derived via the "

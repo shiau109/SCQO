@@ -470,12 +470,18 @@ def test_single_shot_readout_fidelity():
     assert 0.0 <= fit["p_g_given_e"] < 0.15
     assert sess.device_state()["q0"]["readout_fidelity"] == fit["readout_fidelity"]
     assert "p_e_given_g" not in sess.device_state()["q0"]  # stays run-record-only
-    assert [h["field"] for h in sess.history()] == ["readout_fidelity"]
-    # the measured g/e blob centers are exposed as run-record facts (the input a
-    # driver's discriminator calibration consumes); sim blobs at (0,0)/(sep,0)
+    # the measured g/e blob centers are exposed as fit facts AND recorded as
+    # push=False monitor fields (the stored reference for the reductions +
+    # the volts->population conversion); sim blobs at (0,0)/(sep,0)
     for key in ("mean_g_i", "mean_g_q", "mean_e_i", "mean_e_q"):
         assert np.isfinite(fit[key])
     assert abs(fit["mean_e_i"] - fit["mean_g_i"]) > 2.0  # separated blobs along I
+    state_q0 = sess.device_state()["q0"]
+    assert state_q0["readout_pos_g_i"] == fit["mean_g_i"]
+    assert state_q0["readout_pos_e_i"] == fit["mean_e_i"]
+    assert {h["field"] for h in sess.history()} == {
+        "readout_fidelity", "readout_pos_g_i", "readout_pos_g_q",
+        "readout_pos_e_i", "readout_pos_e_q"}
 
 
 def test_single_shot_calibrate_discriminator_inert_on_sim():
@@ -486,7 +492,9 @@ def test_single_shot_calibrate_discriminator_inert_on_sim():
                       {"targets": ["q0"], "num_shots": 800, "calibrate_discriminator": True},
                       update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
-    assert [h["field"] for h in sess.history()] == ["readout_fidelity"]
+    assert {h["field"] for h in sess.history()} == {
+        "readout_fidelity", "readout_pos_g_i", "readout_pos_g_q",
+        "readout_pos_e_i", "readout_pos_e_q"}
 
 
 def test_resonator_flux_map_recovers_dispersive_model():
