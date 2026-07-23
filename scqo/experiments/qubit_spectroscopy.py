@@ -63,6 +63,8 @@ class QubitSpectroscopy(Experiment):
         sweeps=("detuning_hz",), sweep_units=("Hz",), variables=("I", "Q")
     )
     required_operations: ClassVar[tuple[str, ...]] = ("rx", "readout")
+    #: stored blob centers ride the dataset -> radial ref = the measured ground point
+    attach_readout_positions: ClassVar[bool] = True
 
     params: QubitSpectroscopyParameters
 
@@ -83,6 +85,7 @@ class QubitSpectroscopy(Experiment):
         with drive_power_boundary(self, self.params.drive_power_dbm):
             self.dataset = self.backend.acquire(self)
         self.Contract.validate(self.dataset)
+        self._attach_reference_positions()
         self.result = self.estimate()
         return self.result
 

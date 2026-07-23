@@ -47,6 +47,12 @@ class Experiment(ABC):
     #: whose probe can only sweep a qubit z-line narrow this to ReadableTransmon;
     #: irrelevant unless the experiment's Parameters carry ``flux_component``).
     flux_component_categories: ClassVar[tuple[str, ...]] = ("ReadableTransmon", "TransmonPair")
+    #: attach the stored |0>/|1> readout blob centers (``readout_pos_*`` monitor
+    #: fields, measured by single_shot_readout) to the acquired dataset as
+    #: per-target ``ref_pos_*`` variables — the stored reference scqat's IQ->1D
+    #: reductions prefer over per-run statistics (radial ref / axial positions).
+    #: Set True only by experiments whose estimator consumes them.
+    attach_readout_positions: ClassVar[bool] = False
 
     def __init__(self, backend: Backend, params: Parameters) -> None:
         self.backend = backend
@@ -128,6 +134,44 @@ class Experiment(ABC):
         """Compile ``params`` + device state into a native program (QUA / Schedule)."""
 
     # ------------------------------------------------------------ orchestration
+    #: (dataset variable, device monitor field) pairs of the stored blob centers
+    _POSITION_FIELDS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("ref_pos_g_i", "readout_pos_g_i"), ("ref_pos_g_q", "readout_pos_g_q"),
+        ("ref_pos_e_i", "readout_pos_e_i"), ("ref_pos_e_q", "readout_pos_e_q"),
+    )
+
+    def _attach_reference_positions(self) -> None:
+        """Attach the stored readout blob centers to the acquired dataset.
+
+        Copies each target's ``readout_pos_*`` monitor fields onto ``self.dataset``
+        as per-target ``ref_pos_*`` variables — an ACQUISITION-TIME snapshot, so
+        the persisted ``dataset.nc`` replays offline with the reference that was
+        in force at measurement (never read from device state at analysis time).
+        Targets without a complete finite set get NaN (scqat falls back to
+        median/PCA per target); nothing is attached when no target has one
+        (bring-up) or the dataset carries no ``I`` (state mode: pre-reduced).
+        """
+        assert self.dataset is not None
+        if not self.attach_readout_positions or "I" not in self.dataset.data_vars:
+            return
+        targets = [str(t) for t in self.dataset["target"].values]
+        columns = {var: np.full(len(targets), np.nan) for var, _ in self._POSITION_FIELDS}
+        for k, name in enumerate(targets):
+            view = self.device.component(name)
+            vals = {}
+            for var, field in self._POSITION_FIELDS:
+                try:
+                    value = getattr(view, field)
+                except (KeyError, AttributeError):
+                    value = None
+                vals[var] = float(value) if value is not None else float("nan")
+            if all(np.isfinite(v) for v in vals.values()):
+                for var, _ in self._POSITION_FIELDS:
+                    columns[var][k] = vals[var]
+        if any(np.isfinite(col).any() for col in columns.values()):
+            for var, col in columns.items():
+                self.dataset[var] = ("target", col)
+
     def run(self) -> Result:
         """define_sweep -> acquire -> verify contract -> estimate. Does not auto-update."""
         self.sweep_axes = self.define_sweep()
@@ -135,5 +179,6 @@ class Experiment(ABC):
         # Certify the probe emitted the method's canonical dataset before analysing it:
         # this is the runtime form of "the instrument supports this method".
         self.Contract.validate(self.dataset)
+        self._attach_reference_positions()
         self.result = self.estimate()
         return self.result

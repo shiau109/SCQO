@@ -48,10 +48,10 @@ from .resonator_spectroscopy_power_chain import (
 )
 from .qubit_relaxation import QubitRelaxation, QubitRelaxationParameters, QubitRelaxationResult
 from .qubit_echo import QubitEcho, QubitEchoParameters, QubitEchoResult
-from .qubit_spectroscopy_flux import (
-    QubitSpectroscopyFlux,
-    QubitSpectroscopyFluxParameters,
-    QubitSpectroscopyFluxResult,
+from .qubit_spectroscopy_flux_pulse import (
+    QubitSpectroscopyFluxPulse,
+    QubitSpectroscopyFluxPulseParameters,
+    QubitSpectroscopyFluxPulseResult,
 )
 from .single_shot_readout import (
     SingleShotReadout,
@@ -115,9 +115,9 @@ __all__ = [
     "QubitEcho",
     "QubitEchoParameters",
     "QubitEchoResult",
-    "QubitSpectroscopyFlux",
-    "QubitSpectroscopyFluxParameters",
-    "QubitSpectroscopyFluxResult",
+    "QubitSpectroscopyFluxPulse",
+    "QubitSpectroscopyFluxPulseParameters",
+    "QubitSpectroscopyFluxPulseResult",
     "SingleShotReadout",
     "SingleShotReadoutParameters",
     "SingleShotReadoutResult",

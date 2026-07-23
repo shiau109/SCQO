@@ -15,7 +15,7 @@ from scqo.experiments import (
     QubitPowerRabi,
     QubitRamsey,
     QubitSpectroscopy,
-    QubitSpectroscopyFlux,
+    QubitSpectroscopyFluxPulse,
     ReadoutFrequency,
     ReadoutPower,
     ResonatorSpectroscopy,
@@ -86,7 +86,7 @@ class DemoQubitEcho(QubitEcho):
 
 
 @register
-class DemoQubitSpectroscopyFlux(QubitSpectroscopyFlux):
+class DemoQubitSpectroscopyFluxPulse(QubitSpectroscopyFluxPulse):
     """Concrete flux map for tests/demos; no real instrument program."""
 
     def probe(self):  # never called by SimulatedBackend
@@ -415,7 +415,7 @@ def test_qubit_flux_map_recovers_arch():
     sess = Session(SimulatedBackend(_device()), _flux_roster())
 
     state_before = sess.device_state()
-    result = sess.run("qubit_spectroscopy_flux", {"targets": ["q0"]}, update="apply")
+    result = sess.run("qubit_spectroscopy_flux_pulse", {"targets": ["q0"]}, update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
     fit = result["fit"]["q0"]
     assert -0.3 <= fit["v_offset_v"] <= 0.3  # sim hides it inside the window
@@ -429,7 +429,7 @@ def test_qubit_flux_map_recovers_arch():
     # the arch proposals themselves are physical (applied to physical.json, below)
     power_moves = [h for h in sess.history() if h["field"] == "drive_power_dbm"]
     assert [h["new"] for h in power_moves] == [-25.0, state_before["q0"]["drive_power_dbm"]]
-    assert all(h["experiment"] == "qubit_spectroscopy_flux" for h in power_moves)
+    assert all(h["experiment"] == "qubit_spectroscopy_flux_pulse" for h in power_moves)
     assert {h["field"] for h in sess.history()} == {"drive_power_dbm"}  # nothing else instrument-side
     physical = sess.physical_state()
     assert physical["q0"]["ej_sum_hz"] == fit["ej_sum_hz"]
@@ -438,7 +438,7 @@ def test_qubit_flux_map_recovers_arch():
     assert physical["q0_z"]["v_per_phi0_v"] == fit["v_per_phi0_v"]
 
 
-def test_qubit_spectroscopy_flux_refuses_unconfigured_drive_chain():
+def test_qubit_spectroscopy_flux_pulse_refuses_unconfigured_drive_chain():
     """The flux map shares qubit_spectroscopy's drive-power guard (the shared
     drive_power_boundary): an unknown drive_power_dbm fails structurally before
     any acquisition — the revert target would be undefined."""
@@ -448,7 +448,7 @@ def test_qubit_spectroscopy_flux_refuses_unconfigured_drive_chain():
                 "drive_amp": 0.2, "drive_power_dbm": None}}
     )
     sess = Session(SimulatedBackend(device), _flux_roster(qubits=("q0",)))
-    result = sess.run("qubit_spectroscopy_flux", {"targets": ["q0"]})
+    result = sess.run("qubit_spectroscopy_flux_pulse", {"targets": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.FAILED.value
     assert "drive_power_dbm is unknown" in (result["error"] or "")
     assert result["suggestions"] == []
@@ -484,17 +484,19 @@ def test_single_shot_readout_fidelity():
         "readout_pos_e_i", "readout_pos_e_q"}
 
 
-def test_single_shot_calibrate_discriminator_inert_on_sim():
-    """calibrate_discriminator is a no-op on the simulated backend (no driver update()
-    override) -- the run still succeeds and nothing extra is written to device state."""
+def test_single_shot_calibrate_discriminator_skips_positions():
+    """A calibrate_discriminator run measures its blobs in the OLD demod frame and
+    then rotates the frame (driver vendor write) -- the pre-rotation centers must
+    NOT be stored as readout_pos_* (frame-rotation guard). The rotation-invariant
+    fidelity IS still recorded, and the vendor write itself stays a no-op on the
+    simulated backend (no driver update() override)."""
     sess = Session(SimulatedBackend(_device()), demo_roster())
     result = sess.run("single_shot_readout",
                       {"targets": ["q0"], "num_shots": 800, "calibrate_discriminator": True},
                       update="apply")
     assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
-    assert {h["field"] for h in sess.history()} == {
-        "readout_fidelity", "readout_pos_g_i", "readout_pos_g_q",
-        "readout_pos_e_i", "readout_pos_e_q"}
+    assert {h["field"] for h in sess.history()} == {"readout_fidelity"}
+    assert "readout_pos_g_i" not in sess.device_state()["q0"]
 
 
 def test_resonator_flux_map_recovers_dispersive_model():
@@ -637,6 +639,79 @@ def test_state_mode_runs_coherent_drive(tmp_path, name, params, check):
     assert not list(run_dir.glob("analysis/q0/*iq_plane*"))
 
 
+def _seeded_session(tmp_path, positions: dict[str, float]) -> Session:
+    """A datastore session whose q0 carries stored readout blob centers.
+
+    Seeded through set_values (the operator write path): readout_pos_* are
+    push=False monitors, so they live in the scqo state store — exactly where a
+    single_shot_readout suggestion would have put them — not in the vendor
+    device."""
+    qubits = {
+        "q0": {"readout_freq": 5.95e9, "drive_freq": 3.87e9, "pi_amp": 0.2, "readout_amp": 0.25,
+               "readout_power_dbm": -25.0, "drive_amp": 0.2, "drive_power_dbm": -21.0},
+    }
+    sess = Session(SimulatedBackend(InMemoryDevice(qubits)), demo_roster(),
+                   data_root=tmp_path / "data", device_name="devP")
+    summary = sess.set_values({f"q0.{field}": value for field, value in positions.items()})
+    assert not summary["errors"], summary["errors"]
+    return sess
+
+
+def test_stored_positions_resolve_power_rabi_axis(tmp_path):
+    """Consumption half of the stored-reference loop (axial): the readout_pos_*
+    device fields ride the acquired dataset as per-target ref_pos_* variables (an
+    acquisition-time snapshot, persisted in dataset.nc for faithful offline
+    replay) and scqat's axial reduction takes its axis from the measured g->e
+    vector (reduction_method='positions'). Unseeded devices keep per-run PCA —
+    the other coherent-drive tests."""
+    import json
+    import xarray as xr
+
+    from scqo.experiments._sim import stable_seed
+
+    # The TRUE simulated centers, replicating the sim's deterministic draw order
+    # (factor_pi, then iq_from_population's theta / sep / pos0) — keep in sync
+    # with qubit_power_rabi.simulate + _sim.iq_from_population.
+    rng = np.random.default_rng(stable_seed("qubit_power_rabi", "q0"))
+    rng.uniform(0.85, 1.15)  # factor_pi (not needed here)
+    theta = float(rng.uniform(-np.pi, np.pi))
+    sep = float(rng.uniform(2.0, 4.0))
+    pos_g = complex(float(rng.uniform(-1.0, 1.0)), float(rng.uniform(-1.0, 1.0)))
+    pos_e = pos_g + sep * np.exp(1j * theta)
+
+    sess = _seeded_session(tmp_path, {
+        "readout_pos_g_i": pos_g.real, "readout_pos_g_q": pos_g.imag,
+        "readout_pos_e_i": pos_e.real, "readout_pos_e_q": pos_e.imag})
+    result = sess.run("qubit_power_rabi", {"targets": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+
+    run_dir = tmp_path / "data" / sess.load_run(result["run_id"])["record"]["path"]
+    ds = xr.load_dataset(run_dir / "dataset.nc")
+    assert float(ds["ref_pos_g_i"].sel(target="q0")) == pytest.approx(pos_g.real)
+    assert float(ds["ref_pos_e_q"].sel(target="q0")) == pytest.approx(pos_e.imag)
+    meta = json.loads((run_dir / "analysis" / "q0" / "power_rabi_metadata.json").read_text())
+    assert meta["reduction_method"] == "positions"
+    assert meta["pos_e_i"] == pytest.approx(pos_e.real)
+
+
+def test_stored_ground_feeds_spectroscopy_ref(tmp_path):
+    """Consumption half (radial): qubit_spectroscopy's reference is the stored
+    ground blob (ref_source='stored') instead of the per-run median. The sim's
+    ground sits at (0, 0) with the line along +I, so the seeded centers match."""
+    import json
+
+    sess = _seeded_session(tmp_path, {
+        "readout_pos_g_i": 0.0, "readout_pos_g_q": 0.0,
+        "readout_pos_e_i": 0.9, "readout_pos_e_q": 0.0})
+    result = sess.run("qubit_spectroscopy", {"targets": ["q0"]})
+    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
+    run_dir = tmp_path / "data" / sess.load_run(result["run_id"])["record"]["path"]
+    meta = json.loads(
+        (run_dir / "analysis" / "q0" / "qubit_spectroscopy_metadata.json").read_text())
+    assert meta["ref_source"] == "stored"
+    assert meta["ref_iq"] == {"real": 0.0, "imag": 0.0}
+
+
 def test_chain_punchout_suggests_and_reverts():
     """The v0.8 absolute punchout: sweep-top set + auto-revert are recorded, the knee
     is PROPOSED (suggest mode) on the absolute dBm axis, and the device is unchanged
@@ -702,7 +777,7 @@ def test_flux_experiment_refused_on_fixed_frequency_roster():
     """The pre-probe roster gate: a flux experiment on the demo (fixed-frequency)
     roster is refused BEFORE any hardware, as a structured all-failed result."""
     sess = Session(SimulatedBackend(_device()), demo_roster())
-    result = sess.run("qubit_spectroscopy_flux", {"targets": ["q0"]})
+    result = sess.run("qubit_spectroscopy_flux_pulse", {"targets": ["q0"]})
     assert result["outcomes"]["q0"] == Outcome.FAILED.value
     assert result["error"].startswith("target validation refused the run before any hardware")
     assert "lacks operation(s) ['flux_bias']" in result["error"]

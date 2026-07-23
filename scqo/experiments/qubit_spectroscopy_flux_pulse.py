@@ -1,4 +1,4 @@
-"""Qubit spectroscopy vs flux — the f01(flux) arch (backend-free half).
+"""Qubit spectroscopy vs PULSED flux — the f01(flux) arch (backend-free half).
 
 2D map: sweep the flux bias on the qubit's own line x the drive detuning around
 the current ``drive_freq``, find the 0-1 peak at every flux and fit the transmon
@@ -10,9 +10,21 @@ on the target transmon, ``v_offset_v``/``v_per_phi0_v`` on the qubit's ZControl
 component; nothing is pushed to any instrument, and the fits also stay queryable
 in the run index (``fit_trend``).
 
+PROBE CONTRACT — the ``_pulse`` in the name is the acquisition style: the flux
+bias is applied ONLY while the saturation drive plays, and the line is back at
+its idle value BEFORE every readout. Every slice therefore reads out at the SAME
+(idle-flux) condition, so the analysis reduces the whole map against ONE global
+radial reference (``ref_scope="global"``: the complex median over every point —
+n_flux x more samples than a per-slice median, and the readout condition equals
+the one single_shot_readout calibrates). A probe that HOLDS the flux through
+readout must NOT register under this name — there the resonator is pulled during
+the measurement, the ground point moves with flux, and a global reference can
+null a weak line (a DC-held variant belongs to a separate experiment with the
+per-slice reduction).
+
 Flux safety: the flux axis is in volts on the qubit's flux line, bounded to
-|V| <= 0.5 by the parameter schema; probes must return the line to its idle
-value after the sweep.
+|V| <= 0.5 by the parameter schema; probes must return the line to idle before
+each readout (the contract above) and after the sweep.
 
 Drive power: the weak saturation drive is a per-run STIMULUS set via
 ``drive_power_dbm`` (a recorded boundary write, reverted after — the same
@@ -36,7 +48,7 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 
 
-class QubitSpectroscopyFluxParameters(TargetSelection, AveragingParameters):
+class QubitSpectroscopyFluxPulseParameters(TargetSelection, AveragingParameters):
     """Inputs for the qubit-frequency-vs-flux map."""
 
     frequency_span_hz: float = Field(400e6, gt=0, description="Total drive-detuning span around the current drive_freq.")
@@ -62,25 +74,27 @@ class QubitSpectroscopyFluxParameters(TargetSelection, AveragingParameters):
     )
 
 
-class QubitSpectroscopyFluxResult(Result):
+class QubitSpectroscopyFluxPulseResult(Result):
     """``fit[qubit]``: ``v_offset_v``, ``f01_at_sweet_spot_hz``, ``v_per_phi0_v``,
     ``ej_sum_hz`` (+ stderrs). ``update()`` proposes them as physical parameters:
     ej_sum_hz/f_q_max_hz on the transmon, v_offset_v/v_per_phi0_v on the qubit's
     ZControl component."""
 
 
-class QubitSpectroscopyFlux(Experiment):
+class QubitSpectroscopyFluxPulse(Experiment):
     """Backend-agnostic f01(flux) arch. ``probe()`` is supplied by a driver."""
 
-    name: ClassVar[str] = "qubit_spectroscopy_flux"
+    name: ClassVar[str] = "qubit_spectroscopy_flux_pulse"
     description: ClassVar[str] = (
-        "2D qubit spectroscopy vs flux bias: finds the 0-1 peak at every flux and fits "
-        "the transmon arch; proposes sweet spot (v_offset_v), flux period (v_per_phi0_v) "
-        "on the qubit's ZControl component and ej_sum_hz/f_q_max_hz on the transmon as "
-        "physical parameters (the Phase-3 EJ/EC inference inputs — no instrument knob)."
+        "2D qubit spectroscopy vs PULSED flux (bias applied only during the drive; "
+        "readout at idle flux every slice, reduced against one global IQ reference): "
+        "finds the 0-1 peak at every flux and fits the transmon arch; proposes sweet "
+        "spot (v_offset_v), flux period (v_per_phi0_v) on the qubit's ZControl "
+        "component and ej_sum_hz/f_q_max_hz on the transmon as physical parameters "
+        "(the Phase-3 EJ/EC inference inputs — no instrument knob)."
     )
-    Parameters: ClassVar[type] = QubitSpectroscopyFluxParameters
-    Result: ClassVar[type] = QubitSpectroscopyFluxResult
+    Parameters: ClassVar[type] = QubitSpectroscopyFluxPulseParameters
+    Result: ClassVar[type] = QubitSpectroscopyFluxPulseResult
     Contract: ClassVar[DatasetContract] = DatasetContract(
         sweeps=("flux_bias_v", "detuning_hz"), sweep_units=("V", "Hz"), variables=("I", "Q")
     )
@@ -88,7 +102,7 @@ class QubitSpectroscopyFlux(Experiment):
     #: the probe plays z PULSES — only a qubit z-line is sweepable here
     flux_component_categories: ClassVar[tuple[str, ...]] = ("ReadableTransmon",)
 
-    params: QubitSpectroscopyFluxParameters
+    params: QubitSpectroscopyFluxPulseParameters
 
     def define_sweep(self) -> dict[str, np.ndarray]:
         span = self.params.frequency_span_hz
@@ -117,7 +131,7 @@ class QubitSpectroscopyFlux(Experiment):
         flux = coords["flux_bias_v"]
         detuning = coords["detuning_hz"]
         targets = self.params.targets
-        rng = np.random.default_rng(stable_seed("qubit_spectroscopy_flux", *targets))
+        rng = np.random.default_rng(stable_seed("qubit_spectroscopy_flux_pulse", *targets))
         ec = self.params.ec_ghz
         i_data = np.empty((len(targets), flux.size, detuning.size))
         q_data = np.empty_like(i_data)
@@ -139,7 +153,7 @@ class QubitSpectroscopyFlux(Experiment):
                 q_data[k, j] = rng.normal(0, noise, detuning.size)
         return {"I": i_data, "Q": q_data}
 
-    def estimate(self) -> QubitSpectroscopyFluxResult:
+    def estimate(self) -> QubitSpectroscopyFluxPulseResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
         from scqat.estimators.qubit_flux_arch import QubitFluxArchEstimator
 
@@ -158,9 +172,13 @@ class QubitSpectroscopyFlux(Experiment):
             QubitFluxArchEstimator(),
             artifact_dir=self.artifact_dir,
             ec_ghz=self.params.ec_ghz,
+            # the _pulse probe contract: readout at idle flux every slice -> the
+            # ground point is common across the map, so ONE global complex median
+            # is the reference (stabler than per-slice; see the module docstring)
+            ref_scope="global",
         )
 
-        result = QubitSpectroscopyFluxResult()
+        result = QubitSpectroscopyFluxPulseResult()
         for qubit in self.params.targets:
             arch = results[qubit]["arch"]
             fit: dict[str, float] = {"ec_ghz_assumed": float(arch["ec_ghz"])}

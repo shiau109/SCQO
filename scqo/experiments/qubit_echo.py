@@ -61,6 +61,8 @@ class QubitEcho(Experiment):
         alt_variables=(("state",),),
     )
     required_operations: ClassVar[tuple[str, ...]] = ("rx", "readout")
+    #: stored blob centers ride the dataset -> axial axis = the measured g->e vector
+    attach_readout_positions: ClassVar[bool] = True
 
     params: QubitEchoParameters
 

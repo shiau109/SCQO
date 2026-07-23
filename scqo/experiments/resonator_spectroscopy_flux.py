@@ -6,7 +6,7 @@ full f_r(flux) = f_r0 + g^2 / (f_r0 - f_q(flux)) transmon arch — or the
 model-light ``sine``). Reports the sweet-spot flux (v_offset_v), the
 flux period (v_per_phi0_v), and, for the dispersive method, the bare resonator
 f_r0 and the coupling g — the resonator-side flux picture that pairs with
-qubit_spectroscopy_flux for Phase-3 inference. ``update()`` proposes the
+qubit_spectroscopy_flux_pulse for Phase-3 inference. ``update()`` proposes the
 sweet-spot flux + flux period as PHYSICAL parameters on the qubit's ZControl
 component (``physical.json`` on accept), and sets up the operating point at the
 sweet spot via two pushed instrument knobs on the transmon: ``idle_flux_v`` =
@@ -216,7 +216,7 @@ class ResonatorSpectroscopyFlux(Experiment):
         holds it at a placeholder guess and g is conditional on that assumption —
         an assumed value must never enter the measured-physics ledger.
         ``f_q_max_hz`` itself is never proposed here (it is an INPUT of the
-        dispersive fit; qubit_spectroscopy_flux measures it).
+        dispersive fit; qubit_spectroscopy_flux_pulse measures it).
         """
         if self.result is None:
             return

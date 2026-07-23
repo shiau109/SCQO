@@ -102,7 +102,7 @@ scqo/
     qubit_power_rabi.py         # amplitude sweep, cosine fit -> updates pi_amp
     qubit_relaxation.py         # pi + swept wait, exp-decay fit -> t1_s (physical store)
     qubit_echo.py               # Hahn echo, exp-envelope fit -> t2_echo_s (physical store)
-    qubit_spectroscopy_flux.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (physical store; Phase-3 feeder)
+    qubit_spectroscopy_flux_pulse.py  # 2D flux x detuning arch -> sweet spot / Ej_sum (physical store; Phase-3 feeder)
     single_shot_readout.py      # per-shot IQ blobs (prepared_state x shot_idx) -> readout fidelity
     resonator_spectroscopy_flux.py   # 2D resonator flux map -> sweet spot / dv_phi0 / f_r0 / g (physical store)
     readout_power.py            # per-shot fidelity vs amp prefactor -> updates readout_amp

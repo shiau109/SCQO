@@ -37,7 +37,10 @@ class SingleShotReadoutParameters(TargetSelection, Parameters):
         "discriminator (integration_weights_angle / threshold / rus_exit_threshold) "
         "IMMEDIATELY on a successful run and save the vendor config — an out-of-band "
         "vendor calibration like a qualibrate node, NOT a governed suggestion "
-        "(update='none' skips it; no-op on the simulated backend).",
+        "(update='none' skips it; no-op on the simulated backend). A calibrate run "
+        "ROTATES the acquisition frame, so its own blob centers are pre-rotation: "
+        "the readout_pos_* monitors are NOT stored — re-run without this flag to "
+        "store valid post-rotation positions (and confirm the fidelity).",
     )
 
 
@@ -153,14 +156,21 @@ class SingleShotReadout(Experiment):
         # population etc.) deliberately stay run-record-only: they are
         # instrument-dependent — compare across instruments by query, never as device
         # state.
+        #
+        # FRAME-ROTATION GUARD: a calibrate_discriminator run measures its blobs in
+        # the OLD demod frame and then rotates the frame (the driver's vendor write) —
+        # those centers are invalid for every future acquisition, so they are NOT
+        # stored. The confirming re-run (without the flag) stores valid post-rotation
+        # positions. The fidelity IS stored either way (rotation-invariant).
         if self.result is None:
             return
         pos_fields = (("readout_pos_g_i", "mean_g_i"), ("readout_pos_g_q", "mean_g_q"),
                       ("readout_pos_e_i", "mean_e_i"), ("readout_pos_e_q", "mean_e_q"))
+        store_positions = not self.params.calibrate_discriminator
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
                 view = self.device.component(qubit)
                 view.readout_fidelity = fit["readout_fidelity"]
-                if np.all(np.isfinite([fit[key] for _, key in pos_fields])):
+                if store_positions and np.all(np.isfinite([fit[key] for _, key in pos_fields])):
                     for field, key in pos_fields:
                         setattr(view, field, fit[key])

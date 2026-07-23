@@ -1,6 +1,6 @@
 """Shared drive-power boundary for saturation-drive experiments (backend-free).
 
-``qubit_spectroscopy`` and ``qubit_spectroscopy_flux`` both treat the saturation
+``qubit_spectroscopy`` and ``qubit_spectroscopy_flux_pulse`` both treat the saturation
 power as a per-run STIMULUS: set ``drive_power_dbm`` through the RecordingDevice
 before acquiring, then revert it exactly afterwards (the punchout discipline of
 ``resonator_spectroscopy_power_amp``). The boundary lives here so the two

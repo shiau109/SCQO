@@ -10,12 +10,12 @@ import json
 import pytest
 
 from scqo import CATEGORIES, Component, PhysicalStore, Roster, Session, register
-from scqo.experiments import QubitSpectroscopyFlux, ResonatorSpectroscopyFlux
+from scqo.experiments import QubitSpectroscopyFluxPulse, ResonatorSpectroscopyFlux
 from scqo.testing import InMemoryDevice, SimulatedBackend, demo_roster
 
 
 @register
-class _PhQubitSpectroscopyFlux(QubitSpectroscopyFlux):
+class _PhQubitSpectroscopyFluxPulse(QubitSpectroscopyFluxPulse):
     def probe(self):
         return None
 
@@ -120,7 +120,7 @@ def test_flux_experiments_physics_lands_on_accept(tmp_path):
                    data_root=tmp_path / "data", device_name="devA")
     state_before = sess.device_state()
 
-    result = sess.run("qubit_spectroscopy_flux", {"targets": ["q0"]})
+    result = sess.run("qubit_spectroscopy_flux_pulse", {"targets": ["q0"]})
     assert {s["store"] for s in result["suggestions"]} == {"physical"}
     assert {(s["component"], s["field"]) for s in result["suggestions"]} == {
         ("q0", "ej_sum_hz"), ("q0", "f_q_max_hz"),
@@ -138,7 +138,7 @@ def test_flux_experiments_physics_lands_on_accept(tmp_path):
     # the only instrument-history rows are the flux run's saturation-power stimulus
     # (set -> revert), which leaves the config unchanged (device_state above)
     assert {h["field"] for h in sess.history()} == {"drive_power_dbm"}
-    assert all(h["experiment"] == "qubit_spectroscopy_flux" for h in sess.history())
+    assert all(h["experiment"] == "qubit_spectroscopy_flux_pulse" for h in sess.history())
 
     # persisted on disk at the device-level fallback (a setup-less direct-API
     # session with a data_root but no cooldown/setup), flat values

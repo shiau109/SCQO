@@ -74,7 +74,7 @@ qubit_power_rabi              Sweep drive amplitude ... recalibrate pi_amp.
 qubit_ramsey                  Two pi/2 pulses ... correct drive_freq and report T2*.
 qubit_relaxation              Pi pulse + swept wait ... records t1_s (record-only).
 qubit_spectroscopy            Sweep a weak saturation drive ... recalibrates drive_freq.
-qubit_spectroscopy_flux       2D flux map ... proposes sweet spot / Ej_sum (physical parameters).
+qubit_spectroscopy_flux_pulse       2D flux map ... proposes sweet spot / Ej_sum (physical parameters).
 readout_frequency             Per-shot fidelity vs freq ... updates readout_freq.
 readout_power                 Per-shot fidelity vs amp ... updates readout_amp.
 resonator_spectroscopy        Sweep readout frequency ... updates readout_freq; proposes f_r_hz + kappa_tot_hz (on the resonator component).

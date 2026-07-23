@@ -29,7 +29,7 @@ EXPERIMENT_PARAMS: dict[str, dict] = {
     "qubit_spectroscopy": {"frequency_span_hz": 60e6},
     "qubit_relaxation": {},
     "qubit_echo": {},
-    "qubit_spectroscopy_flux": {},
+    "qubit_spectroscopy_flux_pulse": {},
     "resonator_spectroscopy_flux": {},
     "single_shot_readout": {"num_shots": 1500},
     "readout_power": {},
