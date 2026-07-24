@@ -34,7 +34,8 @@ class QubitPowerRabiParameters(TargetSelection, AveragingParameters):
         False,
         description="Discriminate each shot on the FPGA and return the averaged state "
         "(population) instead of I/Q. Requires a calibrated discriminator "
-        "(QM: the qualibrate 07_iq_blobs node's integration_weights_angle + threshold).",
+        "(run single_shot_readout, then accept its readout_rotation_rad / "
+        "readout_threshold suggestions).",
     )
 
 
@@ -54,7 +55,8 @@ class QubitPowerRabi(Experiment):
         "Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi "
         "oscillation to recalibrate pi_amp. use_state_discrimination returns the "
         "FPGA-discriminated averaged state instead of I/Q (needs a calibrated "
-        "discriminator: run single_shot_readout with calibrate_discriminator=true first)."
+        "discriminator: run single_shot_readout and accept its readout_rotation_rad / "
+        "readout_threshold suggestions first)."
     )
     Parameters: ClassVar[type] = QubitPowerRabiParameters
     Result: ClassVar[type] = QubitPowerRabiResult

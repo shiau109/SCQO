@@ -484,21 +484,6 @@ def test_single_shot_readout_fidelity():
         "readout_pos_e_i", "readout_pos_e_q"}
 
 
-def test_single_shot_calibrate_discriminator_skips_positions():
-    """A calibrate_discriminator run measures its blobs in the OLD demod frame and
-    then rotates the frame (driver vendor write) -- the pre-rotation centers must
-    NOT be stored as readout_pos_* (frame-rotation guard). The rotation-invariant
-    fidelity IS still recorded, and the vendor write itself stays a no-op on the
-    simulated backend (no driver update() override)."""
-    sess = Session(SimulatedBackend(_device()), demo_roster())
-    result = sess.run("single_shot_readout",
-                      {"targets": ["q0"], "num_shots": 800, "calibrate_discriminator": True},
-                      update="apply")
-    assert result["outcomes"]["q0"] == Outcome.SUCCESSFUL.value
-    assert {h["field"] for h in sess.history()} == {"readout_fidelity"}
-    assert "readout_pos_g_i" not in sess.device_state()["q0"]
-
-
 def test_resonator_flux_map_recovers_dispersive_model():
     """Resonator-vs-flux: dip trace + dispersive fit -> sweet spot inside the swept
     window, coupling g near the simulated range; the dispersive quantities land in

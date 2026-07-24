@@ -74,7 +74,8 @@ def test_catalog_invariants_hold():
     assert pushed_fields("ReadableTransmon") == (
         "readout_freq", "drive_freq", "pi_amp", "drag_beta", "drive_amp",
         "drive_power_dbm", "readout_amp", "readout_power_dbm",
-        "readout_duration_s", "readout_integration_s", "idle_flux_v")
+        "readout_duration_s", "readout_integration_s", "readout_rotation_rad",
+        "readout_threshold", "readout_rus_threshold", "idle_flux_v")
     assert "FixedTransmon" in field_categories()["t1_s"]
     assert "kappa_tot_hz" in CATEGORIES["Resonator"].fields  # the committed rename
     assert "ej_sum_hz" in CATEGORIES["FluxTunableTransmon"].fields
@@ -99,15 +100,16 @@ def test_requires_physical_pruning(tmp_path):
     r = _roster(tmp_path)
     assert "idle_flux_v" not in r.fields_of("q1")   # FixedTransmon
     assert "idle_flux_v" in r.fields_of("q2")        # FluxTunableTransmon
+    disc = ("readout_rotation_rad", "readout_threshold", "readout_rus_threshold")
     assert r.pushed("q1") == ("readout_freq", "drive_freq", "pi_amp", "drag_beta",
                               "drive_amp", "drive_power_dbm",
                               "readout_amp", "readout_power_dbm",
-                              "readout_duration_s", "readout_integration_s")
+                              "readout_duration_s", "readout_integration_s") + disc
     assert r.pushed("q2") == ("readout_freq", "drive_freq", "pi_amp", "drag_beta",
                               "drive_amp", "drive_power_dbm",
                               "readout_amp", "readout_power_dbm",
-                              "readout_duration_s", "readout_integration_s",
-                              "idle_flux_v")
+                              "readout_duration_s", "readout_integration_s") + disc + (
+                              "idle_flux_v",)
     assert r.pushed("q1_res") == ()                  # physical-only component
 
 

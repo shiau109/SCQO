@@ -41,7 +41,8 @@ class QubitRamseyParameters(TargetSelection, AveragingParameters):
         False,
         description="Discriminate each shot on the FPGA and return the averaged state "
         "(population) instead of I/Q. Requires a calibrated discriminator "
-        "(QM: the qualibrate 07_iq_blobs node's integration_weights_angle + threshold).",
+        "(run single_shot_readout, then accept its readout_rotation_rad / "
+        "readout_threshold suggestions).",
     )
 
 
@@ -62,8 +63,8 @@ class QubitRamsey(Experiment):
         "Two pi/2 pulses separated by a swept idle time with an artificial drive detuning; "
         "fits the decaying fringe to correct drive_freq and report T2*. "
         "use_state_discrimination returns the FPGA-discriminated averaged state instead "
-        "of I/Q (needs a calibrated discriminator: run single_shot_readout with "
-        "calibrate_discriminator=true first)."
+        "of I/Q (needs a calibrated discriminator: run single_shot_readout and accept "
+        "its readout_rotation_rad / readout_threshold suggestions first)."
     )
     Parameters: ClassVar[type] = QubitRamseyParameters
     Result: ClassVar[type] = QubitRamseyResult

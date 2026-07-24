@@ -31,17 +31,6 @@ class SingleShotReadoutParameters(TargetSelection, Parameters):
     """Inputs for a single-shot readout-fidelity measurement."""
 
     num_shots: int = Field(2000, gt=99, description="Shots per prepared state (each recorded individually).")
-    calibrate_discriminator: bool = Field(
-        False,
-        description="Backends that support it (QM) recalibrate the vendor readout "
-        "discriminator (integration_weights_angle / threshold / rus_exit_threshold) "
-        "IMMEDIATELY on a successful run and save the vendor config — an out-of-band "
-        "vendor calibration like a qualibrate node, NOT a governed suggestion "
-        "(update='none' skips it; no-op on the simulated backend). A calibrate run "
-        "ROTATES the acquisition frame, so its own blob centers are pre-rotation: "
-        "the readout_pos_* monitors are NOT stored — re-run without this flag to "
-        "store valid post-rotation positions (and confirm the fidelity).",
-    )
 
 
 class SingleShotReadoutResult(Result):
@@ -57,11 +46,14 @@ class SingleShotReadout(Experiment):
 
     name: ClassVar[str] = "single_shot_readout"
     description: ClassVar[str] = (
-        "Prepare |g> and |e> and record every readout shot's I/Q point; two-Gaussian "
-        "mixture gives the assignment fidelity (recorded into the device state, "
-        "record-only), confusion probabilities and blob centers (run-record only). "
-        "calibrate_discriminator recalibrates the backend's vendor discriminator "
-        "(QM: integration_weights_angle / threshold) out-of-band on a successful run."
+        "Prepare |g> and |e> and record every readout shot's I/Q point; a two-Gaussian "
+        "mixture gives the assignment fidelity (recorded, record-only), the confusion "
+        "probabilities (run-record only) and the measured |g>/|e> blob centers (stored "
+        "as the readout_pos_* reference). A driver that can discriminate additionally "
+        "PROPOSES the readout discriminator settings (readout_rotation_rad / "
+        "readout_threshold / readout_rus_threshold) as governed suggestions — review "
+        "with scqo accept, then re-run to confirm; the run itself never mutates the "
+        "readout frame, so its figure always shows the data as measured."
     )
     Parameters: ClassVar[type] = SingleShotReadoutParameters
     Result: ClassVar[type] = SingleShotReadoutResult
@@ -155,22 +147,21 @@ class SingleShotReadout(Experiment):
         # with the readout condition). The confusion entries (p_e_given_g = thermal
         # population etc.) deliberately stay run-record-only: they are
         # instrument-dependent — compare across instruments by query, never as device
-        # state.
+        # state. The run never mutates the readout frame, so the centers are always in
+        # the frame the figure shows and are always safe to store.
         #
-        # FRAME-ROTATION GUARD: a calibrate_discriminator run measures its blobs in
-        # the OLD demod frame and then rotates the frame (the driver's vendor write) —
-        # those centers are invalid for every future acquisition, so they are NOT
-        # stored. The confirming re-run (without the flag) stores valid post-rotation
-        # positions. The fidelity IS stored either way (rotation-invariant).
+        # The DISCRIMINATOR settings (readout_rotation_rad / readout_threshold /
+        # readout_rus_threshold) are a driver concern (the vendor-convention math needs
+        # the current rotation): a backend that can discriminate overrides update() to
+        # PROPOSE them from these centers through self.device (governed suggestions).
         if self.result is None:
             return
         pos_fields = (("readout_pos_g_i", "mean_g_i"), ("readout_pos_g_q", "mean_g_q"),
                       ("readout_pos_e_i", "mean_e_i"), ("readout_pos_e_q", "mean_e_q"))
-        store_positions = not self.params.calibrate_discriminator
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
                 view = self.device.component(qubit)
                 view.readout_fidelity = fit["readout_fidelity"]
-                if store_positions and np.all(np.isfinite([fit[key] for _, key in pos_fields])):
+                if np.all(np.isfinite([fit[key] for _, key in pos_fields])):
                     for field, key in pos_fields:
                         setattr(view, field, fit[key])

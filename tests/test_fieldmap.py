@@ -86,7 +86,11 @@ def test_fieldspec_portable_metadata():
                             # measured blob centers: acquisition-frame units,
                             # chain-dependent monitors (push=False)
                             "readout_pos_g_i", "readout_pos_g_q",
-                            "readout_pos_e_i", "readout_pos_e_q"}
+                            "readout_pos_e_i", "readout_pos_e_q",
+                            # discriminator settings: acquisition-frame,
+                            # chain-dependent governed knobs (push=True)
+                            "readout_rotation_rad", "readout_threshold",
+                            "readout_rus_threshold"}
     for spec in CATEGORIES.values():
         if spec.side == "physical":
             assert all(fs.portable for fs in spec.fields.values())

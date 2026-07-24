@@ -275,6 +275,30 @@ CATEGORIES: dict[str, CategorySpec] = {
                      "time could, but drivers refuse it for portability). "
                      "Positive multiple of 4 ns.",
                 push=True),
+            # The readout DISCRIMINATOR settings — governed (proposed by
+            # single_shot_readout, applied on accept), non-portable (the
+            # acquisition IQ frame is chain-dependent; re-measured per setup, like
+            # pi_amp/readout_amp). single_shot always plots the measured data and
+            # SUGGESTS these; accepting one and re-running is the verify loop.
+            "readout_rotation_rad": FieldSpec(
+                "rad", "Readout demodulation rotation that lands the |0>->|1> axis "
+                       "on I (single_shot_readout proposes it from the measured "
+                       "blobs). Acquisition-frame angle — QM realizes it as "
+                       "integration_weights_angle (rad), Qblox as acq_rotation "
+                       "(degrees).",
+                push=True, portable=False),
+            "readout_threshold": FieldSpec(
+                "", "Single-shot g/e discrimination threshold on the rotated I "
+                    "(acquisition-frame units — raw demod on QM, V on Qblox). "
+                    "Proposed by single_shot_readout; the threshold "
+                    "use_state_discrimination applies on the FPGA.",
+                push=True, portable=False),
+            "readout_rus_threshold": FieldSpec(
+                "", "Repeat-until-success (active-reset) exit threshold on the "
+                    "rotated I (acquisition-frame units) — the ground-blob edge. "
+                    "Proposed by single_shot_readout; QM-only (Qblox has no RUS: "
+                    "declared Unrealized there).",
+                push=True, portable=False),
             "readout_fidelity": FieldSpec(
                 "", "Single-shot assignment fidelity (0.5..1) — measured monitor, "
                     "never pushed.",
