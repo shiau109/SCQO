@@ -25,6 +25,7 @@ knobs/monitors through the recording device (vendor-push-first).
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -412,6 +413,8 @@ class Session:
         tags: list[str] | None = None,
         note: str = "",
         on_progress=None,
+        monotonic=time.monotonic,
+        sleep=time.sleep,
     ) -> dict:
         """Walk a :class:`~scqo.campaign.CampaignPlan`'s steps ``repeat`` times.
 
@@ -472,9 +475,19 @@ class Session:
         ``repeat_done``: stopping mid-repeat would leave a half-walked bundle
         whose quantities no longer share a drift epoch, which is exactly the
         invariant the interleaved ordering exists to protect.
-        """
-        import time
 
+        ``monotonic`` and ``sleep`` are a TEST SEAM, not an extension point. They
+        exist because this method is the only place in ``Session`` that reads a
+        clock for anything but a timestamp, and because a test could otherwise
+        only reach the cadence gate by really waiting or by monkeypatching the
+        stdlib for the whole process — both of which have produced failures that
+        were about the machine's speed rather than the code (v3.6.0 and v3.8.0
+        each repaired one). A fake that advances virtual time on ``sleep`` makes
+        the gate, the ``max_duration_s`` budget and the overrun branch
+        deterministic. Production callers must leave both alone; the defaults are
+        bound once at definition, so passing anything else changes what "now"
+        means for the whole campaign.
+        """
         from .campaign import CampaignPlan, aggregate
 
         plan = plan if isinstance(plan, CampaignPlan) else CampaignPlan(**dict(plan))
@@ -495,7 +508,7 @@ class Session:
                 "repeated re-tuning.")
 
         started_at = _now()
-        started_mono = time.monotonic()
+        started_mono = monotonic()
         manifest: dict[str, Any] = {
             "schema": 1,
             "campaign_id": None,
@@ -568,7 +581,7 @@ class Session:
                 return
             try:
                 pending["ended_at"] = _now()
-                pending["duration_s"] = (time.monotonic() - started_mono
+                pending["duration_s"] = (monotonic() - started_mono
                                          - pending["elapsed_s"])
                 pending["failed"] = not any(s["ok"] for s in pending["steps"])
                 pending["partial"] = True
@@ -592,7 +605,7 @@ class Session:
                 # The budget gates CONTINUING, never starting: repeat 0 always runs, so
                 # a campaign never returns zero measurements for having been slow to set
                 # up. Checked BEFORE a repeat, so a repeat is never cut in half either.
-                elapsed = time.monotonic() - started_mono
+                elapsed = monotonic() - started_mono
                 if (repeat_idx and plan.max_duration_s is not None
                         and elapsed >= plan.max_duration_s):
                     stop_reason = f"max_duration_s ({plan.max_duration_s:g} s) elapsed"
@@ -617,13 +630,13 @@ class Session:
                 overran_by_s = 0.0
                 if plan.period_s is not None and repeat_idx:
                     due = started_mono + repeat_idx * plan.period_s
-                    wait = due - time.monotonic()
+                    wait = due - monotonic()
                     if wait > 0:
                         # Announce the gap BEFORE sleeping: an unannounced five-minute
                         # pause is indistinguishable from a hang.
                         on_progress({"kind": "cadence_wait",
                                             "repeat_idx": repeat_idx, "wait_s": wait})
-                        time.sleep(wait)
+                        sleep(wait)
                     else:
                         overran_by_s = -wait
 
@@ -631,7 +644,7 @@ class Session:
                 row = {
                     "repeat_idx": repeat_idx,
                     "started_at": _now(),
-                    "elapsed_s": time.monotonic() - started_mono,
+                    "elapsed_s": monotonic() - started_mono,
                     "overran_by_s": overran_by_s,
                     "steps": [],
                 }
@@ -644,7 +657,7 @@ class Session:
                                     "overran_by_s": overran_by_s,
                                     "durations_s": [r["duration_s"] for r in rows]})
                 for step_idx, step in enumerate(plan.steps):
-                    step_mono = time.monotonic()
+                    step_mono = monotonic()
                     try:
                         payload = self.run(
                             step.experiment,
@@ -667,7 +680,7 @@ class Session:
                         "fit": payload.get("fit") or {},
                         "error": payload.get("error") or payload.get("datastore_error"),
                         "ok": any(str(o) == "successful" for o in outcomes.values()),
-                        "duration_s": time.monotonic() - step_mono,
+                        "duration_s": monotonic() - step_mono,
                     }
                     row["steps"].append(step_row)
                     # Not stoppable HERE: a deliberate stop mid-bundle would leave
@@ -676,7 +689,7 @@ class Session:
                     on_progress({"kind": "step_done", "repeat_idx": repeat_idx,
                                         "n_steps": len(plan.steps), **step_row})
                 row["ended_at"] = _now()
-                row["duration_s"] = time.monotonic() - started_mono - row["elapsed_s"]
+                row["duration_s"] = monotonic() - started_mono - row["elapsed_s"]
                 washout = not any(s["ok"] for s in row["steps"])
                 row["failed"] = washout
                 rows.append(row)
