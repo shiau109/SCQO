@@ -1,0 +1,57 @@
+name = "campaign-clock-seam"
+repos = { scqo = "81eb545" }   # LAST commit; scqo-only, no driver and no scqat
+kind = "fix"
+coupling = ""      # nothing outside SCQO; no floor moves and no dependency changes
+validated = "offline"
+notes = """
+FIX, and TEST-ONLY in effect: no production behaviour changes, only whether the
+behaviour can be tested. Session.run_campaign gains two keyword-only parameters,
+`monotonic` and `sleep`, defaulting to the real ones.
+
+WHY. run_campaign read the clock straight from the time module - eight
+monotonic() calls and one sleep() - so a test could reach the cadence gate only
+by really waiting or by monkeypatching the stdlib process-wide. Both were in use
+and both broke: v3.6.0 repaired a cadence test whose period_s=0.4 silently
+asserted that a repeat finishes in under 0.4 s (it held warm and failed cold),
+and v3.8.0 repaired an exact `>= 0.5` threshold that Windows CI missed by 28
+femtoseconds. Neither was a code defect; both were the suite measuring the
+runner. The class is now removed rather than patched a third time.
+
+WHAT IT UNLOCKED, which is the actual reason to do this rather than keep adding
+tolerances: `overran_by_s` - the branch where a repeat outlasts its period - had
+NO coverage of the production path. It appeared in the tests only as hand-built
+dicts handed to the progress renderer, because reaching the real branch against a
+real clock means genuinely running slow. It is now pinned, including the property
+that lateness accumulates against the ABSOLUTE slot (0, 2, 4 s for a 1 s period
+overrun by 3 s each time, not a constant 2) - which is exactly what the code
+means by 'a floor, not a schedule to catch up to'. Mutation-checked: replacing
+`overran_by_s = -wait` with 0.0 fails the new test.
+
+SCOPE. The nine call sites are all inside the one method. Session.run() reads no
+clock but `_now()`, so nothing else needed the seam, and `_now()` is deliberately
+untouched - it lives in stores.py and serves run records and suggestions well
+outside campaigns, so injecting it would widen a contained change for no gain.
+`import time` moved to module scope because the defaults bind at definition; the
+method-local import was too late for the class to even build.
+
+The parameters are documented as a TEST SEAM, not an extension point: passing
+anything else changes what 'now' means for a whole campaign. A new guard test
+calls run_campaign with NO clock arguments and asserts it still sleeps on real
+time, so a suite of fakes cannot hide a broken default - a LOWER bound only (two
+50 ms periods), deliberately not an upper one, which is the mistake that broke
+this file twice.
+
+NOT a speed change, and worth stating because it is the obvious thing to assume:
+the reworked selection still takes ~6 s. The simulated campaign runs dominate,
+not the waiting; only the one real 0.5 s wait actually went away. What improved
+is determinism - the assertions are now exact equalities rather than thresholds
+with tolerances - and coverage.
+
+FakeClock lives in tests/conftest.py, not scqo/testing.py: SCQO's own suite is
+the only consumer today (the drivers touch scqo.testing only from
+scripts/check_real_config.py and run no campaigns in their tests), and widening a
+shipped public surface for one caller is not worth it. Moving it later is a copy.
+
+OFFLINE-VALIDATED: scqo 950 (.venv-view, driver-free, up from 948 - the overrun
+test and the real-clock guard).
+"""
