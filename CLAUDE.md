@@ -219,7 +219,8 @@ scqo/
                   #   experiment's update() (SuggestionCapture) -> campaign-level pending
                   #   suggestions; _preflight refuses a plan label shadowing an experiment
                   #   name (exempting the self-named 1-step `scqo run --repeat` shape)
-  datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable)
+  datastore.py    # DataStore + RunRecord: every run saved to a folder, indexed in SQLite (rebuildable);
+                  #   setup snapshots content-addressed under <device>/setup_snapshots/<hash16>/
   labconfig.py    # ~/.scqo/config.toml -> LabConfig + make_session (students never edit repos)
   testing.py      # InMemoryDevice + SimulatedBackend + the demo device (REAL
                   #   components.toml/design.toml text parsed by the real loaders)
@@ -236,8 +237,8 @@ scqo/
                   #   self-contained offline HTML with embedded run snapshots /
                   #   two-sheet xlsx / 16:9 PDF document mirroring the offline HTML)
   __main__.py     # `python -m scqo <data_root>` - rebuild the index from the run folders
-  cli/            # the `scqo` command (run/campaign/find/accept/suggest/set/tag/state/
-                  #   user/device/doctor): ONE engine, any-directory;
+  cli/            # the `scqo` command (run/campaign/find/accept/suggest/set/tag/restore/
+                  #   state/user/device/doctor): ONE engine, any-directory;
                   #   the device's SELECTED named setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; a factory is
                   #   build_backend(cfg, setup, roster) - a driver serves a view PER
@@ -430,7 +431,16 @@ Shared bindings: 3 - `readout_fidelity`, `resonator_spectroscopy_power`, `state_
 `Session(backend, data_root=...)` persists **every** run — raw dataset (`dataset.nc`),
 parameters/result/record JSONs, device before/after snapshots, and the scqat artifacts
 (metadata / plotdata / figure PNGs, per qubit) — under
-`<data_root>/<device>/<YYYY-MM-DD>/<run_id>/`. The **run folder is the truth**;
+`<data_root>/<device>/<YYYY-MM-DD>/<run_id>/`. Every run also references its **setup
+snapshot** — the vendor config as the backend held it in memory at run START (the
+duck-typed `vendor_config_snapshot()` hook, serialised as the driver's `save()` would),
+this context's scqo_state/physical values and a manifest with driver versions —
+content-addressed under `<device>/setup_snapshots/<hash16>/` (a sibling of the day
+folders like `campaigns/`; identical content is stored once, so campaign children cost
+nothing). `record.json` carries `setup_snapshot` (hash, path, and `drift` = vendor files
+that changed DURING the run without being restored, also warned at run time; `{}` on the
+simulated backend). `scqo restore <run_id> --setup <name>` rebuilds a snapshot as a NEW
+named setup of the active cycle for re-running an old configuration. The **run folder is the truth**;
 `<data_root>/index.sqlite` is a disposable cache (`python -m scqo <data_root>`
 rebuilds it). Query with `Session.find_runs(experiment=, target=, tag=, since=, outcome=,...)`,
 reload with `load_run(run_id)` / `datastore.open_dataset(run_id)`. A **campaign**

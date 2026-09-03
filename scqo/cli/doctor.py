@@ -21,13 +21,10 @@ from pathlib import Path
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 
-_EXPECTED_FILES = {"qblox": ("dut_config.json", "hw_config.json"),
-                   "qm": ("state.json", "wiring.json")}
-
-
 def _setup_checks(cfg, backends: dict) -> list[tuple[str, str, str]]:
     """Device -> cycle -> selected setup -> backend/folder checks (the run-time chain)."""
     from scqo.datastore import (
+        VENDOR_CONFIG_FILES,
         SetupResolutionError,
         active_cooldown,
         load_cooldowns,
@@ -77,7 +74,7 @@ def _setup_checks(cfg, backends: dict) -> list[tuple[str, str, str]]:
         if not folder.is_dir():
             out.append((FAIL, "instr config", f"{folder} does not exist on this machine"))
         else:
-            missing = [n for n in _EXPECTED_FILES[backend] if not (folder / n).is_file()]
+            missing = [n for n in VENDOR_CONFIG_FILES[backend] if not (folder / n).is_file()]
             if missing:
                 out.append((FAIL, "instr config", f"{folder}: missing {', '.join(missing)} - copy "
                                                   "the vendor files there under canonical names"))

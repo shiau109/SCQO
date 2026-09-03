@@ -365,6 +365,10 @@ instrument, so a broken one fails before any instrument time is spent):
 - Starting a NEW cooldown = new folders: copy the vendor files into
   `<newcid>\<setup>\backend_config\` — each cycle keeps its own wiring snapshot,
   which is the registry's whole point.
+- Every run additionally snapshots this folder's content (as the session held it in
+  memory) plus the context's scqo values under `<device>\setup_snapshots\<hash16>\`
+  (content-addressed, stored once per distinct config); `scqo restore <run_id> --setup
+  <name>` rebuilds one as a new setup of the active cycle (TUTORIAL section 4).
 - Setup names are letters/digits/`_`/`-` only (they travel as CLI arguments and
   index values) and are **immutable for the life of their cycle**: renaming one is
   declaring a NEW setup — the accept era guard and run provenance compare names, so
@@ -752,6 +756,8 @@ The rules that make this safe:
   SQLite's WAL mode does not work on network shares. The NAS holds a *mirror*
   refreshed by a scheduled task; the folders are the truth (that's what the backup
   protects) and the index rebuilds anywhere, so it doesn't even need mirroring.
+  `setup_snapshots\` rides along inside each device folder, so the mirror carries the
+  restorable configs too.
 - **One authoritative config per server** (the canonical `data_root`). With one
   login account per student, per-user `~\.scqo\config.toml` silently leaves every
   OTHER account on built-in defaults (simulated, unsaved!) — put the file in a small

@@ -45,6 +45,12 @@ class Backend(ABC):
     ``simulate_ns``/``no_simulate``); accept ``**options`` and refuse an
     option you cannot honour by name — never silently. Best-effort artifacts
     signal failure with :class:`PreviewWarning`.
+
+    Two more optional provenance hooks, resolved the same way and with benign
+    ``{}`` defaults below: ``vendor_config_snapshot()`` (the in-memory vendor
+    config as files, stored per run under ``<device>/setup_snapshots/``) and
+    ``versions()`` (the driver + vendor lib versions stamped into that
+    snapshot's manifest).
     """
 
     @property
@@ -72,6 +78,30 @@ class Backend(ABC):
         drive LO; Qblox: drive_output_att_db + spec_amp + drive LO), stamped
         into each run record as PROVENANCE ONLY — never re-applied. The default
         is ``{}``: the simulated backend has no output chain.
+        """
+        return {}
+
+    def vendor_config_snapshot(self) -> dict[str, str]:
+        """The vendor config this backend holds IN MEMORY, as ``{canonical
+        filename: file text}`` serialised exactly as its ``save()`` would write
+        (same file split, indent and key order; LF newlines; trailing newline).
+
+        ``Session.run`` takes it at run START and stores it, with the context's
+        scqo values, content-addressed under ``<device>/setup_snapshots/`` — the
+        restorable record of what the run executed against (``scqo restore``
+        turns it back into a named setup). It is taken again after the run: a
+        file whose text moved is reported as ``setup_snapshot.drift`` (a
+        run-scoped mutation that missed its restore). Provenance only: never
+        write to disk, never touch the instrument, never raise — degrade to
+        ``{}``, the default here (the simulated backend has no vendor config).
+        """
+        return {}
+
+    def versions(self) -> dict[str, str]:
+        """``{distribution: version}`` of the driver and its vendor libraries,
+        stamped into the setup snapshot's manifest so a later ``scqo restore``
+        can warn when the environment differs (a QM state file names its QUAM
+        classes by dotted path). Default ``{}``; never raise.
         """
         return {}
 

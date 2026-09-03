@@ -25,15 +25,26 @@ knobs/monitors through the recording device (vendor-push-first).
 
 from __future__ import annotations
 
+import json
 import time
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from .datastore import DataStore
+from .datastore import BACKEND_CONFIG_SUBDIR, SCQO_SUBDIR, DataStore
 from .design import Design
 from .device import CompositeView, RecordingDevice
 from .roster import Roster
-from .stores import Store, _current_operator, _now, physical_store, state_store
+from .stores import (
+    PHYSICAL_FILE,
+    STATE_FILE,
+    STATE_SCHEMA,
+    Store,
+    _current_operator,
+    _now,
+    physical_store,
+    state_store,
+)
 from .suggestions import (
     Suggestion,
     decision_editor,
@@ -43,6 +54,10 @@ from .suggestions import (
     reject_suggestions,
     select_suggestions,
 )
+
+#: a file in a setup's backend_config/ folder larger than this is left out of the
+#: snapshot (a stray waveform dump must not multiply the store)
+_SNAPSHOT_EXTRA_FILE_MAX = 8 * 1024 * 1024
 
 if TYPE_CHECKING:  # lazy at runtime: campaign.py is only needed by run_campaign
     from .campaign import CampaignPlan
@@ -263,6 +278,10 @@ class Session:
                 exp.artifact_dir = run_dir / "analysis"
 
         device_before = self.device.snapshot()
+        # the vendor config this run compiles against, as the backend holds it in
+        # memory NOW (the setup snapshot); re-taken after exp.run() for the drift check
+        vendor_before = self._vendor_snapshot() if self.datastore is not None else {}
+        drift: list[str] = []
         self.device.set_context(experiment, run_id)
         updated = False
         suggestions: list[Suggestion] = []
@@ -271,7 +290,9 @@ class Session:
                 result = exp.run()
             except Exception as err:
                 result = self._failure(cls, exp, err)
+                drift = self._vendor_drift(vendor_before, run_id, experiment)
             else:
+                drift = self._vendor_drift(vendor_before, run_id, experiment)
                 if mode != "none" and result.any_success:
                     capture = SuggestionCapture(self.device, self.physical,
                                                 self.roster)
@@ -329,6 +350,10 @@ class Session:
                     backend=self.backend_label, updated_device=updated,
                     suggestions=suggestion_dicts,
                     power_context=power_context,
+                    setup_snapshot={
+                        "files": self._setup_snapshot_files(vendor_before),
+                        "manifest": self._snapshot_manifest(run_id),
+                        "drift": drift},
                     tags=list(dict.fromkeys(
                         [*self.default_tags, *(tags or []),
                          *getattr(exp, "seed_tags", [])])),
@@ -1559,6 +1584,93 @@ class Session:
                         f"{entity}.{field}/{spec.paired_with}: the batch "
                         f"would leave unequal paired lengths ({len(a)} != "
                         f"{len(b)}) — change both sides in one call")
+
+    # ------------------------------------------------------- setup snapshot
+
+    def _vendor_snapshot(self) -> dict[str, str]:
+        """The backend's in-memory vendor config as {canonical filename: text} —
+        the duck-typed ``vendor_config_snapshot`` hook, resolved like
+        ``power_context``. {} for a backend without one (simulated) and on ANY
+        failure or malformed answer: provenance must never fail a run."""
+        hook = getattr(self.backend, "vendor_config_snapshot", None)
+        if not callable(hook):
+            return {}
+        try:
+            out = hook() or {}
+        except Exception:
+            return {}
+        if not isinstance(out, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in out.items()):
+            return {}
+        return dict(out)
+
+    def _vendor_drift(self, before: dict[str, str], run_id, experiment: str) -> list[str]:
+        """Re-snapshot after ``exp.run()`` and name every vendor file whose text
+        moved: a run-scoped mutation that missed its restore (or the Qblox
+        backend's attenuation-limit re-solve). Warns, never raises; [] when the
+        run had no vendor snapshot to begin with."""
+        if not before:
+            return []
+        after = self._vendor_snapshot()
+        drift = sorted(n for n in set(before) | set(after)
+                       if before.get(n) != after.get(n))
+        if drift:
+            warnings.warn(
+                f"run {run_id}: the vendor config changed during {experiment} and was "
+                f"not restored ({', '.join(drift)}) - a run-scoped mutation leaked, or "
+                f"the Qblox backend re-solved an attenuation limit; the run's "
+                f"setup_snapshot is the state at run START", RuntimeWarning, stacklevel=3)
+        return drift
+
+    def _setup_snapshot_files(self, vendor: dict[str, str]) -> dict[str, bytes]:
+        """The files of this run's setup snapshot: the vendor texts under
+        ``backend_config/``, every OTHER regular file of the setup's backend_config
+        folder verbatim (Qblox's att_limits.json / mixer_cal.json ride along), and
+        this context's two scqo value files under ``scqo/`` in their on-disk shape
+        (``{"schema": 3, "values": ...}``, so a restore can drop them in as-is).
+        {} when there is no vendor config or anything fails."""
+        if not vendor:
+            return {}
+        try:
+            files = {f"{BACKEND_CONFIG_SUBDIR}/{name}": text.encode("utf-8")
+                     for name, text in vendor.items()}
+            if self.scqo_dir is not None:
+                folder = self.scqo_dir.parent / BACKEND_CONFIG_SUBDIR
+                if folder.is_dir():
+                    for p in sorted(folder.iterdir()):
+                        if (p.is_file() and not p.name.startswith(".")
+                                and p.name not in vendor
+                                and p.stat().st_size <= _SNAPSHOT_EXTRA_FILE_MAX):
+                            files[f"{BACKEND_CONFIG_SUBDIR}/{p.name}"] = p.read_bytes()
+            for name, values in ((STATE_FILE, self.state.values()),
+                                 (PHYSICAL_FILE, self.physical.values())):
+                text = json.dumps({"schema": STATE_SCHEMA, "values": values},
+                                  indent=2, allow_nan=False) + "\n"
+                files[f"{SCQO_SUBDIR}/{name}"] = text.encode("utf-8")
+            return files
+        except Exception:
+            return {}
+
+    def _snapshot_manifest(self, run_id) -> dict:
+        """The run-specific half of a snapshot manifest: era stamps, the first run
+        that produced it, and the scqo + driver/vendor versions (``versions()``
+        hook) a later ``scqo restore`` compares against its own environment."""
+        versions: dict = {}
+        try:
+            from importlib.metadata import version
+
+            versions["scqo"] = version("scqo")
+        except Exception:
+            pass
+        hook = getattr(self.backend, "versions", None)
+        if callable(hook):
+            try:
+                versions.update({str(k): str(v) for k, v in (hook() or {}).items()})
+            except Exception:
+                pass
+        return {"backend": self.backend_label, "created_at": _now(),
+                "first_run_id": run_id, "cooldown": self.cooldown_id,
+                "setup": self.setup_name, "versions": versions}
 
     def _current_value(self, entity: str, field: str, role: str):
         if role == "fact":

@@ -596,6 +596,16 @@ when suggested updates are still undecided, and the folder path.)
         resonator_spectroscopy_plotdata.nc                 arrays to redraw without refitting
 ```
 
+Beside the day folders, `<data_root>/SQ_demo/setup_snapshots/<hash16>/` holds the **setup
+snapshot** the run executed against: `backend_config/` (the vendor config exactly as the
+session held it in memory at run start — QM `state.json` + `wiring.json`, Qblox
+`dut_config.json` + `hw_config.json`, plus any other file of the setup's folder), `scqo/`
+(this context's `scqo_state.json` + `physical.json` values) and `manifest.json` (hash,
+per-file checksums, driver/vendor versions, the first run that produced it). Identical
+content is stored once — `record.json` points at it via `setup_snapshot.hash`, and
+`setup_snapshot.drift` lists vendor files that changed DURING the run without being
+restored (also warned at run time). Simulated runs have no snapshot.
+
 (A Ramsey run looks the same with its own artifacts: `ramsey_time_domain.png`,
 `ramsey_fft_spectrum.png`, etc.)
 
@@ -622,6 +632,25 @@ scqo campaign --show <campaign_id> --plot
 
 `repeats.jsonl` deliberately stores no fitted numbers — the child runs' `result.json`
 stays the one place every number lives.
+
+### Re-running an old configuration
+
+`scqo restore <run_id> --setup <name>` turns a run's setup snapshot back into a NEW named
+setup of the device's ACTIVE cooldown cycle (`<device>/<cid>/<name>/backend_config/` +
+`scqo/`, and a `[<cid>.setup.<name>]` block appended to `cooldowns.toml` with a note naming
+the run). Then select it and re-run with the run's own parameters:
+
+```powershell
+scqo restore 20260903-151504-chipA-qubit_ramsey-01 --setup replay_0903
+scqo user --setup replay_0903
+scqo run qubit_ramsey --params <run folder>\parameters.json
+```
+
+The current setup is untouched — compare the two eras through `scqo find --setup`. A run
+from a DIFFERENT cooldown is refused (frequencies shift between cooldowns); `--force`
+overrides. The restored context starts with an empty change history, so `scqo state
+--sources` shows its values as `(no record)`; a version WARNING means the snapshot was
+written by other driver/vendor versions and a QM `__class__` path may no longer import.
 
 **The folder is the truth.** The SQLite index (`<data_root>/index.sqlite`) is only a
 cache — if it is ever missing or stale, rebuild it losslessly:
