@@ -195,7 +195,6 @@ from .qubit_spectroscopy_cryoscope import QubitSpectroscopyCryoscope  # noqa: E4
 from .qubit_spectroscopy_flux_pulse import (  # noqa: E402
     QubitSpectroscopyFluxPulse,
 )
-from .qubit_spectroscopy_overlap import QubitSpectroscopyOverlap  # noqa: E402
 from .qubit_sqrb import QubitSQRB  # noqa: E402
 from .qubit_stark_phase_echo import QubitStarkPhaseEcho  # noqa: E402
 from .qubit_t1_ade import QubitT1Ade  # noqa: E402
@@ -237,7 +236,7 @@ __all__ = [
     "QubitParitySwitchContinuous", "QubitParitySwitchDiscrete",
     "QubitPiPulseError", "QubitPowerRabi", "QubitRamsey",
     "QubitRelaxation", "QubitRelaxationFluxPulse", "QubitSQRB",
-    "QubitSpectroscopy", "QubitSpectroscopyCryoscope", "QubitSpectroscopyFluxPulse", "QubitSpectroscopyOverlap",
+    "QubitSpectroscopy", "QubitSpectroscopyCryoscope", "QubitSpectroscopyFluxPulse",
     "QubitStarkPhaseEcho",
     "QubitT1Ade", "QubitT1Bayesian",
     "QubitThermalPopulation", "QubitTomography", "QubitXyzDelay",

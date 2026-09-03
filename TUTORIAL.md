@@ -71,22 +71,22 @@ scqo run                                         # no arguments = show the menu
 ```
 pair_swap_chevron                   qubit_spectroscopy_cryoscope
 pair_swap_flux_map                  qubit_spectroscopy_flux_pulse
-pair_zz_coupler                     qubit_spectroscopy_overlap
-qc_n_stark_amp                      qubit_sqrb
-qc_n_swap_amp                       qubit_stark_phase_echo
-qubit_deterministic_benchmarking    qubit_t1_ade
-qubit_drag_alternating              qubit_t1_bayesian
-qubit_drag_equator                  qubit_thermal_population
-qubit_echo                          qubit_tomography
-qubit_echo_flux_pulse               qubit_xyz_delay
-qubit_parity_switch_continuous      readout_frequency
-qubit_parity_switch_discrete        readout_power
-qubit_pi_pulse_error                resonator_spectroscopy
-qubit_power_rabi                    resonator_spectroscopy_flux
-qubit_ramsey                        resonator_spectroscopy_power_amp
-qubit_ramsey_cryoscope              resonator_spectroscopy_power_chain
-qubit_relaxation                    single_shot_readout
-qubit_relaxation_flux_pulse         single_shot_readout_gef
+pair_zz_coupler                     qubit_sqrb
+qc_n_stark_amp                      qubit_stark_phase_echo
+qc_n_swap_amp                       qubit_t1_ade
+qubit_deterministic_benchmarking    qubit_t1_bayesian
+qubit_drag_alternating              qubit_thermal_population
+qubit_drag_equator                  qubit_tomography
+qubit_echo                          qubit_xyz_delay
+qubit_echo_flux_pulse               readout_frequency
+qubit_parity_switch_continuous      readout_power
+qubit_parity_switch_discrete        resonator_spectroscopy
+qubit_pi_pulse_error                resonator_spectroscopy_flux
+qubit_power_rabi                    resonator_spectroscopy_power_amp
+qubit_ramsey                        resonator_spectroscopy_power_chain
+qubit_ramsey_cryoscope              single_shot_readout
+qubit_relaxation                    single_shot_readout_gef
+qubit_relaxation_flux_pulse
 qubit_spectroscopy
 # capabilities: state_readout(14) flux(4) qubit_reset(30) flux_pulse(3) amplitude(4) drive_detuning(4) readout_detuning(5) none(0)
 # filter: scqo run --capability <name>    detail: scqo run <name> --help

@@ -47,11 +47,13 @@ under `scqat/estimators/`; never through a second binding.
    `start_readout_detuning_hz`). Likewise `qubit_echo_flux_pulse` and
    `qubit_relaxation_flux_pulse` share `("flux_bias_v","wait_time_ns")` byte-for-byte and
    correctly have their own estimators.
-2. **A shared fit routine is never a shared model.** `qubit_spectroscopy_overlap`'s line is
-   AC-Stark shifted by the live readout tone — different physics — and one Lorentzian fits
-   both only because a shifted Lorentzian is still a Lorentzian. Reusing an estimator on
-   that basis binds a physics claim to a numerical coincidence, which goes silent exactly
-   when it stops holding.
+2. **A shared fit routine is never a shared model.** `qubit_spectroscopy`'s line under
+   `readout_overlap=true` is AC-Stark shifted by the live readout tone — different physics —
+   and one Lorentzian fits both modes only because a shifted Lorentzian is still a
+   Lorentzian. That used to be a SECOND experiment (`qubit_spectroscopy_overlap`) reusing
+   this one's estimator, which bound a physics claim to a numerical coincidence. It was
+   resolved by rule 4 below, not by keeping the second binding: the two are one experiment
+   with a Parameters field selecting the sequence, so one estimator serves them honestly.
 
 **Deciding, first match wins:**
 
@@ -344,27 +346,27 @@ tests/test_campaign.py          # the pure aggregator + run_campaign orchestrati
 ### The registered experiments
 
 <!-- BEGIN generated: experiments -->
-**45 registered experiments.** This list is GENERATED from the registry
+**44 registered experiments.** This list is GENERATED from the registry
 (`scqo.catalog()`) - refresh it with `python scripts/update_docs.py`. Descriptions are
 catalog-quality and live in the registry, never here: read one with
 `scqo run <name> --help`, or browse by capability with `scqo run --capability <name>`.
 
 ```
-broadband_qubit_spectroscopy        qubit_parametric_drive_amp          qubit_sqrb
-broadband_resonator_spectroscopy    qubit_parametric_drive_time         qubit_stark_phase_echo
-pair_swap_angle                     qubit_parity_switch_continuous      qubit_t1_ade
-pair_swap_chevron                   qubit_parity_switch_discrete        qubit_t1_bayesian
-pair_swap_flux_map                  qubit_pi_pulse_error                qubit_thermal_population
-pair_zz_coupler                     qubit_power_rabi                    qubit_tomography
-qc_n_stark_amp                      qubit_ramsey                        qubit_xyz_delay
-qc_n_swap_amp                       qubit_ramsey_cryoscope              readout_frequency
-qc_trotter_compensation             qubit_ramsey_phasor                 readout_power
-qc_unidirectional_trotter           qubit_relaxation                    resonator_spectroscopy
-qubit_deterministic_benchmarking    qubit_relaxation_flux_pulse         resonator_spectroscopy_flux
-qubit_drag_alternating              qubit_spectroscopy                  resonator_spectroscopy_power_amp
-qubit_drag_equator                  qubit_spectroscopy_cryoscope        resonator_spectroscopy_power_chain
-qubit_echo                          qubit_spectroscopy_flux_pulse       single_shot_readout
-qubit_echo_flux_pulse               qubit_spectroscopy_overlap          single_shot_readout_gef
+broadband_qubit_spectroscopy        qubit_parametric_drive_amp          qubit_stark_phase_echo
+broadband_resonator_spectroscopy    qubit_parametric_drive_time         qubit_t1_ade
+pair_swap_angle                     qubit_parity_switch_continuous      qubit_t1_bayesian
+pair_swap_chevron                   qubit_parity_switch_discrete        qubit_thermal_population
+pair_swap_flux_map                  qubit_pi_pulse_error                qubit_tomography
+pair_zz_coupler                     qubit_power_rabi                    qubit_xyz_delay
+qc_n_stark_amp                      qubit_ramsey                        readout_frequency
+qc_n_swap_amp                       qubit_ramsey_cryoscope              readout_power
+qc_trotter_compensation             qubit_ramsey_phasor                 resonator_spectroscopy
+qc_unidirectional_trotter           qubit_relaxation                    resonator_spectroscopy_flux
+qubit_deterministic_benchmarking    qubit_relaxation_flux_pulse         resonator_spectroscopy_power_amp
+qubit_drag_alternating              qubit_spectroscopy                  resonator_spectroscopy_power_chain
+qubit_drag_equator                  qubit_spectroscopy_cryoscope        single_shot_readout
+qubit_echo                          qubit_spectroscopy_flux_pulse       single_shot_readout_gef
+qubit_echo_flux_pulse               qubit_sqrb
 ```
 <!-- END generated: experiments -->
 
@@ -402,7 +404,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 | `qubit_flux_arch` | qubit_spectroscopy_flux_pulse |
 | `qubit_relaxation` | qubit_relaxation |
 | `qubit_relaxation_flux` | qubit_relaxation_flux_pulse |
-| `qubit_spectroscopy` | qubit_spectroscopy, qubit_spectroscopy_overlap **(shared)** |
+| `qubit_spectroscopy` | qubit_spectroscopy |
 | `qubit_sqrb` | qubit_sqrb |
 | `qubit_stark_phase_echo` | qubit_stark_phase_echo |
 | `qubit_t1_ade` | qubit_t1_ade |
@@ -421,7 +423,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 | `zz_interaction` | pair_zz_coupler |
 
 Binds no estimator (fits inline - also a violation): `qubit_pi_pulse_error`.
-Shared bindings: 4 - `qubit_spectroscopy`, `readout_fidelity`, `resonator_spectroscopy_power`, `state_discrimination`.
+Shared bindings: 3 - `readout_fidelity`, `resonator_spectroscopy_power`, `state_discrimination`.
 <!-- END generated: estimator-map -->
 
 ### Datastore (the "find my measurement data" layer)
@@ -500,6 +502,30 @@ so reindex heals any skipped write); multi-PC writers need per-PC data_roots.
 2. Implement only `probe()` for the instrument (lazy-import the vendor lib inside it).
 3. `@register` the subclass so it appears in `catalog()`.
 Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
+
+### Backend parity — the two probes must realize the SAME sequence
+Given one Parameters object, both drivers' `probe()` must produce the same
+experiment: the same pulse ORDER, the same pulses PRESENT, and the same tones ON
+during acquisition. Only vendor idiom may differ — QM's `align()` / `wait()`
+against Qblox's ASAP chaining and `rel_time`, a rendered waveform against a
+stitched AWG-offset pair. Timing that both sides need is derived ONCE in a shared
+neutral helper (`_overlap.overlap_windows`, `_capabilities.qubit_reset.reset_wait_ns`,
+`_depletion.depletion_wait_ns`) and the probes only spend the numbers.
+
+**A field description saying some backend "ignores" a parameter is this rule's
+counter-example, not an exemption.** `drive_len_ns` carried exactly that sentence
+while QM played a finite saturation pulse and Qblox latched a continuous one
+across the whole sweep — so `scqo run qubit_spectroscopy` measured the bare
+line on one instrument and an AC-Stark-shifted one on the other, and both wrote
+the result into the same `drive_freq_hz`. Fixed 2026-09-03.
+
+The exception is an OPTIONAL CAPABILITY a backend cannot realize — which
+`reset_method` opt-in sets a driver carries, or an experiment that only ships on
+one side. Those are legitimately asymmetric (`_capabilities/qubit_reset.py` says
+so, and each driver's census test is the authority), but the backend must REFUSE
+BY NAME and never silently downgrade. Each driver pins the sequence half with a
+structural test over its own compiled output (`test_sequential_timing.py` on
+Qblox, `test_sequential_probe.py` on QM).
 
 ### Testing discipline — run only what the edit can break
 Default for a localized change (from the repo root): `uv run pytest tests/test_model_experiments.py -k ramsey -q`.
