@@ -1,0 +1,61 @@
+name = "coupler-flux-macro-shapes"
+repos = { scqo-qm = "a466d28" }   # LAST commit; driver-only, no scqo and no scqat
+kind = "fix"
+coupling = ""      # nothing outside scqo-qm; no floor moves, no dependency changes
+validated = "offline"
+notes = """
+FIX - the composite knob `<op>_coupler_flux` found no coupler pulse on the macro
+the lab actually runs, so on the real chip it read None for every pair and every
+write raised KeyError.
+
+THE BUG. The QM binding was `qp.macros['<op>'].coupler_flux_pulse.amplitude`,
+which is the VENDOR quam_builder CZGate's shape. Every pair macro in the live
+quam_state is an ISwapImplementation, which has no such attribute: it declares
+`flux_pulse: str` and plays that ONE named pulse on both the control's z line and
+the coupler. The string 'coupler_flux_pulse' appears ZERO times in state.json.
+
+Worse than a missing binding, and this is the part worth recording: read_knob
+reported the resulting None as 'fixed coupler: the gate plays no coupler pulse',
+and write_knob refused with that as its stated reason. Both are FALSE for this
+macro - ISwapImplementation.apply does play a coupler pulse - so the surface was
+not merely silent, it asserted something untrue about the device. Anything
+reading the knob through `scqo state` or a device snapshot saw the operating
+point as absent.
+
+CONSEQUENCE. pair_swap_angle is record-only BECAUSE of this. Its whole purpose is
+to replace hand-editing register scripts with a measured angle->volts curve, and
+it could not write its own answer back - the calibration loop it exists to close
+was left open by a binding written against the wrong macro shape.
+
+THE FIX, and where it already was. Resolution now walks all THREE shapes through
+`scqo_qm/experiments/_coupler_knob.find_coupler_pulse`, the module that already
+held the correct ISwap path - added at v3.7.0 for the three swap probes, ONE DAY
+after the binding, and never joined up. The repo had been carrying two
+contradictory beliefs about where a pair's coupler amplitude lives, in two
+modules, with only the newer one right for the lab's hardware. The shapes:
+vendor CZGate with coupler_flux_pulse holding a Pulse (was handled); the same
+field holding a pulse NAME, which the vendor resolves through coupler.get_pulse
+(was NOT - so this was broken for CZ too); and ISwapImplementation naming its
+pulse in flux_pulse (was NOT). `hasattr`, not getattr-with-a-default, is what
+separates a macro that DECLARES coupler_flux_pulse and leaves it None - a
+genuinely fixed-coupler gate, which still reads None and refuses writes - from
+one of an unfamiliar shape.
+
+WHY NO TEST CAUGHT IT, which is the reusable lesson: the stub pair carried only
+the vendor CZ macro, so the binding was exercised solely against a shape the lab
+does not run. Tests green, hardware path dead, and the FIXTURE was what hid it.
+The stub now carries both shapes, its coupler gained an operations table for the
+iswap pulse to live in, and a guard test pins that both shapes stay present -
+the fixture gets the regression test because the fixture was the failure.
+Mutation-checked: reverting to the one-shape lookup fails the two new tests.
+
+NOT FIXED HERE and unchanged by this: on 5Q4C both chain couplers are baked at
+0.0 V, so resolve_coupler_knob still refuses to DRIVE them BY NAME, pointing at
+register_flattop_cosine.py. This makes the knob correct and the refusal honest;
+bringing the couplers up is still a hardware prerequisite, exactly as the v3.7.0
+fragment flagged.
+
+OFFLINE-VALIDATED: scqo-qm 419 (.venv-qm, up from 416 - the iswap-shape read/write
+test, the fixed-coupler discrimination test, and the fixture guard). scqo
+untouched and not re-run beyond a targeted composite/catalog selection (41).
+"""
