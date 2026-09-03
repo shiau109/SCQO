@@ -50,7 +50,8 @@ class Backend(ABC):
     ``{}`` defaults below: ``vendor_config_snapshot()`` (the in-memory vendor
     config as files, stored per run under ``<device>/setup_snapshots/``) and
     ``versions()`` (the driver + vendor lib versions stamped into that
-    snapshot's manifest).
+    snapshot's manifest). ``release_instruments()`` is the one optional hook
+    that ACTS on the instrument rather than describing it.
     """
 
     @property
@@ -96,6 +97,23 @@ class Backend(ABC):
         ``{}``, the default here (the simulated backend has no vendor config).
         """
         return {}
+
+    def release_instruments(self) -> list[str]:
+        """Drop any live instrument connection; return what was released.
+
+        Called before the CLI blocks on an interactive prompt: an operator who
+        walks away from "apply which updates?" must not pin the instrument.
+        Safe there because a decision only writes the in-memory config tree and
+        the JSON stores — the values reach hardware at the next ``acquire()``,
+        which reconnects.
+
+        The default ``[]`` is right for a backend holding nothing between
+        acquisitions — the simulated one, and QM, whose ``qm_session`` closes
+        the QuantumMachine in its own ``finally``. Implement it where a
+        connection OUTLIVES the run. Never raise, and never connect in order to
+        disconnect: a backend that never dialled returns ``[]`` without dialling.
+        """
+        return []
 
     def versions(self) -> dict[str, str]:
         """``{distribution: version}`` of the driver and its vendor libraries,

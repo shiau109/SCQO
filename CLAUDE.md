@@ -446,15 +446,22 @@ rebuilds it). Query with `Session.find_runs(experiment=, target=, tag=, since=, 
 reload with `load_run(run_id)` / `datastore.open_dataset(run_id)`. A **campaign**
 persists one extra folder, `<data_root>/<device>/campaigns/<campaign_id>/`
 (`campaign.json` = plan + status + statistics + the aggregate SUGGESTIONS and their
-decisions, rewritten per repeat; `repeats.jsonl` = append-only skeleton, run_ids and
-timing, never fit VALUES) — a sibling of the day folders because an overnight campaign
+decisions + `suggestion_problems` (a generation that FAILED) and `suggestion_notes`
+(why it proposed NOTHING — a target below `[writeback] min_n`; separate channels
+because a shortfall is not an error), rewritten per repeat; `repeats.jsonl` =
+append-only skeleton, run_ids and timing, never fit VALUES) — a sibling of the day folders because an overnight campaign
 crosses midnight, and invisible to every glob over the data root. Post-finalize
 decisions go ONLY through the locked `edit_campaign_suggestions` (persist_campaign is
 the running process's lockless whole-file write); the campaigns table carries a
 derived `suggestions_pending` column (schema v10) behind `find_campaigns(pending=)`,
 and applied values stamp `ChangeRecord.campaign_id` (provenance status "campaign";
-decide via `scqo accept --campaign <id>`, regenerate pre-feature campaigns via
-`scqo campaign --suggest <id>`). Its children are ordinary runs stamped `campaign`/`repeat_idx`/`step_idx`
+decide via `scqo accept --campaign <id>`, which the campaign's own tail offers as
+soon as it finishes — the interactive review, or the paste-ready command when
+stdout is a pipe; regenerate pre-feature campaigns via `scqo campaign --suggest
+<id>`). The review RELEASES the instrument before it blocks on the human
+(`Backend.release_instruments`, implemented only where a connection outlives the
+run — Qblox): deciding writes the in-memory config and the JSON stores, never a
+socket, and the values reach hardware at the next run. Its children are ordinary runs stamped `campaign`/`repeat_idx`/`step_idx`
 in an INDEXED column (never a `campaign:<id>` tag — that would be an unindexed
 `json_each` scan and a second grouping authority); walk them with
 `campaign_runs(campaign_id)`, which is unlimited and in execution order, NOT

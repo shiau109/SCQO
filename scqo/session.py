@@ -762,13 +762,17 @@ class Session:
             # stop_reason, exactly like the persist guard below.
             if mode == "none" and manifest["statistics"]:
                 try:
-                    generated, gen_problems = self._campaign_suggestions(
+                    generated, gen_problems, gen_notes = self._campaign_suggestions(
                         plan, manifest["statistics"])
                     if generated:
                         manifest["suggestions"] = [
                             s.model_dump(mode="json") for s in generated]
                     if gen_problems:
                         manifest["suggestion_problems"] = gen_problems
+                    # Set only when non-empty, so a healthy campaign's manifest
+                    # (and its --json) stays byte-identical to before.
+                    if gen_notes:
+                        manifest["suggestion_notes"] = gen_notes
                 except Exception as err:
                     manifest["suggestion_problems"] = [
                         f"generation failed: {type(err).__name__}: {err}"]
@@ -849,7 +853,7 @@ class Session:
 
     def _campaign_suggestions(
         self, plan, statistics: dict,
-    ) -> tuple[list[Suggestion], list[str]]:
+    ) -> tuple[list[Suggestion], list[str], list[str]]:
         """The aggregate-writeback generator: replay each step experiment's
         own ``update()`` on a synthetic Result built from the campaign
         statistics, under a SuggestionCapture — so the fit-key -> field
@@ -868,9 +872,21 @@ class Session:
         JSON-null form the retroactive path reads back. stderr twins pass
         through on purpose: an update() only reads the keys it knows.
 
-        Returns ``(suggestions, problems)``; a failing experiment (e.g. its
-        update() KeyErrors on a fit key that did not survive ``min_n``) lands
-        in problems and never blocks the others.
+        Returns ``(suggestions, problems, notes)``; a failing experiment (e.g.
+        its update() KeyErrors on a fit key that did not survive ``min_n``)
+        lands in problems and never blocks the others.
+
+        NOTES explain an ABSENCE — why a campaign proposed nothing — and are
+        not errors, which is why they are a separate channel from problems
+        (rendered as "writeback problem:" in the CLI and the viewer). They are
+        per (experiment, target), never per quantity: the statistics carry
+        uncatalogued fit params (``amplitude``, ``offset``) that could never
+        become a suggestion, so naming quantities would be noise. Two kinds,
+        both about ``min_n`` because that is the floor an operator can act on:
+        a target that kept NOTHING, and — beside a problem, where the bare
+        ``KeyError`` is unreadable on its own — the keys ``min_n`` took from a
+        target that did take part. A target whose statistic resolved but is
+        NaN stays silent: a different cause with a different remedy.
         """
         import math
 
@@ -881,25 +897,45 @@ class Session:
         wb = plan.writeback
         suggestions: list[Suggestion] = []
         problems: list[str] = []
+        notes: list[str] = []
         first_step: dict[str, Any] = {}
         for step in plan.steps:
             first_step.setdefault(step.experiment, step)
         for name in dict.fromkeys(plan.experiments):
             fit: dict[str, dict[str, float]] = {}
+            thin: dict[str, dict[str, int]] = {}
             for target, quantities in (statistics.get(name) or {}).items():
                 kept: dict[str, float] = {}
+                short: dict[str, int] = {}
+                best_n = 0
                 for quantity, st in (quantities or {}).items():
                     value = (st or {}).get(wb.stat)
-                    if ((st or {}).get("n") or 0) < wb.min_n:
-                        continue
+                    n = (st or {}).get("n") or 0
+                    best_n = max(best_n, n)
                     if (not isinstance(value, (int, float))
                             or isinstance(value, bool)):
                         continue  # nonscalar series / unresolved (JSON null)
                     if not math.isfinite(value):
                         continue  # NaN/Inf must never become a Suggestion
+                    if n < wb.min_n:
+                        # LAST, so `short` holds only real numbers the floor
+                        # alone held back — a per-point array is not something
+                        # more repeats would have made proposable.
+                        short[quantity] = n
+                        continue
                     kept[quantity] = float(value)
                 if kept:
                     fit[target] = kept
+                    if short:
+                        thin[target] = short  # only useful beside a problem
+                elif 0 < best_n < wb.min_n:
+                    # The reported case: a short campaign proposes nothing and
+                    # says nothing. best_n == 0 stays silent - the statistics
+                    # table already shows n=0 and the step line said FAILED.
+                    notes.append(
+                        f"{name}/{target}: only {best_n} successful "
+                        f"{'repeat' if best_n == 1 else 'repeats'}, below the "
+                        f"writeback floor min_n={wb.min_n} - nothing proposed")
             if not fit:
                 continue  # nothing resolved for this experiment — not an error
             try:
@@ -923,7 +959,13 @@ class Session:
                 suggestions.extend(capture.suggestions)
             except Exception as err:
                 problems.append(f"{name}: {type(err).__name__}: {err}")
-        return suggestions, problems
+                # The commonest cause is an update() reading a key min_n took.
+                # "KeyError: 't1_s'" cannot be acted on; naming the floor can.
+                for target, short in thin.items():
+                    notes.append(
+                        f"{name}/{target}: dropped below min_n={wb.min_n}: "
+                        + ", ".join(f"{q} (n={n})" for q, n in sorted(short.items())))
+        return suggestions, problems, notes
 
     def find_campaigns(self, **filters: Any) -> list[dict]:
         """Query saved campaigns (newest first); ``[]`` without a data_root."""
@@ -972,15 +1014,16 @@ class Session:
                 f"{len(manifest['suggestions'])} suggestions (decisions "
                 f"included) — pass force=True (--force) to regenerate")
         plan = CampaignPlan(**manifest["plan"])
-        generated, problems = self._campaign_suggestions(
+        generated, problems, notes = self._campaign_suggestions(
             plan, manifest.get("statistics") or {})
         new_dicts = [s.model_dump(mode="json") for s in generated]
         stored = store.edit_campaign_suggestions(
-            campaign_id, lambda _rows: new_dicts, problems=problems)
+            campaign_id, lambda _rows: new_dicts, problems=problems, notes=notes)
         return {
             "campaign_id": campaign_id,
             "suggestions": len(new_dicts),
             "problems": problems,
+            "notes": notes,
             "pending_total": pending_count(stored.get("suggestions", [])),
         }
 
@@ -1504,6 +1547,31 @@ class Session:
                     f"failed (state files may lag the instrument): "
                     f"{type(err).__name__}: {err}")
         return summary
+
+    def release_instruments(self) -> list[str]:
+        """Drop the backend's live instrument connection; the names released.
+
+        The duck-typed ``release_instruments`` hook, resolved like
+        ``vendor_config_snapshot``. The CLI calls it before blocking on the
+        accept prompt so an unattended terminal does not pin the instrument;
+        deciding a suggestion only writes the in-memory config tree and the
+        JSON stores, so nothing here is needed to apply one, and the next
+        ``run()`` reconnects.
+
+        ``[]`` for a backend that holds nothing (simulated, QM) and on ANY
+        failure: losing the connection-release must never cost the accept step,
+        the same doctrine as the statistics figure.
+        """
+        hook = getattr(self.backend, "release_instruments", None)
+        if not callable(hook):
+            return []
+        try:
+            out = hook() or []
+        except Exception as err:
+            warnings.warn(f"releasing the instrument failed ({type(err).__name__}: "
+                          f"{err}); the connection is still held", stacklevel=2)
+            return []
+        return [str(name) for name in out]
 
     # ------------------------------------------------------------ plumbing
 

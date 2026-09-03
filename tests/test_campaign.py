@@ -928,10 +928,22 @@ def test_finalized_campaign_carries_grouped_suggestions(session):
 
 def test_generation_honours_writeback_stat_and_min_n(session):
     # below the floor: a 2-repeat campaign proposes nothing (min_n default 3)
+    # - and SAYS SO. Until 2026-09-04 it was silent, so a 2- and a 3-repeat
+    # campaign printed byte-identical output and the accept step simply
+    # appeared not to exist.
     out = session.run_campaign(CampaignPlan(
         label="short", repeat=2, defaults={"targets": ["q0"]}, skip_artifacts=True,
         steps=[{"experiment": "qubit_relaxation"}]))
     assert "suggestions" not in out
+    assert out["suggestion_notes"] == [
+        "qubit_relaxation/q0: only 2 successful repeats, below the writeback "
+        "floor min_n=3 - nothing proposed"]
+    assert "suggestion_problems" not in out  # a shortfall is not an error
+    # the reason is PERSISTED: the operator reads it from --show the morning
+    # after, when the overnight scrollback is gone
+    manifest = json.loads(
+        (Path(out["data_path"]) / "campaign.json").read_text(encoding="utf-8"))
+    assert manifest["suggestion_notes"] == out["suggestion_notes"]
 
     # the stat choice picks which number is proposed
     plan = CampaignPlan(label="planted", repeat=5,
@@ -940,14 +952,59 @@ def test_generation_honours_writeback_stat_and_min_n(session):
                         steps=[{"experiment": "qubit_relaxation"}])
     stats = {"qubit_relaxation": {"q0": {
         "t1_s": {"n": 5, "mean": 10.0e-6, "median": 7.0e-6}}}}
-    rows, problems = session._campaign_suggestions(plan, stats)
-    assert not problems
+    rows, problems, notes = session._campaign_suggestions(plan, stats)
+    assert not problems and not notes
     assert {r.field: r.after for r in rows}["t1_s"] == pytest.approx(7.0e-6)
     plan_mean = plan.model_copy(update={"writeback": plan.writeback.model_copy(
         update={"stat": "mean"})})
-    rows, _ = session._campaign_suggestions(plan_mean, stats)
+    rows, _, _ = session._campaign_suggestions(plan_mean, stats)
     assert {r.field: r.after for r in rows}["t1_s"] == pytest.approx(10.0e-6)
     assert all(r.experiment == "qubit_relaxation" for r in rows)
+
+
+def test_notes_are_per_target_never_per_quantity(session):
+    """The granularity guard. The statistics carry uncatalogued fit params
+    (amplitude, offset) that could never become a suggestion, so a per-QUANTITY
+    note would bury the one line that matters in noise."""
+    plan = CampaignPlan(label="planted", repeat=5, defaults={"targets": ["q0"]},
+                        writeback={"min_n": 3},
+                        steps=[{"experiment": "qubit_relaxation"}])
+
+    # something was proposed for this target: silent, however many quantities
+    # fell short beside it
+    _, _, notes = session._campaign_suggestions(plan, {
+        "qubit_relaxation": {"q0": {"t1_s": {"n": 5, "mean": 2.5e-5},
+                                    "amplitude": {"n": 1, "mean": -2.0}}}})
+    assert notes == []
+
+    # the target fit NOTHING: silent too - the statistics table already shows
+    # n=0 and the step line already said FAILED. A note here would read as a
+    # second, different failure.
+    _, _, notes = session._campaign_suggestions(plan, {
+        "qubit_relaxation": {"q0": {"t1_s": {"n": 0, "mean": None}}}})
+    assert notes == []
+
+    # one line per (experiment, target), naming neither quantity
+    _, _, notes = session._campaign_suggestions(plan, {
+        "qubit_relaxation": {"q0": {"t1_s": {"n": 2, "mean": 2.5e-5},
+                                    "amplitude": {"n": 2, "mean": -2.0}}}})
+    assert notes == ["qubit_relaxation/q0: only 2 successful repeats, below "
+                     "the writeback floor min_n=3 - nothing proposed"]
+
+
+def test_a_partial_shortfall_explains_its_own_keyerror(session):
+    """min_n took the ONE key update() needs while leaving others, so the
+    experiment lands in problems as a bare ``KeyError: 't1_s'`` - unactionable
+    on its own. The note beside it names the floor."""
+    plan = CampaignPlan(label="planted", repeat=5, defaults={"targets": ["q0"]},
+                        writeback={"min_n": 3},
+                        steps=[{"experiment": "qubit_relaxation"}])
+    rows, problems, notes = session._campaign_suggestions(plan, {
+        "qubit_relaxation": {"q0": {"t1_s": {"n": 2, "mean": 2.5e-5},
+                                    "amplitude": {"n": 5, "mean": -2.0}}}})
+    assert rows == []
+    assert problems == ["qubit_relaxation: KeyError: 't1_s'"]
+    assert notes == ["qubit_relaxation/q0: dropped below min_n=3: t1_s (n=2)"]
 
 
 def test_generation_filters_nonfinite_and_nonscalar(session):
@@ -957,11 +1014,15 @@ def test_generation_filters_nonfinite_and_nonscalar(session):
     plan = CampaignPlan(label="planted", repeat=5, defaults={"targets": ["q0"]},
                         writeback={"min_n": 3},
                         steps=[{"experiment": "qubit_relaxation"}])
-    rows, problems = session._campaign_suggestions(plan, {
+    rows, problems, notes = session._campaign_suggestions(plan, {
         "qubit_relaxation": {"q0": {"t1_s": {"n": 5, "mean": float("nan")}}}})
     assert rows == [] and problems == []
+    # deliberate non-goal: the statistic RESOLVED (n=5), it is just not a
+    # number. A different cause with a different remedy from the min_n floor,
+    # so the min_n note must not claim it.
+    assert notes == []
 
-    rows, problems = session._campaign_suggestions(plan, {
+    rows, problems, _ = session._campaign_suggestions(plan, {
         "qubit_relaxation": {"q0": {
             "t1_s": {"n": 5, "mean": 2.5e-5},
             "t1_stderr_s": {"n": 5, "mean": None},          # JSON null
@@ -971,6 +1032,23 @@ def test_generation_filters_nonfinite_and_nonscalar(session):
     assert problems == []
     assert {r.field for r in rows} == {"t1_s", "thermalization_time_s"}
     assert all(math.isfinite(r.after) for r in rows)
+
+
+def test_the_shortfall_list_holds_only_numbers_the_floor_alone_held_back(session):
+    """A per-point ARRAY is not something more repeats would have made
+    proposable, so it must not appear in a "dropped below min_n" note beside a
+    real quantity that would have."""
+    plan = CampaignPlan(label="planted", repeat=5, defaults={"targets": ["q0"]},
+                        writeback={"min_n": 3},
+                        steps=[{"experiment": "qubit_relaxation"}])
+    _, problems, notes = session._campaign_suggestions(plan, {
+        "qubit_relaxation": {"q0": {
+            "t1_s": {"n": 2, "mean": 2.5e-5},                 # the real one
+            "per_point": {"n": 0, "n_nonscalar": 5, "mean": None},
+            "amplitude": {"n": 5, "mean": -2.0},              # keeps fit alive
+        }}})
+    assert problems == ["qubit_relaxation: KeyError: 't1_s'"]
+    assert notes == ["qubit_relaxation/q0: dropped below min_n=3: t1_s (n=2)"]
 
 
 def test_a_failing_update_is_noted_and_never_fails_the_campaign(session, monkeypatch):
@@ -1031,6 +1109,33 @@ def test_suggest_campaign_regenerates_retroactively(session):
     path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(RuntimeError, match="still running"):
         session.suggest_campaign(cid, force=True)
+
+
+def test_regeneration_replaces_the_notes_too(session):
+    """A stale explanation is worse than none: the notes describe the
+    generation that produced the stored rows, so regenerating must overwrite
+    them, not leave the previous run's reason standing."""
+    store = session.datastore
+    out = session.run_campaign(CampaignPlan(
+        label="short", repeat=2, defaults={"targets": ["q0"]}, skip_artifacts=True,
+        steps=[{"experiment": "qubit_relaxation"}]))
+    cid = out["campaign_id"]
+    assert store.load_campaign(cid)["manifest"]["suggestion_notes"]
+
+    # a shortfall campaign has no rows, so --suggest regenerates freely
+    summary = session.suggest_campaign(cid)
+    assert summary["suggestions"] == 0
+    assert summary["notes"] == out["suggestion_notes"]
+    assert store.load_campaign(cid)["manifest"]["suggestion_notes"] == summary["notes"]
+
+    # regenerating over statistics that now clear the floor drops the note
+    path = Path(store.load_campaign(cid)["path"]) / "campaign.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["statistics"]["qubit_relaxation"]["q0"]["t1_s"]["n"] = 5
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    summary = session.suggest_campaign(cid, force=True)
+    assert summary["suggestions"] > 0 and summary["notes"] == []
+    assert store.load_campaign(cid)["manifest"]["suggestion_notes"] == []
 
 
 def test_suggestion_experiment_field_roundtrips():

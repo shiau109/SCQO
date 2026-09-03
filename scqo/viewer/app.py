@@ -828,6 +828,7 @@ def create_app(data_root: str | Path) -> FastAPI:
              "pending": sum(1 for s in suggestions
                             if s.get("status") == "pending"),
              "problems": manifest.get("suggestion_problems") or [],
+             "notes": manifest.get("suggestion_notes") or [],
              "running": manifest.get("status") == "running",
              "has_png": (Path(loaded["path"]) / STATISTICS_PNG).is_file(),
              "path": loaded["path"]},

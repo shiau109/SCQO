@@ -923,12 +923,16 @@ class DataStore:
         campaign_id: str,
         editor,
         problems: list[str] | None = None,
+        notes: list[str] | None = None,
     ) -> dict:
         """Edit a campaign's suggestion list ATOMICALLY: lock, re-read, edit, write.
 
         The campaign twin of :meth:`edit_suggestions`, over ``campaign.json``.
         ``editor(rows)`` receives the FRESH stored list and returns the list to
-        store; ``problems`` (when given) replaces ``suggestion_problems``.
+        store; ``problems`` (when given) replaces ``suggestion_problems`` and
+        ``notes`` replaces ``suggestion_notes``. Both are REPLACED rather than
+        merged: they describe the generation that produced these rows, so a
+        regeneration that leaves the old text behind is a stale explanation.
 
         The lock protects edit-vs-edit only. ``persist_campaign`` is a LOCKLESS
         whole-file write owned by the running-campaign process (rewritten after
@@ -947,6 +951,8 @@ class DataStore:
                 editor(list(manifest.get("suggestions", []))))
             if problems is not None:
                 manifest["suggestion_problems"] = list(problems)
+            if notes is not None:
+                manifest["suggestion_notes"] = list(notes)
             _write_json(campaign_dir / CAMPAIGN_FILE, manifest)
         pending = sum(1 for s in manifest["suggestions"]
                       if s.get("status") == "pending")

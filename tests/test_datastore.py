@@ -1011,11 +1011,21 @@ def test_edit_campaign_suggestions_rereads_fresh_and_patches_pending(tmp_path):
     assert on_disk["suggestions"] == fresh["suggestions"]
     assert store.find_campaigns()[0]["suggestions_pending"] == 2
 
-    # problems replace as a whole when given, and stay put when omitted
+    # problems and notes replace as a whole when given, and stay put when
+    # omitted — they describe the generation that produced these rows, so a
+    # regeneration leaving the previous reason standing would be stale
     store.edit_campaign_suggestions(cid, lambda rows: rows,
-                                    problems=["qubit_ramsey: KeyError: 'f_01_hz'"])
+                                    problems=["qubit_ramsey: KeyError: 'f_01_hz'"],
+                                    notes=["qubit_ramsey/q0: dropped below min_n=3: f_01_hz (n=2)"])
     on_disk = json.loads(path.read_text(encoding="utf-8"))
     assert on_disk["suggestion_problems"] == ["qubit_ramsey: KeyError: 'f_01_hz'"]
+    assert on_disk["suggestion_notes"] == [
+        "qubit_ramsey/q0: dropped below min_n=3: f_01_hz (n=2)"]
+
+    store.edit_campaign_suggestions(cid, lambda rows: rows, notes=[])
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk["suggestion_notes"] == []                       # cleared
+    assert on_disk["suggestion_problems"] == ["qubit_ramsey: KeyError: 'f_01_hz'"]  # kept
 
 
 def test_find_campaigns_pending_filter(tmp_path):

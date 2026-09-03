@@ -698,6 +698,24 @@ def test_campaign_page_statistics_children_and_suggestions(lab):
     assert f"scqo accept --campaign {cid}" in page
 
 
+def test_campaign_page_explains_an_empty_writeback(lab):
+    """A campaign below the min_n floor proposes nothing. The CLI says why at
+    the end of the run and again in --show; the viewer is the third reader of
+    the same stored text, next to the writeback problems it already renders."""
+    cid = lab["campaign"]["campaign_id"]
+    path = Path(lab["campaign"]["data_path"]) / "campaign.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["suggestion_notes"] = [
+        "qubit_relaxation/q0: only 2 successful repeats, below the writeback "
+        "floor min_n=3 - nothing proposed"]
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    page = lab["client"].get(f"/campaign/{cid}").text
+    assert "writeback notes:" in page
+    assert "below the writeback floor min_n=3" in page
+    assert "lower <code>[writeback] min_n</code> in the plan" in page
+
+
 def test_campaign_statistics_png_serves_and_degrades(lab):
     c = lab["client"]
     cid = lab["campaign"]["campaign_id"]

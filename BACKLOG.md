@@ -119,7 +119,17 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Found 2026-09-03. A value in the INSERT tuple, not the constant — harmless until a schema
   bump changes what the column means.
 
-### I9 Stale names and version lines (hygiene)
+### I9 A resolved-but-NaN aggregate still explains nothing (low)
+- Found 2026-09-04 while making the campaign accept step visible.
+- `suggestion_notes` covers the `min_n` shortfall only. A target whose statistic
+  RESOLVED (`n >= min_n`) but is NaN/Inf is dropped by the finiteness gate in
+  `scqo/session.py::_campaign_suggestions` and still says nothing — deliberately, since
+  it is a different cause with a different remedy (the fits are bad, not too few), and
+  folding it into the min_n wording would be a lie. Pinned as silent by
+  `tests/test_campaign.py::test_generation_filters_nonfinite_and_nonscalar`.
+- Done when: a NaN-only target gets its own note naming the fit failure, not the floor.
+
+### I10 Stale names and version lines (hygiene)
 - `scqo/cli/__main__.py::_usage()` still names LCHQBDriver / LCHQMDriver.
 - `CLAUDE.md` Status says v3.3.0 while `RELEASES.toml` is at v3.8.2 — refresh at the next cut.
 - `scqo-qm/scqo_qm/backend/qm_backend.py` module docstring: "shared with the qualibrate
@@ -134,4 +144,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
   backends); scqo-agent Phase C; `qm-session-hardening` fa1ba06 reverted, QPX1000_4 restart
   owed; the setup-snapshot feature's first real run (compare
   `<device>/setup_snapshots/<hash>/backend_config/state.json` with the setup's file, then
-  `scqo restore` + `scqo doctor`).
+  `scqo restore` + `scqo doctor`); `QbloxBackend.release_instruments` (added 2026-09-04
+  with the campaign accept step) — offline-pinned with fakes in
+  `scqo-qblox/tests/test_release_instruments.py`, but that a real `Cluster.close()`
+  returns inside `_CLUSTER_CLOSE_TIMEOUT_S` and actually frees the four sockets can
+  only be seen on hardware: run a campaign at a terminal, leave the prompt open, and
+  check that a second process can connect.

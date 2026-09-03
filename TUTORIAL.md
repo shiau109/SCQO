@@ -515,11 +515,21 @@ Things worth knowing before you leave one running overnight:
   replayed through each experiment's own `update()` and stored on the campaign as
   **pending suggested updates** (one `t1_s` series proposes both the fact and the
   derived thermalization wait, exactly like a single run would). The plan's
-  `[writeback]` table picks the statistic. Review and decide them like a run's:
+  `[writeback]` table picks the statistic. The campaign ends by showing them and
+  asking, exactly as a single `scqo run` does; from a pipe or a script it prints the
+  table and the command to come back with:
 
   ```bash
   scqo accept --campaign <campaign_id>
   ```
+
+  Two things worth knowing about that prompt. It hands the INSTRUMENT BACK before it
+  asks, so walking away from it costs nothing — a decision only writes the config
+  files, and the values reach hardware at the next run. And a campaign whose repeats
+  did not reach `[writeback] min_n` (default 3) proposes nothing and SAYS SO, at the
+  end of the run and again in `scqo campaign --show <id>`: run more repeats, or lower
+  the floor in the plan. `scqo run <name> --repeat 2` is the easy way to meet this —
+  it is a 1-step campaign and carries the same floor.
 
   Same interactive review, same era/staleness guards — and the applied values carry
   the CAMPAIGN as their provenance: `scqo state --sources` and the viewer link them
