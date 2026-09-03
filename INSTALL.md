@@ -168,7 +168,7 @@ when scripting the file use `[IO.File]::WriteAllText($path, $text)` instead.
 data_root   = 'D:\qpu_data'      # all measurement data + registries land here
 device      = "chipA"            # OPTIONAL lab-default sample (omit on multi-user servers)
 default_tags = ["projX"]         # optional; stamped on every run
-# state_sync = "pull"            # optional; real backends only ("simulated" always persists)
+# state_sync = "pull"            # optional; "pull" is the ONLY value hardware setups accept today ("simulated" always persists)
 ```
 
 (macOS/Linux: `data_root = "~/qpu_data"` — `~` is expanded.)
@@ -179,7 +179,7 @@ not by this file):
 | setup `backend =` | device tree | data | notes |
 |---|---|---|---|
 | `"simulated"` | built-in demo qubits (q0/q1) | synthetic | the practice mode; state always persists |
-| `"qblox"` / `"qm"` | real instrument | real | needs the driver repo's venv; QM keeps `state_sync="pull"` |
+| `"qblox"` / `"qm"` | real instrument | real | needs the driver repo's venv; `state_sync` must stay `"pull"` (push is temporarily refused for every hardware backend) |
 
 Optionally describe each sample in `<data_root>\devices.toml` (one table per chip:
 description and provenance notes — instrument-independent, human-facing only;
@@ -213,10 +213,13 @@ setup era. The operator's checklist:
    the sample; different names would split its trends and history.
 
 State persistence: `"simulated"` setups always persist (push is forced — an
-in-memory demo device has no vendor truth to pull). Real backends default to
+in-memory demo device has no vendor truth to pull). Hardware backends run
 `state_sync = "pull"`: the vendor config is the truth at startup and scqo pushes
-only values it freshly measures. On QM control PCs `"pull"` is mandatory — see
-scqo-qm's CLAUDE.md.
+only values it freshly measures. `"push"` is TEMPORARILY refused for every
+hardware backend (a push would seed the vendor from `scqo_state.json` with no
+history rows and clobber hand edits of the vendor config): a config that sets it
+fails at session start naming the fix, and any other value fails at parse. On QM
+control PCs the driver enforces `"pull"` a second time — see scqo-qm's CLAUDE.md.
 
 Other notes:
 - A temporary alternative config can be selected per shell

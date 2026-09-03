@@ -468,7 +468,10 @@ half-walked bundle whose quantities no longer share a drift epoch. Runs carry se
 history records the `run_id` that caused each device update. State authority:
 `state_sync="pull"` (default) seeds from the vendor at startup (safe when another tool also
 calibrates, e.g. qualibrate on QM); `"push"` restores the saved SCQO config into the vendor
-(only for devices SCQO fully owns).
+and is TEMPORARILY refused for every hardware backend (`make_session`, keyed on
+`backend_label != "simulated"`): a push seeds the vendor from `scqo_state.json` with no
+history rows and would clobber hand edits of the vendor config. Only the built-in simulated
+backend runs push (forced); `load_lab_config` refuses any value outside pull|push.
 
 **Multi-device rule:** the device = the physical SAMPLE (chip),
 never the instrument; the instrument is provenance (every run/fit stamps `backend`).
