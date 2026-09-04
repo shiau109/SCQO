@@ -64,7 +64,10 @@ Fragment `kind`, which drives the notes and the coupling floors:
    feature). Build the new `[vX-Y-Z]` block FROM the fragments, then `git rm` the
    consumed fragments in the same commit.
 
-1. **CI green** on SCQO main (3 OS). Driver + contrib test suites green in their venvs.
+1. **CI green** on SCQO main (3 OS). Driver suites green in the environment
+   [ENVIRONMENTS.md](ENVIRONMENTS.md) names for each — scqo-qblox in BOTH its `uv run` env
+   and `.venv-qblox`, scqo-qm in `.venv-qm`. SCQO's own full suite needs `--extra viewer`
+   or it silently collects 917 of 984.
 2. **Version metadata matches the tag**: bump `version` in SCQO's `pyproject.toml` to
    the release number (the `scqo --version` a user sees). scqat manages its own
    version line with the same rule (its release checklist).

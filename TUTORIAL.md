@@ -14,7 +14,8 @@ whoever set up the PC): a venv activated and a lab config in place (your own
 inside them, so use the full path or run from the repos' parent folder) — and an
 instrument env only to measure:
 `.venv-qblox` for `scqo run`/`scqo state` on the Qblox
-cluster, `.venv-qm` on the OPX1000. Cooldowns are no longer a tag you maintain:
+cluster, `.venv-qm` on the OPX1000. (Contributing rather than measuring? The venv you
+TEST in is a different question — [ENVIRONMENTS.md](ENVIRONMENTS.md).) Cooldowns are no longer a tag you maintain:
 the manager registers each cycle (`scqo device cooldown`), and every run you take is
 auto-stamped with it — findable via `scqo find --cooldown`.
 

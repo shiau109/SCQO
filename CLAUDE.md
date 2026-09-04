@@ -549,6 +549,10 @@ Qblox, `test_sequential_probe.py` on QM).
 
 ### Testing discipline — run only what the edit can break
 Default for a localized change (from the repo root): `uv run pytest tests/test_model_experiments.py -k ramsey -q`.
+`uv run` here is uv's project env `SCQO/.venv`, DRIVER-FREE by construction — which this suite
+requires, because `experiments/__init__.py` keeps the last registration, so in a driver env the
+driver's subclass answers under the core name. Full rule for all four repos, and the failure it
+prevents: [ENVIRONMENTS.md](ENVIRONMENTS.md).
 Selection map for experiment work (`scqo/experiments/<name>.py`) — always the first row, plus any that apply:
 
 | Also changed | Add to the run |
@@ -569,8 +573,12 @@ while `-k qubit_ramsey` misses the second. **0 collected means the filter was wr
 Leave `test_cli_*.py` (many subprocess spawns), `test_index_scale.py` (100k rows) and `test_viewer.py` alone
 unless the edit is in `scqo/cli/`, `scqo/datastore.py` or `scqo/viewer/` respectively.
 
-The **full suite** (`uv run pytest -q`) takes minutes, dominated by the `test_cli_*.py` subprocess
-tests. It is for exactly two cases: (1) cutting a release, and (2) an edit to **shared core**, which
+The **full suite** (`uv run --extra viewer pytest -q`) takes minutes, dominated by the
+`test_cli_*.py` subprocess tests. **`--extra viewer` is not optional and expect ZERO skips**: the
+viewer stack is a root EXTRA while `uv run` installs only the default dependency-group, so plain
+`uv run pytest -q` collects 917 instead of 984 and reports nothing missing (measured 2026-09-04;
+a machine that once ran `uv pip install -e ".[viewer]"` will not reproduce it, which is what kept
+it hidden). It is for exactly two cases: (1) cutting a release, and (2) an edit to **shared core**, which
 means one of `catalog.py`, `entities.py`, `roster.py`, `stores.py`, `device.py`, `experiment.py`,
 `session.py` — **or a `_capabilities/` mixin**, whose blast radius is every experiment that
 subclasses it (the row above says so; this list is the same claim, not a narrower one).

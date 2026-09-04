@@ -28,6 +28,9 @@ Three environments, named by **role**, each with its own shell prompt so you alw
 see which one is active. **The one rule: activate `view` for everything except
 actually running a measurement.**
 
+> This section answers *which env do I **measure** in*. *Which env do I **test** in* is a
+> different question with a different answer per repo — [ENVIRONMENTS.md](ENVIRONMENTS.md).
+
 | venv | prompt | contents | activate when you… |
 |---|---|---|---|
 | `<parent>\.venv-view` | `(view)` | scqo `[viewer]` + scqat + datasette + pytest — **no instrument libraries** | look at data (the common case): run-viewer, SQL browser, `scqo find`, `scqo tag`. Works identically on an analysis-only laptop/Mac. |
@@ -699,8 +702,19 @@ Windows, macOS and Linux):
 
 ```bash
 cd SCQO
-python -m pytest -q        # expect: all passed (any env works; view is enough)
+uv run --extra viewer pytest -q     # expect: all passed, ZERO skipped
 ```
+
+`--extra viewer` is not optional: the viewer stack is a root EXTRA and `uv run` installs
+only the default dependency-group, so without it the run collects 917 instead of 984 and
+says nothing — `tests/test_viewer.py`'s module-level `importorskip` takes 54 tests with it
+and `tests/test_lab_report.py`'s gates take 13 more.
+
+The shared `(view)` env also works — `.venv-view` carries pytest, httpx and the viewer
+extras. **A driver env does not.** `.venv-qblox` / `.venv-qm` register the driver's
+experiment classes over the core ones, so the suite would pass while exercising the
+driver; `.venv-qm` additionally omits `python-multipart` (§6), silently skipping the
+viewer tests. Which environment for which repo: [ENVIRONMENTS.md](ENVIRONMENTS.md).
 
 ## 4. Self-test against your REAL device config (no hardware needed)
 
