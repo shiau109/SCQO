@@ -129,7 +129,26 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `tests/test_campaign.py::test_generation_filters_nonfinite_and_nonscalar`.
 - Done when: a NaN-only target gets its own note naming the fit failure, not the floor.
 
-### I10 Stale names and version lines (hygiene)
+### I10 Nothing machine-checks the per-repo test commands (low)
+- Found 2026-09-04 writing `ENVIRONMENTS.md`.
+- Each sibling's `ENVIRONMENTS.md` stub repeats its own test command verbatim (so a reader who
+  does not click the URL cannot reach the wrong one), and `scripts/check_contribution.py`'s
+  `TEST_COMMANDS` holds a fourth copy. Four strings that must agree, with nothing enforcing it —
+  the same drift that produced the four arrangements in the first place, one level up.
+- Done when: a test in `SCQO/tests/` asserts `ENVIRONMENTS.md` exists and that every command in
+  its per-repo table appears verbatim in `TEST_COMMANDS`. `tests/test_docs_current.py` is the
+  precedent for "a doc block that must not rot".
+
+### I11 `scqo-qm/.venv` exists and is unusable (low)
+- Found 2026-09-04. It holds no `qm`, no `quam`, no `qualibrate`, no `scqat`, `scqo` frozen at
+  2.3.0 — residue of a stray `uv run`, which resolves from `pyproject.toml` instead of
+  `requirements-qm.lock.txt`. The docs now say it is not a thing and `check_contribution.py`
+  warns when it is present, but the directory itself is still sitting there for the next person
+  to point an interpreter at.
+- Done when: deleted on the lab machine (nothing references it), or `scqo-qm` grows a
+  `[tool.uv]` guard that makes a stray `uv run` fail loudly instead of building it.
+
+### I12 Stale names and version lines (hygiene)
 - `scqo/cli/__main__.py::_usage()` still names LCHQBDriver / LCHQMDriver.
 - `scqo-qm/scqo_qm/backend/qm_backend.py` module docstring: "shared with the qualibrate
   writebacks" (retired).
