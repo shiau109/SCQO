@@ -131,7 +131,6 @@ provenance or a trap a user can walk into, **low** = hygiene.
 
 ### I10 Stale names and version lines (hygiene)
 - `scqo/cli/__main__.py::_usage()` still names LCHQBDriver / LCHQMDriver.
-- `CLAUDE.md` Status says v3.3.0 while `RELEASES.toml` is at v3.8.2 — refresh at the next cut.
 - `scqo-qm/scqo_qm/backend/qm_backend.py` module docstring: "shared with the qualibrate
   writebacks" (retired).
 - `scqo-qm/quam_state/` holds six `*.bak*` files; QUAM merges any `*.json` under its state

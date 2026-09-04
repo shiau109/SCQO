@@ -661,5 +661,5 @@ install. [CONTRIBUTING.md](CONTRIBUTING.md) has the layout.
 - **QBLOX_training** - the vendor's read-only Qblox example repo (`docs/applications/superconducting/...`). It is a LOCAL reference checkout on the lab machine, not part of this project and not needed to build or test anything here.
 
 ## Status
-Current published release: **v3.3.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.
+Current published release: **v3.9.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.
 Deferred features and known issues live in [BACKLOG.md](BACKLOG.md): append there when you defer or discover something (date, context, pointer, done-when); remove entries when they land. Consult it before planning a feature.
