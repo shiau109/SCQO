@@ -75,6 +75,45 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Carried over; the reviewed defects live only in the session memory `pr29-viewer-dashboard-held`.
   Decide the charter, then either land with the fixes or close.
 
+### F9 Lab report: value from physical/state, the +/- from the campaign that produced it (medium)
+- Added 2026-09-05 while fixing the lab report's dressed-frequency source.
+- Problem: the authority for a reported value should be `physical.json` / `scqo_state.json`,
+  which is accept-gated by construction - a campaign's aggregate suggestion is `role="fact"`
+  (`t1_s` / `t2_star_s` / `t2_echo_s` / `n_th`) and reaches the store only once a human
+  accepts it. But `extract_chip_metrics` takes t1 / t2_ramsey / t2_echo / readout_fidelity /
+  n_th CAMPAIGN-FIRST with the physical value as the fallback, and
+  `query_campaign_statistics` never looks at suggestion status - it takes the newest
+  qualifying campaign, reviewed or not. So one sheet carries two rules: the `#1` columns are
+  reviewed, the `#100` columns are not. It was a fair workaround while campaigns did not
+  offer their accept step (that landed 2026-09-04, `06ef197`); it is not one now.
+- Where: `scqo/viewer/lab_report/metrics.py::extract_chip_metrics` - the `state`/`phys`
+  dicts drop each row's `"source"` key, and the statistics are fetched independently by
+  device/cooldown. Both inputs already exist: `scqo/viewer/app.py::_param_rows` puts the
+  full `scqo.provenance.live_sources` info dict on every row, and that dict carries
+  `campaign_id` whenever the current value traces to a campaign accept.
+- Design already decided (do not re-litigate):
+  - VALUE from physical/state; the +/- and `n` from the ONE campaign named by
+    `source["campaign_id"]`, never `query_campaign_statistics`' newest-first pick.
+  - That route also dissolves the "statistics are keyed by FIT key, suggestions by CATALOG
+    field" join problem - the change history already made the link - and `live_sources` is
+    strict-match, so a drifted value reports "external" instead of crediting a campaign.
+  - NO CORRESPONDING VALUE MEANS AN EMPTY CELL (operator's call, 2026-09-05): the export
+    shape is someone else's template and must not grow rows. So when the physical value's
+    provenance is not a campaign (status run / manual / external / unrecorded), `T1 #100`
+    is blank - and since `DATA_ROWS` has no `T1 #1` row, that chip's T1 leaves the Data
+    sheet entirely until a campaign is run AND accepted.
+  - Flip the `n_th` precedence in the same change (it feeds `temperature_mk`). Deliberately
+    NOT a separate entry: it cannot land alone without leaving two rules in one sheet.
+  - Trap: `suggestions_pending == 0` is NOT "reviewed". A campaign whose quantities all fell
+    below `[writeback] min_n` proposes nothing, so its pending count is zero too
+    (`scqo/datastore.py::_upsert_campaign`). The check must read the manifest's suggestion rows.
+  - The unified (whole-cooldown) context merges rows by `source["timestamp"]` and keeps each
+    winning row dict whole, so `value` and `source` stay same-sourced - but a row whose
+    status is "external" still competes on timestamp.
+- Done when: a `#100` cell carries a number only while that physical value's provenance is a
+  campaign, its +/- comes from that same campaign, and `tests/test_lab_report.py` pins that
+  an un-accepted campaign does not reach the sheet.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -154,6 +193,21 @@ provenance or a trap a user can walk into, **low** = hygiene.
   writebacks" (retired).
 - `scqo-qm/quam_state/` holds six `*.bak*` files; QUAM merges any `*.json` under its state
   directory, so a backup must never be named `*.json`.
+
+### I13 `RB fidelity #100` exists only through the campaign bypass (low)
+- Found 2026-09-05 while planning F9.
+- `qubit_sqrb` has no `update()` (only `define_sweep` / `simulate` / `estimate` / `probe`), so
+  it never proposes anything, and `scqo/catalog.py` has no `rb_fidelity` field on any kind.
+  `metrics.py`'s `rb_fidelity_single` is therefore ALWAYS None, and the row's only source is
+  the direct campaign-statistics read - which F9 removes, blanking the row permanently.
+- Same shape, second instance in the same function: `state.get((ro, "readout_fidelity"))` is
+  dead too - the catalog gives the readout channel `fidelity_g` / `fidelity_e` / `fidelity_f`
+  and no `readout_fidelity`. The live path is the `(fidelity_g + fidelity_e) / 2` branch
+  above it.
+- Where: `scqo/experiments/qubit_sqrb.py`; the transmon mode fields in `scqo/catalog.py`;
+  the `ro_single` and `rb_single` fallbacks in `scqo/viewer/lab_report/metrics.py`.
+- Done when: `rb_fidelity` has a catalogued home and `qubit_sqrb` an `update()` that writes
+  it, or the row and both dead `_first` branches leave the report together.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
