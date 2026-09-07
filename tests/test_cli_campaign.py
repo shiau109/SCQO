@@ -82,11 +82,15 @@ def _cli(tmp_path: Path, *args: str) -> subprocess.CompletedProcess:
         config = _lab(tmp_path)
     return subprocess.run(
         [sys.executable, "-m", "scqo.cli", *args],
-        capture_output=True, text=True,
+        # Both ends of the pipe pinned to UTF-8: the child encodes stdout per
+        # PYTHONIOENCODING (set in some shells here, unset in others) while
+        # text=True decodes with the ANSI codepage (cp950), and any mismatch
+        # kills the reader thread on the first non-ASCII byte -> stdout is None.
+        capture_output=True, text=True, encoding="utf-8",
         # SCQO_USER_CONFIG=none and an empty parameters file keep the runner's real
         # ~/.scqo out of the test (a lab default could make a step fail here).
         env={**os.environ, "SCQO_CONFIG": str(config), "SCQO_USER_CONFIG": "none",
-             "MPLBACKEND": "Agg"},
+             "MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"},
         cwd=tmp_path,
     )
 
