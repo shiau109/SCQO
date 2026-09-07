@@ -171,9 +171,14 @@ scqo/
   device.py       # vendor views per CHANNEL KIND (make_view_base) + CompositeView
                   #   (per-operation knobs via read_knob/write_knob) + RecordingDevice
                   #   (every write -> ChangeRecord) + DeviceModel ABC
-  fieldmap.py     # VendorBinding/VendorOnly shapes: the DRIVER-declared field catalog
-                  #   (neutral field -> vendor path/unit/convert DESCRIPTION + the
-                  #   backend-unique inventory) rendered by `scqo state --fields`
+  fieldmap.py     # VendorBinding/VendorOnly/OperatorCommand shapes: the DRIVER-declared
+                  #   field catalog (neutral field -> vendor path/unit/convert
+                  #   DESCRIPTION + the backend-unique inventory, whose coupled/edit/
+                  #   counterpart carry the OPERATIONAL half: what moves with what,
+                  #   what to satisfy before a hand edit, the other vendor's name for
+                  #   it) + the backend's vendor OPERATOR CLIs, which are not scqo
+                  #   subcommands and so cannot appear in `scqo -h`. Both halves
+                  #   rendered by `scqo state --fields`; `scqo doctor` points at it
   suggestions.py  # Suggestion + SuggestionCapture: update() writes become PENDING
                   #   proposals on the run record, routed by ROLE at accept/reject;
                   #   origin="operator" = human-attached via Session.suggest.

@@ -1101,6 +1101,20 @@ band, *fused* cross-references) BEFORE editing; per-run truth is
 `power_context` in each record.json. If the row is `[realizer]`, the tracked
 neutral value now lies — re-assert it through the front door
 (`scqo set q1.readout_power_dbm=...`) or revert your edit.
+Those constraints are not prose you have to hunt for: each row carries them as
+its own sub-lines — `coupled:` what must move in the SAME edit (change the LO
+and the downconverter goes with it), `edit:` how to do it safely (the governed
+`scqo set` for a `[realizer]`, or the file plus its precondition — "no live
+session, a save() would revert you") and `counterpart:` the other instrument's
+name for the same knob.
+
+**Playbook — the job needs a vendor tool, not a scqo command:** writing a
+measured cryoscope filter into the vendor config, releasing a cluster whose
+locks a dead session still holds, calibrating mixers. Those ship with the
+DRIVER, so `scqo -h` cannot list them and there is nothing to memorize:
+`scqo state --fields` ends with this backend's operator commands, each with its
+flags and any `CAUTION:`. `scqo doctor` points there when you have forgotten
+where to look.
 
 **Playbook — "set integration time to 2000 ns":** find the row with
 `scqo state --fields`; the number you type is in **the row's unit, not yours**

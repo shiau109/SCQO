@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import xarray as xr
 
 from .device import DeviceModel
-from .fieldmap import Unrealized, VendorBinding, VendorOnly
+from .fieldmap import OperatorCommand, Unrealized, VendorBinding, VendorOnly
 
 if TYPE_CHECKING:
     from .experiment import Experiment
@@ -149,3 +149,22 @@ class Backend(ABC):
         and doubling as the backlog of neutral-field candidates. Default ``{}``.
         """
         return {}
+
+    def operator_commands(self) -> tuple[OperatorCommand, ...]:
+        """This backend's vendor OPERATOR commands (:class:`scqo.fieldmap.OperatorCommand`).
+
+        Inventory only — SCQO never runs these. They are the vendor-side jobs the
+        neutral core deliberately does not own (writing a measured filter into
+        the vendor config, releasing a cluster's locks, calibrating mixers), so
+        ``scqo -h`` cannot list them and an operator would otherwise have to
+        memorize them. Rendered by ``scqo state --fields`` (``--json`` for
+        machines) beside :meth:`vendor_only`, the two halves of the same
+        question.
+
+        Zero-argument ON PURPOSE, unlike the per-target ``distortion_apply_command``
+        hint hook: half the inventory takes no target, and ``--fields`` is a
+        schema view with none in hand. Entries carry ``<placeholder>`` arguments
+        instead. Pure data — no instrument, no vendor config, no failure mode.
+        Default ``()``; never raise.
+        """
+        return ()

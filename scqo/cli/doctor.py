@@ -167,6 +167,16 @@ def main(argv: list[str] | None = None, prog: str | None = None) -> int:
 
     backends = {ep.name: ep.value for ep in entry_points(group="scqo.backends")}
     checks.append((OK, "drivers", f"backends registered: {sorted(backends) or 'none (simulated only)'}"))
+    # A pointer, not a listing: a backend's vendor-only knobs and its operator
+    # CLIs are not scqo subcommands, so `scqo -h` cannot show them and an
+    # operator would otherwise memorize them. Placed BEFORE the config loads on
+    # purpose - there is no cfg, no session and no backend here, so this line
+    # cannot construct one even by accident (doctor's "touches no instrument"
+    # promise), and it still renders when the config is what is broken.
+    checks.append((OK, "vendor knobs",
+                   "vendor-only knobs + a driver's operator CLIs are not scqo "
+                   "subcommands - list your backend's: scqo state --fields "
+                   "(--json for machines)"))
 
     from scqo import load_lab_config
 

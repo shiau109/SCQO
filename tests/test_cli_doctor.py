@@ -296,3 +296,16 @@ def test_doctor_renders_the_profile_witness_rows(tmp_path):
     # ASCII-safe token from the INSTALL §1 pointer (the § itself can mangle when
     # subprocess stdout round-trips through the OS locale encoding on Windows)
     assert "UV_PYTHON_INSTALL_DIR" in proc.stdout
+
+
+def test_doctor_points_at_the_vendor_surface(tmp_path):
+    """A backend's vendor-only knobs and its operator CLIs are not scqo
+    subcommands, so `scqo -h` cannot show them. Doctor carries the pointer, and
+    it must render on a machine with NO config at all - it is placed before the
+    config loads precisely so it survives the case where the config is what is
+    broken, and so it can never construct a backend (doctor touches no
+    instrument)."""
+    proc = _doctor(tmp_path, None)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "[OK  ] vendor knobs" in proc.stdout
+    assert "scqo state --fields" in proc.stdout
