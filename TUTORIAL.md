@@ -1235,6 +1235,25 @@ every application, a √iSWAP (θ = π/4) cycles every 4, θ = π/8 every 8. You
 the angle off the map by counting; no fit needed. (The peak transfer over N
 still reaches ~1 at N ≈ (π/2)/θ, so `min_transfer` keeps its meaning.)
 
+**But every REPEATED-swap map is contaminated by the phase between the swaps.**
+The members accumulate a relative phase φ during the pulse, the gap and the idle,
+and an exchange followed by a Z rotation does not commute: the per-round
+composite obeys `cos θ_eff = cos(φ/2)·cos θ`, so the period reports θ_eff ≥ θ,
+and the transfer PEAK moves too — the composite rotation axis tilts off the
+equator by `cos θ·sin(φ/2)`, so the amplitude where transfer is maximal is not
+where the detuning is zero but where the pulse's own Z accumulation cancels φ,
+an offset of roughly `φ / t_p`. On a 40 ns swap that is comparable to the
+resonance linewidth. This is not theoretical: two 5Q4C runs differing ONLY in
+`operation_gap_ns` fitted 0.993 and 1.561 rad for a physically identical swap.
+
+**A single pulse has no between-swap phase, which is why the chevron is the
+authority for both numbers.** `pair_swap_chevron` sweeps amplitude × DURATION,
+so the arch gives the resonance amplitude and the full-swap time `t_π` directly,
+and `θ = (π/2)·(t_p / t_π)` for any gate length — phase-free. Set
+`coupler_flux_v` to take that arch at a chosen coupler amplitude (step 1b), which
+is what makes it usable on a QCQ pair at all. Use `qc_n_swap_amp` to AMPLIFY a
+residual around a point the chevron already fixed, not to locate it.
+
 ### Step 0 — prerequisites
 
 - accepted `single_shot_readout` on both members (the pair maps read out jointly
@@ -1263,6 +1282,37 @@ growing as the coupler activates. Then pick the operating point:
   where the transfer column reads `sin²θ_target` — e.g. θ = π/4 → the P ≈ 0.5
   contour. Narrow the window and re-run until the contour is resolved by a few
   grid points.
+
+### Step 1b — the angle and the resonance, phase-free
+
+```
+scqo run pair_swap_chevron --targets q1_q2 --set coupler_flux_v=0.08 --set swap_operation=partial_swap --set drive_side=high --set flux_side=high
+```
+
+The flux map fixes the duration and shows you WHERE the resonance line runs; this
+sweeps the duration at ONE coupler amplitude and tells you what that setting
+actually buys:
+
+- `best_flux_amp_v` — the resonance control amplitude AT that coupler setting.
+  It moves with the coupler, which is the whole reason this step exists: the
+  angle knob drags the resonance knob with it.
+- `best_swap_time_ns` — the full-swap time `t_π`, hence `J = π/(2 t_π)` and
+  `θ = (π/2)·(t_p / t_π)` for the gate length you intend to bake.
+
+The volts convert against the `swap_operation` macro's own coupler pulse, the
+same reference `qc_unidirectional_trotter`'s `swap_coupler_flux` uses, so a
+coupler amplitude surveyed here transfers to the chain unchanged. Two conditions
+the probe refuses by name: the macro's coupler pulse must be SQUARE (a shaped one
+zero-pads under the swept duration instead of stretching), and it must not be
+baked at zero amplitude (it is the divisor). Engaging the coupler also puts the
+duration axis on the 4 ns clock from 16 ns up — a coupler pulse can only be
+stretched, never baked sub-clock — so set `min_swap_time_ns = 16` and give
+`max_swap_time_ns` at least 2·t_π at the SMALLEST coupler amplitude you will
+test, or the map never reaches a full swap and `min_transfer` reports FAILED.
+
+Repeat it per coupler amplitude (a campaign step each) to get the two curves the
+angle work needs: `V_resonance(V_coupler)` and `θ(V_coupler)`. Each run records
+its own `coupler_flux_v` in `result.fit`, so the curves read off the run records.
 
 ### Step 2 — materialize the operation (once per pair per angle)
 
@@ -1336,8 +1386,18 @@ flux_side = "low"
   ("promote to a coupled binding"), and no experiment proposes a composite knob
   yet — the future closed loop gives the flux map and `qc_n_swap_amp` real
   `update()`s.
-- **The chevron** (`pair_swap_chevron`) is the directly-coupled sibling survey
-  (member flux × duration); on a QCQ pair the flux map is the entry point.
+- **The chevron** (`pair_swap_chevron`) is the sibling survey (member flux ×
+  duration). With `coupler_flux_v` unset it is the directly-coupled-pair tool it
+  started as; set it and the chevron carries the pair's coupler too, which is
+  step 1b above. The flux map is still the ENTRY point on a QCQ pair — it is the
+  only 2D view of the resonance line against coupler bias — but the chevron is
+  what turns one point on that line into an angle you can trust, because it is
+  the only survey here with no repeated swap in it.
+- **The chevron does not FIT.** `best_flux_amp_v` / `best_swap_time_ns` are the
+  argmax of the arch, which is the right pair of coordinates but not a fitted
+  vertex. The plotdata carries the whole map, so a hyperbola fit
+  (`ω(δ) = √(ω_min² + δ²)`, vertex = resonance, `ω_min = 2J`) is offline work
+  today — the natural second automation after the angle estimator above.
 
 ## 13. Troubleshooting
 

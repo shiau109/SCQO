@@ -31,6 +31,7 @@ from . import register
 from .pair_swap_chevron import (
     DRIVE_SIDE_DESC,
     MIN_TRANSFER_DESC,
+    _coupler_problems,
     _flux_member_problems,
     _joint_from_roles,
     _role_names,
@@ -213,15 +214,8 @@ class PairSwapFluxMap(Experiment):
         same one ``pair_zz_coupler`` needs), and a member flux line for the y
         axis. Which member carries y is a parameter this hook cannot see, so the
         driver refuses the SELECTED member pre-probe."""
-        problems = []
-        for pair in targets:
-            entity = roster.entities.get(pair)
-            couplers = getattr(entity, "roles", {}).get("coupler", ())
-            if not couplers:
-                problems.append(f"{pair}: declares no coupler role — "
-                                f"nothing to sweep on the x axis")
-            elif (couplers[0], "flux") not in roster.defaults:
-                problems.append(f"{pair}: coupler {couplers[0]!r} has no flux channel")
+        problems = _coupler_problems(roster, targets,
+                                     "nothing to sweep on the x axis")
         problems += _flux_member_problems(roster, targets,
                                           "nothing to sweep on the y axis")
         return problems
