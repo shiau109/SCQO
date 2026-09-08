@@ -2057,3 +2057,105 @@ def test_pair_swap_angle_compensation_reaches_the_probe(session):
     fit = _angle(session, num_coupler_points=7, operation_gap_ns=20,
                  compensation_amps={"q0": 0.3})["fit"]["q0_q1"]
     assert fit["n_theta_ok"] == fit["n_coupler_flux_v"]
+
+
+def test_readout_frequency_default_none_mode_touches_channel_only(session):
+    """Default dip_fit_method='none' optimizes fidelity without touching resonator facts."""
+    before = dict(session.physical_state().get("q0_res", {}))
+    out = session.run("readout_frequency", {"targets": ["q0"], "num_shots": 300},
+                      update="apply")
+    assert out.get("error") is None, out.get("error")
+
+    fit = out["fit"]["q0"]
+    assert math.isfinite(fit["readout_freq_hz"])
+    assert "f_dress1_hz" not in fit
+    assert "chi_hz" not in fit
+    assert "f_dress0_hz" not in fit
+
+    # The resonator mode is untouched -- as a DELTA, never as an absence: the
+    # session fixture is module-scoped, so q0_res may already carry facts from
+    # any test that ran before this one.
+    assert not [s for s in out["suggestions"] if s["entity"] == "q0_res"]
+    assert session.physical_state().get("q0_res", {}) == before
+
+
+def test_readout_frequency_lorentzian_extracts_and_persists_dips_and_chi(session):
+    """dip_fit_method='lorentzian' extracts f_dress0_hz, f_dress1_hz, chi_hz and updates resonator facts."""
+    out = session.run("readout_frequency", {"targets": ["q0"], "num_shots": 300,
+                                            "dip_fit_method": "lorentzian"},
+                      update="apply")
+    assert out.get("error") is None, out.get("error")
+
+    fit = out["fit"]["q0"]
+    assert math.isfinite(fit["f_dress0_hz"])
+    assert math.isfinite(fit["f_dress1_hz"])
+    assert math.isfinite(fit["chi_hz"])
+    assert fit["chi_hz"] == pytest.approx((fit["f_dress0_hz"] - fit["f_dress1_hz"]) / 2.0)
+
+    # Applied to resonator component
+    phys = session.physical_state()
+    assert "q0_res" in phys
+    assert phys["q0_res"]["f_dress1_hz"] == pytest.approx(fit["f_dress1_hz"])
+    assert phys["q0_res"]["chi_hz"] == pytest.approx(fit["chi_hz"])
+    assert phys["q0_res"]["f_dress0_hz"] == pytest.approx(fit["f_dress0_hz"])
+
+
+def test_readout_frequency_circle_extracts_dips(session):
+    """dip_fit_method='circle' fits complex S21 and persists resonator facts."""
+    out = session.run("readout_frequency", {"targets": ["q0"], "readout_mode": "average",
+                                            "num_shots": 200, "dip_fit_method": "circle"},
+                      update="apply")
+    assert out.get("error") is None, out.get("error")
+    fit = out["fit"]["q0"]
+    assert math.isfinite(fit["f_dress1_hz"])
+    assert math.isfinite(fit["chi_hz"])
+    assert session.physical_state()["q0_res"]["f_dress1_hz"] == pytest.approx(fit["f_dress1_hz"])
+
+
+
+def test_resonator_spectroscopy_dip_branch_dress0_is_the_default(session):
+    """The dip is f_dress0_hz and the readout tone parks on it: the four
+    suggestions this experiment has always made, unchanged by the bare branch
+    existing."""
+    out = session.run("resonator_spectroscopy", {"targets": ["q0"]})
+    assert out.get("error") is None, out.get("error")
+    assert [(s["entity"], s["field"]) for s in out["suggestions"]] == [
+        ("q0_ro", "readout_freq_hz"), ("q0_res", "f_dress0_hz"),
+        ("q0_res", "kappa_tot_hz"), ("q0_ro", "readout_depletion_s")]
+    assert out["fit"]["q0"]["dip_branch"] == "dress0"
+
+
+def test_resonator_spectroscopy_bare_branch_proposes_the_bare_mode_only(session):
+    """At punchout power the same dip is f_bare_hz. It is proposed INSTEAD of
+    f_dress0_hz, never alongside it — the two differ by the Lamb shift, and a
+    stored pair that is really one number pins resonator_spectroscopy_flux's
+    dispersive pull to exactly zero. Nothing lands on the readout channel: a
+    saturated qubit's dip cannot say where to park the readout tone."""
+    out = session.run("resonator_spectroscopy",
+                      {"targets": ["q0"], "dip_branch": "bare"})
+    assert out.get("error") is None, out.get("error")
+    assert [(s["entity"], s["field"]) for s in out["suggestions"]] == [
+        ("q0_res", "f_bare_hz"), ("q0_res", "kappa_tot_hz")]
+
+    fit = out["fit"]["q0"]
+    assert fit["dip_branch"] == "bare"
+    assert math.isfinite(fit["f_bare_hz"])
+    assert "f_dress0_hz" not in fit and "readout_freq_hz" not in fit
+
+
+def test_resonator_spectroscopy_branches_never_write_both_frequencies(session):
+    """update='apply' takes every suggestion by definition, so the branches must
+    be exclusive in the PROPOSAL, not at accept time: whichever mode a run
+    declares, only that one frequency reaches the resonator."""
+    phys_before = session.physical_state().get("q0_res", {})
+    dress0_before = phys_before.get("f_dress0_hz")
+    tone_before = session.device_state()["q0_ro"]["readout_freq_hz"]
+    out = session.run("resonator_spectroscopy",
+                      {"targets": ["q0"], "dip_branch": "bare"}, update="apply")
+    assert out.get("error") is None, out.get("error")
+    res = session.physical_state()["q0_res"]
+    assert math.isfinite(res["f_bare_hz"])
+    # a delta, not an absence -- the session fixture is module-scoped
+    assert res.get("f_dress0_hz") == dress0_before
+    # the standing tone is left exactly where it was
+    assert session.device_state()["q0_ro"]["readout_freq_hz"] == tone_before
