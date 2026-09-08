@@ -155,6 +155,63 @@ def test_record_only_experiments_propose_nothing(session, name):
     assert _suggest(session, name, target=_targets_for(name)) == set()
 
 
+def _stark_phase_echo(session, **params):
+    """A hand-driven qubit_stark_phase_echo up to (but not including) estimate().
+
+    Driven by hand because the report this feature needs — the stark operation's
+    BAKED amplitude — comes from a driver's probe(), and the simulated backend has
+    no operations to read it from."""
+    cls = registry.get("qubit_stark_phase_echo")
+    experiment = cls(session.backend, cls.Parameters(targets=["q0"], **params))
+    experiment.sweep_axes = experiment.define_sweep()
+    experiment.dataset = session.backend.acquire(experiment)
+    return experiment
+
+
+def test_stark_phase_echo_reports_the_full_turn_amplitude(session):
+    """The actionable answer is the amplitude buying a full turn of Stark phase,
+    read off the MEASURED curve. The offline sim is exactly quadratic, so here (and
+    only here) it must agree with sqrt(2*pi/k) — that agreement is what makes the
+    hardware DISAGREEMENT evidence of saturation rather than of a broken read."""
+    out = session.run("qubit_stark_phase_echo", {"targets": ["q0"]}, update="none")
+    assert out.get("error") is None, out.get("error")
+    fit = out["fit"]["q0"]
+    expected = math.sqrt(2 * math.pi / abs(fit["stark_coeff_rad_per_amp2"]))
+    assert fit["amp_2pi_factor"] == pytest.approx(expected, rel=0.02)
+    # no probe report on the simulated backend -> no absolute frame, and the
+    # missing scale is a NaN rather than a silently plausible number
+    assert math.isnan(fit["amp_2pi_digital"])
+
+
+def test_stark_phase_echo_absolute_amp_axis_follows_the_probe_report(session):
+    """A probe that reports the baked amplitude gets the absolute axis attached and
+    the same answer reported in the frame an operator can act on."""
+    experiment = _stark_phase_echo(session)
+    experiment.probe_stark_amp = {"q0": 0.25}
+    experiment.attach_acquisition_coords()
+
+    factors = experiment.sweep_axes["stark_amp"]
+    absolute = experiment.dataset.coords["digital_amp"]
+    assert absolute.dims == ("target", "stark_amp")
+    assert absolute.values[0] == pytest.approx(0.25 * factors)
+    assert absolute.attrs["reference_operation"] == "stark"
+
+    fit = experiment.estimate().fit["q0"]
+    assert fit["amp_2pi_digital"] == pytest.approx(0.25 * fit["amp_2pi_factor"])
+
+
+def test_stark_phase_echo_skips_the_absolute_axis_without_a_report(session):
+    """Provenance must never fail a measurement that already reached the
+    instrument: no report (or a target missing from one) simply leaves the axis
+    off."""
+    experiment = _stark_phase_echo(session)
+    experiment.attach_acquisition_coords()          # nothing reported at all
+    assert "digital_amp" not in experiment.dataset.coords
+    experiment.probe_stark_amp = {"q7": 0.25}       # reported, but not for q0
+    experiment.attach_acquisition_coords()
+    assert "digital_amp" not in experiment.dataset.coords
+
+
 def test_parametric_drive_amp_finds_the_seeded_resonance(session):
     """The offline sim hides one sideband line inside the swept window; the
     scqat point-cloud reduction must keep at least one peak and report the
