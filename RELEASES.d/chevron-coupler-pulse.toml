@@ -1,0 +1,6 @@
+name = "chevron-coupler-pulse"
+repos = { scqo = "fcb564e", "scqo-qm" = "cb15d5a" }
+kind = "additive"
+coupling = ""
+validated = "offline"
+notes = "pair_swap_chevron gains coupler_flux_v + swap_operation: it can now hold the pair's COUPLER at a fixed amplitude (the named macro's own coupler pulse) while it sweeps member flux x duration, which makes the phase-free resonance/full-swap-time survey usable on a QCQ pair. Every repeated-swap map (qc_n_swap_amp, pair_swap_angle) reports both quantities shifted by the uncompensated between-swap phase; one pulse cannot. The volts use the same divisor as qc_unidirectional_trotter's swap_coupler_flux, so a surveyed coupler amplitude transfers to the chain unchanged. Default None leaves every existing chevron byte-identical; setting it costs the 1 ns baked duration axis (4 ns grid from 16 ns up, since a bake carries one element) and refuses a shaped or zero-baked coupler pulse BY NAME. result.fit now carries coupler_flux_v."
