@@ -70,15 +70,18 @@ CHAIN_QUBITS = ("q0", "q1", "q2")
 
 #: the chain topology on that device — q0 (source) -> q1 (relay, reset) -> q2
 #: (sink). Supplied as defaults because targets are the only params the
-#: every-experiment sweep passes.
+#: every-experiment sweep passes. Each step names its own operation; both
+#: default steps swap, so the sweep exercises the transporting chain.
+FIRST_STEP = {"pair": "q0_q1", "operation": "partial_swap"}
+SECOND_STEP = {"pair": "q1_q2", "operation": "partial_swap"}
 TROTTER_DEFAULTS = {"qc_unidirectional_trotter": {
-    "first_pair": "q0_q1", "second_pair": "q1_q2", "reset_qubit": "q1",
+    "first_pair": FIRST_STEP, "second_pair": SECOND_STEP, "reset_qubit": "q1",
     "compensation_amps": {"q0": 0.3, "q1": 0.2, "q2": 0.25}},
     # the compensation scan takes the SAME chain, but its swept qubit may not
     # also appear in the fixed map (two sources of truth for one amplitude), so
     # q0 is the target and only the sink keeps a fixed tone.
     "qc_trotter_compensation": {
-        "first_pair": "q0_q1", "second_pair": "q1_q2", "reset_qubit": "q1",
+        "first_pair": FIRST_STEP, "second_pair": SECOND_STEP, "reset_qubit": "q1",
         "compensation_target": "q0", "compensation_amps": {"q2": 0.25}}}
 
 #: what the module fixture runs on; _fresh_parity_session keeps the parity-only set.
@@ -1095,7 +1098,7 @@ def test_unidirectional_trotter_transports_source_to_sink(session):
     assert fit[sink]["p_max"] > 0.05               # ...and something arrives
     assert fit[sink]["n_at_max"] > 0               # transport takes rounds
     assert fit[sink]["p_max"] == fit[source]["sink_p_max"], (
-        "the chain verdict number is repeated on every row")
+        "the sink's peak is repeated on every row")
 
 
 def test_unidirectional_trotter_round_axis_starts_at_the_bare_prep(session):
@@ -1126,10 +1129,25 @@ def test_unidirectional_trotter_shot_mode_reconstructs_the_joint(session):
             plain["fit"][qubit]["p_max"], abs=0.06)
 
 
+def _step(pair, operation="partial_swap"):
+    """One round step, spelled the way Parameters take it."""
+    return {"pair": pair, "operation": operation}
+
+
 BROKEN_CHAINS = [
-    ({"first_pair": "q0_q1", "second_pair": "q0_q1"}, "share 2 member"),
-    ({"first_pair": "q0_q1", "second_pair": "nope"}, "not in the roster"),
-    ({"first_pair": "q0", "second_pair": "q1_q2"}, "not a qubit_pair"),
+    ({"second_pair": _step("q0_q1")}, "share 2 member"),
+    ({"second_pair": _step("nope")}, "not in the roster"),
+    ({"first_pair": _step("q0")}, "not a qubit_pair"),
+    # the SHAPE gates: the spec is exactly {pair, operation}, so a typo'd key or
+    # a missing half is refused by name rather than read as an absent pair.
+    ({"first_pair": {"pairs": "q0_q1", "operation": "partial_swap"}},
+     "unknown key(s) ['pairs']"),
+    ({"first_pair": {"pair": "q0_q1"}}, "missing or empty ['operation']"),
+    ({"first_pair": {"pair": "", "operation": "partial_swap"}},
+     "missing or empty ['pair']"),
+    # the angle knob has nothing to turn on a step that plays no pulse
+    ({"first_pair": _step("q0_q1", "idle"),
+      "swap_coupler_flux": {"q0_q1": 0.04}}, "whose operation is 'idle'"),
     # the channel-existence gates: a resonator mode has neither a z line to
     # play the parametric reset on, nor an xy line for a Stark tone; the tracked
     # coupler has flux but no drive, so it isolates the second gate alone.
@@ -1147,14 +1165,31 @@ def test_unidirectional_trotter_refuses_a_broken_chain(session, override, messag
     assert message in (out.get("error") or ""), out.get("error")
 
 
-def test_unidirectional_trotter_needs_the_sink_to_judge_transport(session):
-    """A run that does not read the sink out cannot see transport, so it reports
-    FAILED rather than passing on the qubits it did measure."""
+def test_unidirectional_trotter_reports_no_sink_summary_without_the_sink(session):
+    """A run that does not read the sink out has no sink summary — but it still
+    measured the qubits it named, so those succeed. The OUTCOME is acquisition,
+    not transport: there is no threshold to fail against."""
     out = session.run("qc_unidirectional_trotter",
                       {"targets": ["q0", "q1"]}, update="none")
     assert out.get("error") is None, out.get("error")
-    assert set(out["outcomes"].values()) == {"failed"}
+    assert set(out["outcomes"].values()) == {"successful"}
     assert math.isnan(out["fit"]["q0"]["sink_p_max"])
+
+
+def test_unidirectional_trotter_idle_step_stops_the_transport(session):
+    """The control arm: idling the FIRST step leaves the excitation on the
+    source, because nothing ever carries it into the relay. The run is a
+    perfectly good run — no transport is the correct answer here, which is
+    exactly why the experiment has no transport verdict."""
+    out = _trotter(session, max_rounds=12,
+                   first_pair=_step("q0_q1", "idle"))
+    source, _relay, sink = CHAIN_QUBITS
+    assert set(out["outcomes"].values()) == {"successful"}
+    assert out["fit"][sink]["p_max"] < 0.05, "nothing can reach the sink"
+    # the source keeps what it was given (only relaxation touches it)
+    assert out["fit"][source]["p_final"] > 0.5
+    # ...against the swapping run, which drains it
+    assert _trotter(session, max_rounds=12)["fit"][source]["p_final"] < 0.1
 
 
 READOUT_SWEEPS = [
