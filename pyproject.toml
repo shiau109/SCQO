@@ -1,6 +1,6 @@
 [project]
 name = "scqo"
-version = "3.10.0"
+version = "3.11.0"
 description = "Superconducting Qubit Orchestration — instrument-agnostic experiment API shared by QM and Qblox backends"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -68,6 +68,18 @@ dependencies = [
                         # qubit_stark_phase_echo independently needs the same tag: its
                         # estimate() reads results['amp_2pi'], a KeyError below it.
                         # See RELEASES.toml [v3-10-0].
+                        # As of v3.11.0 the floor is scqat v0.25.0, and this one
+                        # is SILENT - the first since v3.3.0. qc_n_stark_amp
+                        # lifts fourteen compensation scalars out of the
+                        # estimator's results through .get(key, nan) while the
+                        # outcome comes from the INDEPENDENT transfer verdict, so
+                        # an older scqat imports fine, runs fine, reports
+                        # SUCCESSFUL and leaves every compensation number NaN.
+                        # Nothing raises and nothing warns: the only symptom is
+                        # NaN where a number belongs, after the instrument time
+                        # is spent. COMPENSATION_KEYS has no test behind it
+                        # either, so neither the suite nor CI catches the
+                        # pairing. See RELEASES.toml [v3-11-0].
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]

@@ -1,6 +1,0 @@
-name = "trotter-step-operations"
-repos = { scqo = "81e6951", scqo-qm = "56d10c6" }
-kind = "breaking"
-coupling = "scqo-qm needs scqo >= 81e6951: the probes import pair_specs/IDLE and build_program now takes first_operation/second_operation/idle_reference_operation instead of swap_operation, so an older scqo raises at probe time on both chain shells."
-validated = "offline"
-notes = "UPGRADE REQUIRES editing any stored qc_unidirectional_trotter / qc_trotter_compensation parameters: first_pair and second_pair are now tables {pair = '<roster pair>', operation = '<macro>'} and swap_operation is gone, so a per-step operation can name what each couple actually carries; the reserved operation 'idle' plays nothing and waits idle_reference_operation's pulse length, giving the chain a control arm at unchanged round timing. BEHAVIOR CHANGE: min_transfer is gone and neither experiment reports a transport verdict any more - the outcome is acquisition only and sink_p_max is recorded in result.fit as data, because an idle arm breaks the chain deliberately and any fixed floor would report a correct control run as FAILED."
