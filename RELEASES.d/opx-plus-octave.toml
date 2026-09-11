@@ -1,0 +1,16 @@
+name = "opx-plus-octave"
+repos = { scqo = "72041f1", "scqo-qm" = "536777d" }
+kind = "additive"
+coupling = ""
+validated = "offline (636 tests in .venv-qm, incl. 22 against a real Octave tree built by quam_builder); HARDWARE VALIDATION OWED - see scqo-qm/OPX-PLUS.md for the walkthrough"
+notes = """
+The qm backend now serves BOTH Quantum Machines RF chains under the one backend name: MW-FEM (OPX1000) and Octave (OPX+, or an OPX1000 with LF-FEMs). No setup registry change - a setup still declares backend = "qm" and the driver reads the family out of the QUAM tree. Nothing existing moves on an MW-FEM tree.
+
+BEHAVIOR CHANGE on non-MW trees, all of it turning silence into a refusal: absolute power now solves the Octave gain+amplitude chain (holding the gain, because it keys the mixer calibration) instead of failing into a bare None in every snapshot and an empty power_context in every run record; apply_distortion refuses on an OPX+ flux port instead of writing an exponential_filter that quam accepts and drops on save; and six startup audits now refuse trees asking for an LO the synthesizer cannot produce, an IF outside +/-400 MHz, two LOs from one shared synthesizer, an RF switch left at its always_off default, an unset down-converter LO (which makes quam omit the receive path entirely), or an RF_frequency stored as a QUAM reference (reads fine, refuses every writeback).
+
+New operator command: python -m scqo_qm.backend.calibrate_octave. An Octave up-converts with an analog mixer and nothing in this driver ever called for a mixer calibration, so an Octave setup would have run every measurement uncalibrated. Its results live outside state.json, so power_context now records the calibration db's digest as run provenance.
+
+scqo state --fields is now filtered to the tree's own RF chain: an MW-FEM band is no longer shown to an Octave operator, the nine Octave knobs are no longer hidden from one, and a chain-specific operator command is hidden where it could only refuse.
+
+Docs: scqo-qm/OPX-PLUS.md is the setup + hardware-validation walkthrough; scripts/make_opxp_fixture.py builds an Octave tree headlessly.
+"""
