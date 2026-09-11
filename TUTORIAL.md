@@ -14,7 +14,7 @@ whoever set up the PC): a venv activated and a lab config in place (your own
 inside them, so use the full path or run from the repos' parent folder) — and an
 instrument env only to measure:
 `.venv-qblox` for `scqo run`/`scqo state` on the Qblox
-cluster, `.venv-qm` on the OPX1000. (Contributing rather than measuring? The venv you
+cluster, `.venv-qm` on the Quantum Machines instruments (OPX1000 or OPX+). (Contributing rather than measuring? The venv you
 TEST in is a different question — [ENVIRONMENTS.md](ENVIRONMENTS.md).) Cooldowns are no longer a tag you maintain:
 the manager registers each cycle (`scqo device cooldown`), and every run you take is
 auto-stamped with it — findable via `scqo find --cooldown`.
@@ -223,7 +223,7 @@ vendor's own view of it to `./scqo_preview/<experiment>_<timestamp>/`
 `--no-open`. On Qblox that is the interactive pulse diagram
 (`pulse_diagram.html`, zoomable in the browser) plus the absolute
 `timing_table.html`; on QM it is the generated QUA script (`qua_script.py`)
-plus — when the OPX1000 gateway answers — `simulated_waveforms.html`, the
+plus — when the QM gateway answers — `simulated_waveforms.html`, the
 gateway simulator's actual analog outputs (tried automatically, skipped with
 a warning when the cluster is unreachable; `--simulate-ns N` widens the
 simulated window from its 20 µs default, `--no-simulate` guarantees a fully
@@ -782,7 +782,7 @@ invisible process on the server and no window ever appears (clean strays with
 
 ```
 ssh <your-account>@<server>            # password prompt on first login
-D:\github\.venv-qblox\Scripts\Activate.ps1     # (or .venv-qm for the OPX1000)
+D:\github\.venv-qblox\Scripts\Activate.ps1     # (or .venv-qm for Quantum Machines)
 scqo run resonator_spectroscopy --targets q1 --tag mytest    # any directory works
 scqo find --limit 5
 exit
@@ -1425,7 +1425,7 @@ roster-vs-vendor wiring), and tells you what is wrong and how to fix it.
 ## 14. What the system does NOT include yet
 
 Everything above is real: **both instruments are hardware-proven** through this path
-(Qblox cluster and OPX1000, since 2026-07-05), the catalog holds 35 experiments, and
+(Qblox cluster and Quantum Machines, since 2026-07-05), the catalog holds 35 experiments, and
 the GUI you read about in section 4 (viewer + datasette) is shipped. Still ahead:
 
 - **Device-level inference** (Phase 3): combining runs into EJ/EC, anharmonicity,

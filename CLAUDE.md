@@ -88,7 +88,7 @@ documents Qblox's own `Experiment` ABC, a different class from this one.
 
 | | QM side (was LCHQMDriver) | Qblox side (QBLOX_training reference) |
 |---|---|---|
-| Instrument | Quantum Machines OPX1000 (MW-FEM + LF-FEM) | Qblox Cluster (QCM / QCM-RF / QRM-RF) |
+| Instrument | Quantum Machines: OPX1000 (MW-FEM + LF-FEM) or OPX+ (Octave) | Qblox Cluster (QCM / QCM-RF / QRM-RF) |
 | Low-level API | `qm-qua` (QUA DSL) | `qblox_scheduler` (`Schedule` + `Operations`) |
 | Device model | QUAM — `Quam(FluxTunableQuam)`; qubit = `.xy/.z/.resonator`; param e.g. `q.f_01` | `QuantumDevice` + `BasicTransmonElement`/`FluxTunableTransmonElement`; param e.g. `q.clock_freqs.f01` |
 | Experiment framework | `qualibrate` `QualibrationNode` + `@node.run_action` + web GUI | hand-rolled `Experiment` ABC, notebook-driven, no GUI |

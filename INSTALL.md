@@ -35,7 +35,7 @@ actually running a measurement.**
 |---|---|---|---|
 | `<parent>\.venv-view` | `(view)` | scqo `[viewer]` + scqat + datasette + pytest — **no instrument libraries** | look at data (the common case): run-viewer, SQL browser, `scqo find`, `scqo tag`. Works identically on an analysis-only laptop/Mac. |
 | `<parent>\.venv-qblox` | `(qblox)` | the view stack + scqo-qblox + `qblox-scheduler==1.0.0b6` (hardware-proven) | measure on the Qblox cluster: `scqo run`, `scqo state` |
-| `<parent>\.venv-qm` | `(.venv-qm)` | pinned QM stack, py3.11 (`scqo-qm\requirements-qm.lock.txt`) + scqo/scqat/scqo-qm editables | measure on the OPX1000 or use qualibrate — `qm.bat` activates it for you |
+| `<parent>\.venv-qm` | `(.venv-qm)` | pinned QM stack, py3.11 (`scqo-qm\requirements-qm.lock.txt`) + scqo/scqat/scqo-qm editables | measure on a Quantum Machines instrument (OPX1000 or OPX+) or use qualibrate — `qm.bat` activates it for you |
 
 All three import scqo/scqat from the same editable checkouts, so they never drift on
 the neutral layer. `uv` creates standard venvs and downloads Python itself if the
@@ -49,7 +49,7 @@ mkdir -p ~/github && cd ~/github
 git clone https://github.com/shiau109/SCQO.git
 git clone https://github.com/shiau109/scqat.git
 git clone https://github.com/shiau109/scqo-qblox.git    # only if this machine drives the Qblox cluster
-git clone https://github.com/shiau109/scqo-qm.git    # only if this machine drives the OPX1000
+git clone https://github.com/shiau109/scqo-qm.git    # only if this machine drives a QM instrument
 ```
 
 (A repo that is still **private** answers `Repository not found` when the active
@@ -114,7 +114,7 @@ uv venv .venv-qblox --python 3.12 --prompt qblox
 uv pip install --python .venv-qblox\Scripts\python.exe -e ".\SCQO[viewer]" -e .\scqat -e .\scqo-qblox datasette pytest httpx
 uv pip install --python .venv-qblox\Scripts\python.exe "qblox-scheduler==1.0.0b6"   # exact hardware-proven build (see note)
 
-# qm — measurement env for the OPX1000 (pinned, py3.11)
+# qm — measurement env for Quantum Machines (OPX1000 / OPX+; pinned, py3.11)
 uv venv .venv-qm --python 3.11
 uv pip install --python .venv-qm\Scripts\python.exe -r .\scqo-qm\requirements-qm.lock.txt
 uv pip install --python .venv-qm\Scripts\python.exe -e .\scqat -e .\SCQO -e .\scqo-qm --no-deps
@@ -191,7 +191,7 @@ overview lists every sample, and a sample's page shows the matching card. All
 samples share ONE `data_root` and ONE index — filter with `--device` / the run
 list's device dropdown.
 
-**Moving a sample to the other instrument** (e.g. chipA from Qblox to the OPX1000)
+**Moving a sample to the other instrument** (e.g. chipA from Qblox to a QM instrument)
 needs **no data action at all** — the folder, index, history and trends follow the
 sample name; runs before/after the move stay distinguishable by their `backend` and
 setup era. The operator's checklist:
@@ -339,7 +339,7 @@ packaging = "PCB v3, Al box"
 [cd8.setup.qblox_main]
 backend = "qblox"                  # qblox | qm | simulated
 
-[cd8.setup.qm_highpower]           # the same sample, also wired to the OPX1000
+[cd8.setup.qm_highpower]           # the same sample, also wired to a QM instrument
 backend = "qm"
 note = "high-power readout line"
 ```
@@ -733,7 +733,7 @@ cd <your>\scqo-qblox
 python scripts\check_real_config.py <folder with dut_config*.json + hw_config*.json>
 ```
 
-**QM / OPX1000** — needs the qm env (`.venv-qm\Scripts\Activate.ps1`). Point it at
+**QM (OPX1000 or OPX+)** — needs the qm env (`.venv-qm\Scripts\Activate.ps1`). Point it at
 any folder holding `state.json` + `wiring.json`:
 
 ```powershell
