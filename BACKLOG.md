@@ -209,6 +209,30 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: `rb_fidelity` has a catalogued home and `qubit_sqrb` an `update()` that writes
   it, or the row and both dead `_first` branches leave the report together.
 
+### I14 The `--note` backslash value is never asserted to survive (low)
+- Found 2026-09-07 while fixing the `\q` SyntaxWarning on the same line.
+- `test_start_escapes_metadata_and_validates_cycle_id` promises in its docstring that quotes
+  AND backslashes in `--fridge` / `--packaging` / `--note` "must never corrupt the shared
+  registry", but the only survival assertion is `'PCB "rev3"' in show.stdout` - the QUOTE
+  case. The backslash note (`r"D:\qpu\chipA path"`) is covered only indirectly, by exit
+  code 0 and "the registry re-parses cleanly", so a TOML writer that silently ate, doubled
+  or normalised a backslash would still pass this test green.
+- Where: `tests/test_cli_cooldown.py::test_start_escapes_metadata_and_validates_cycle_id`,
+  the `show.stdout` asserts at the end.
+- Done when: the note's exact value is asserted to round-trip (`assert r"D:\qpu\chipA path"
+  in show.stdout`), or it is read back out of `cooldowns.toml` and compared.
+
+### I15 Stale cp950 comment in `test_cli_doctor.py` (low)
+- Found 2026-09-07 while pinning the subprocess encodings for the 7 cp950 test failures.
+- The comment above the `UV_PYTHON_INSTALL_DIR` assert says the `§` "can mangle when
+  subprocess stdout round-trips through the OS locale encoding on Windows". Both ends of
+  that pipe are now pinned to UTF-8 (`encoding="utf-8"` on the `subprocess.run` plus
+  `PYTHONIOENCODING` in the env), so the premise is false and the ASCII-safe-token
+  workaround it justifies is no longer needed - the assert could name the `§1` pointer.
+- Where: `tests/test_cli_doctor.py:296`, end of `test_doctor_renders_the_profile_witness_rows`.
+- Done when: the comment is dropped or rewritten and the assert reflects what is actually
+  guaranteed now that both ends of the pipe are pinned.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
   `qubit_tomography` interleaved noise; XY-Z delay (`qubit_xyz_delay`); readout average mode;
