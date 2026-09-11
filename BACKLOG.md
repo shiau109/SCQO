@@ -114,6 +114,32 @@ provenance or a trap a user can walk into, **low** = hygiene.
   campaign, its +/- comes from that same campaign, and `tests/test_lab_report.py` pins that
   an un-accepted campaign does not reach the sheet.
 
+### F10 OPX+ flux predistortion: the FIR/IIR writeback (medium)
+- Deferred 2026-09-11 when the OPX+/Octave support landed (scqo-qm, phases 0-5 + 7;
+  phase 6 was skipped by decision because the lab's OPX+ wiring is not settled).
+- Problem: `apply_distortion` writes an LF-FEM `opx_output.exponential_filter`, a list
+  of (A, tau) pairs. An `OPXPlusAnalogOutputPort` has no such field - it predistorts
+  through `feedforward_filter` (FIR) + `feedback_filter` (IIR), both on the shared
+  `LFAnalogOutputPort` base. That is a DIFFERENT decomposition, not a renamed field, so
+  the conversion is real arithmetic and not a mapping.
+- Today it refuses BY NAME rather than doing the wrong thing, and
+  `operator_commands()` hides the CLI on a tree whose flux lines are all OPX+, so an
+  operator is never sent at a door that is walled up. That refusal is the correct
+  interim behaviour, not a stopgap to rush past: before it, quam ACCEPTED the
+  assignment on a port class with no such field and then dropped it on `to_dict()` -
+  printed success, saved state.json with no filter in it, flux line still distorted.
+- Both cryoscopes still MEASURE the distortion on an OPX+ and their facts land in
+  physical.json as usual; only the vendor writeback is missing.
+- Where: `scqo-qm/scqo_qm/backend/_distortion.py::_exponential_filter_port` is the one
+  door both entry points resolve through, so the FIR/IIR path has exactly one place to
+  attach. `scqo_qm/_family.py::flux_port_family` already answers which family a channel
+  is on.
+- Only worth doing once an OPX+ with z lines actually exists - see the hardware
+  validation row below, which has to come first.
+- Done when: an accepted cryoscope's facts reach `feedforward_filter` / `feedback_filter`
+  on an OPX+ port, the round trip is pinned offline against a real built tree
+  (`scripts/make_opxp_fixture.py`), and the CLI stops being hidden on those trees.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -246,3 +272,16 @@ provenance or a trap a user can walk into, **low** = hygiene.
   returns inside `_CLUSTER_CLOSE_TIMEOUT_S` and actually frees the four sockets can
   only be seen on hardware: run a campaign at a terminal, leave the prompt open, and
   check that a second process can connect.
+
+**OPX+ / Octave (added 2026-09-11, scqo-qm)** - the whole family has NEVER run on
+hardware: six startup audits, the Octave gain+amplitude power solve, the mixer
+calibration CLI, the chain-filtered `scqo state --fields`, and the two broadband probes'
+Octave LO path. Offline it is covered by 636 tests including 22 against a real tree built
+by `quam_builder` (`scripts/make_opxp_fixture.py`), which is as far as offline can go.
+The walkthrough is `scqo-qm/OPX-PLUS.md` and its ORDER matters: mixer calibration FIRST,
+because every step after it depends on it and an Octave has no MW-FEM-style "it just
+works" default. Watch two things in particular - whether any `*_power_dbm` write moved
+the Octave gain (it invalidates that RF output's mixer calibration, and on a multiplexed
+feedline it moved every qubit on the line), and whether `power_context` in the run record
+carries the calibration db's digest.
+
