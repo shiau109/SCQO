@@ -1355,6 +1355,41 @@ Window the amplitude sweep around the registered control-z amplitude and give
 `readout_mode=shot` keeps every shot (per-member states) when the downstream
 analysis wants raw trajectories (the collisional-model notebooks).
 
+### Step 3b — the resonance and the phase compensation, together
+
+```
+scqo run qc_swap_flux_stark --targets q1_q2 --set swap_operation=partial_swap --set swap_count=8
+```
+
+Step 3 amplifies the residual, but it cannot tell you WHICH residual: the
+between-swap phase φ inflates the apparent angle AND moves the amplitude where
+the transfer peaks, so the flux knob and the Stark compensation are not
+independent. This map freezes the count and sweeps both amplitudes instead —
+the control flux (the resonance knob) against the Stark tone's amplitude (the
+phase knob) — so the working point is read off one surface rather than guessed
+from two one-dimensional scans.
+
+What the map looks like, and how to read it: the transfer forms a **ridge** along
+the line where the total per-round phase nulls (the detuning winds its own phase
+during the pulse, and the Stark tone subtracts one), and the detuning envelope
+picks one bright segment out of that ridge. The peak of that segment is
+`best_flux_amp_v` / `best_stark_amp` in `result.fit`. Two conditions on the run:
+
+- **`swap_count` must be at least 2**, and the probe defaults to 4. At N = 1 the
+  single Stark tone plays after the only swap, where it can do nothing but
+  imprint a phase — the map comes out flat along the Stark axis. The phase this
+  compensates only exists BETWEEN swaps.
+- **Pick N so that N swaps are roughly one full transfer** (θ ≈ π/(2N)). The peak
+  is a working point for the run's own N, and only near that condition is it the
+  compensating point: closer to a full per-round swap the maximum trades a
+  nonzero φ for a better angle, which is the same trap that makes
+  `qc_n_stark_amp`'s `best_stark_amp` unusable there.
+
+Prerequisite: the control member needs the named off-resonant `stark` xy
+operation (`quam_config/register_stark.py` in scqo-qm); the probe refuses by name
+if it is missing. Like every map in this section it is record-only — nothing is
+written back.
+
 ### Pin the workflow
 
 `~/.scqo/parameters.toml`:

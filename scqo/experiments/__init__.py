@@ -172,6 +172,7 @@ from .pair_swap_angle import PairSwapAngle  # noqa: E402
 from .pair_zz_coupler import PairZZCoupler  # noqa: E402
 from .qc_n_stark_amp import QcNStarkAmp  # noqa: E402
 from .qc_n_swap_amp import QcNSwapAmp  # noqa: E402
+from .qc_swap_flux_stark import QcSwapFluxStark  # noqa: E402
 from .qc_unidirectional_trotter import QcUnidirectionalTrotter  # noqa: E402
 from .qc_trotter_compensation import QcTrotterCompensation  # noqa: E402
 from .qubit_ramsey_cryoscope import QubitRamseyCryoscope  # noqa: E402
@@ -229,8 +230,8 @@ __all__ = [
     "BroadbandQubitSpectroscopy",
     "BroadbandResonatorSpectroscopy",
     "PairSwapAngle", "PairSwapChevron", "PairSwapFluxMap",
-    "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcTrotterCompensation",
-    "QcUnidirectionalTrotter",
+    "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcSwapFluxStark",
+    "QcTrotterCompensation", "QcUnidirectionalTrotter",
     "QubitRamseyCryoscope", "QubitRamseyPhasor", "QubitDeterministicBenchmarking", "QubitDragAlternating", "QubitDragEquator", "QubitEcho",
     "QubitEchoFluxPulse", "QubitParametricDriveAmp", "QubitParametricDriveTime",
     "QubitParitySwitchContinuous", "QubitParitySwitchDiscrete",

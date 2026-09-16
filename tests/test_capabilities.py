@@ -147,6 +147,7 @@ EXPECTED_CAPABILITIES = {
     "pair_swap_flux_map": ["qubit_reset"],
     "qc_n_stark_amp": ["qubit_reset"],
     "qc_n_swap_amp": ["qubit_reset"],
+    "qc_swap_flux_stark": ["qubit_reset"],
     # the Trotter chain: qubit_reset only. Its Stark compensation is a fixed
     # per-qubit FACTOR of the stark operation's baked amplitude, not a swept
     # window of a target knob, so it carries no `amplitude` capability (same
