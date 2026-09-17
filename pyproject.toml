@@ -1,6 +1,6 @@
 [project]
 name = "scqo"
-version = "3.11.0"
+version = "3.12.0"
 description = "Superconducting Qubit Orchestration — instrument-agnostic experiment API shared by QM and Qblox backends"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -80,6 +80,14 @@ dependencies = [
                         # is spent. COMPENSATION_KEYS has no test behind it
                         # either, so neither the suite nor CI catches the
                         # pairing. See RELEASES.toml [v3-11-0].
+                        # As of v3.12.0 the floor is scqat v0.26.0, and it has
+                        # TWO shapes. pair_swap_flux_map is SILENT: the v0.25.0
+                        # estimator swallows the new swap_time_ns kwarg, so the
+                        # run reports SUCCESSFUL with every coupling key NaN
+                        # (lifted through .get(key, nan)). qc_swap_flux_stark is
+                        # LOUD but late: estimate() imports the new estimator
+                        # package, an ImportError after the instrument time is
+                        # spent. See RELEASES.toml [v3-12-0].
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]
