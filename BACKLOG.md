@@ -259,6 +259,28 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: the comment is dropped or rewritten and the assert reflects what is actually
   guaranteed now that both ends of the pipe are pinned.
 
+**5Q4C q1_q2 `decouple_offset` = 0.08 V does not decouple (found 2026-09-15, hardware).**
+Every probe parks the coupler there (`initialize_qpu` -> `apply_all_couplers_to_min()` ->
+`to_decouple_idle()`), and coupler pulses ride ON TOP of it — so the park is the standing
+condition for every run that plays no coupler pulse. Measured residual at that park:
+t_pi ~ 145-152 ns, i.e. J/2pi ~ 1.7 MHz, a FULL swap whenever the members are brought into
+resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
+- Evidence: flux map `20260915-162437-647` (40 ns fixed) column maxima — line 0.080 V ->
+  0.21 transfer, line 0.1475-0.160 V -> 0.01-0.02, line 0.190 V -> 0.45; and the chevron A/B
+  `20260915-183235-061` (`coupler_flux_v=0.08`, line 0.16 V -> transfer 0.17, failed) vs
+  `20260915-183332-183` (`coupler_flux_v=0.0`, line 0.08 V -> transfer 0.95, t_pi 152 ns).
+- Worked around, NOT fixed: the `partial_swap` macro's coupler pulse was re-baked at 0.08 V
+  so the GATE lands on the J zero (line 0.16 V). The park itself is untouched, so idle /
+  readout / single-qubit runs still sit on the residual coupling. `interaction_offset` is
+  also still 0.0 (unset).
+- Side effect of that workaround: `partial_swap` now sits AT the J zero, so as a gate its
+  angle is ~0. A real partial swap needs its coupler amplitude picked off a chevron theta
+  curve instead.
+- Done when: `decouple_offset` is re-measured (a `pair_swap_chevron` coupler scan, or
+  `pair_zz_coupler`) and re-parked at the true zero, the `partial_swap` coupler bake is
+  re-derived against the NEW park, and TUTORIAL section 12 step 0's premise ("the swap only
+  happens while the coupler pulse plays") actually holds on this chip.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
   `qubit_tomography` interleaved noise; XY-Z delay (`qubit_xyz_delay`); readout average mode;
