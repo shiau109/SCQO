@@ -123,12 +123,15 @@ RIDGE_KEYS = (
     "compensating_stark_amp",
     "compensating_is_refined",
     "resonance_flux_amp_v",
+    "resonance_in_gap",
     "swap_angle_rad_refined",
     "swap_angle_rad_prior",
     "swap_angle_consistent",
     "ridge_slope_per_v",
-    "ridge_intercept",
-    "ridge_rms",
+    "ridge_local_rms",
+    "ridge_wrap_amp",
+    "stark_amp_2pi_prior",
+    "wrap_consistent",
     "n_ridge_rows",
     "n_fold_rows",
     "max_row_contrast",
@@ -206,6 +209,20 @@ class QcSwapFluxStarkParameters(TargetSelection, AveragingParameters,
                     "refined angle) and only has to be good to about pi/(2*swap_count). Left "
                     "None, both gates stay shut and only the raw ridge coefficients are "
                     "reported.")
+    stark_amp_2pi: float | None = Field(
+        None, gt=0.0,
+        description="The stark amplitude FACTOR worth one full 2*pi of phase, from a "
+                    "preceding qubit_stark_phase_echo on the driven member "
+                    "(its amp_2pi_factor). The compensation is only defined modulo one "
+                    "turn, and the ridge re-enters the swept window whenever the flux "
+                    "drives the phase past it, so this makes that unwrap exact instead "
+                    "of measured off the jump. Calibrate max_stark_amp TO this value: a "
+                    "shorter window leaves some rows with no compensation point at all "
+                    "and pins their peak against the edge, a longer one adds a partial "
+                    "second branch. Note the tone's phase is NOT proportional to its "
+                    "amplitude (quadratic near zero, near-linear once saturated), which "
+                    "is why one scalar cannot replace the curve — it fixes the PERIOD, "
+                    "not the shape.")
     min_row_contrast: float = Field(
         0.3, ge=0.0, le=1.0,
         description="How far a single flux row's transfer must swing along the stark axis "
@@ -236,12 +253,21 @@ class QcSwapFluxStarkResult(Result):
     N-amplified exchange angle. Each is behind its own gate: ``ridge_ok``
     (``N*theta <= pi``) for the first pair, ``branch_ok`` (``N*theta <= pi/2``)
     for the angle, both decided by the ``swap_angle_rad`` prior and both NaN
-    when shut. ``ridge_slope_per_v`` / ``ridge_intercept`` / ``ridge_rms`` /
-    ``n_ridge_rows`` describe the fitted line itself and are reported whatever
-    the gates say; ``n_fold_rows`` counts the rows whose arcsin was unfolded,
-    ``max_row_contrast`` says whether the stark axis carried any signal at all,
-    and ``swap_angle_consistent`` compares the refined angle against the prior
-    without acting on it.
+    when shut. A third way to get nothing is ``resonance_in_gap``: the resonance
+    row carried no stark signal, so there is nothing local to interpolate and
+    reaching it would need a phase-vs-amplitude model this experiment does not
+    carry.
+
+    Diagnostics — ``ridge_slope_per_v`` is how fast the compensation moves with
+    the flux (how tightly the flux must be held) and ``ridge_local_rms`` how
+    well the stark axis resolved the ridge; a run whose rms approaches the stark
+    step is under-sampled and its compensation is worth no more than that step.
+    ``ridge_wrap_amp`` is the ``2*pi`` period the map measured for itself,
+    ``wrap_consistent`` compares it with the ``stark_amp_2pi`` prior,
+    ``n_fold_rows`` counts the rows whose arcsin was unfolded,
+    ``n_ridge_rows`` / ``max_row_contrast`` say whether the stark axis carried
+    signal at all, and ``swap_angle_consistent`` compares the refined angle
+    against the prior without acting on it.
 
     Record-only: no ``update()``, nothing written to the device."""
 
@@ -427,6 +453,7 @@ class QcSwapFluxStark(Experiment):
             drive_side=self.params.drive_side, flux_side=self.params.flux_side,
             swap_count=int(self.params.swap_count),
             swap_angle_rad=self.params.swap_angle_rad,
+            stark_amp_2pi=self.params.stark_amp_2pi,
             min_row_contrast=float(self.params.min_row_contrast),
             per_target_kwargs=_role_names(self.device, self.params.targets))
         result = QcSwapFluxStarkResult()
