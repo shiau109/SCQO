@@ -36,11 +36,23 @@ On **2026-07-26** `scqo-qblox/.venv` held `qblox-scheduler` **b4** while the lab
 held **b6**. The two versions *disagree about whether a schedule is legal*: `readout_frequency`
 compiled clean offline and **died on the hardware**. Both are `1.0.0b6` now (with
 `qblox_instruments` 1.3.0), pinned in three places that move together — scqo-qblox's
-`pyproject.toml` floor, its `uv.lock`, and the `uv pip install "qblox-scheduler==1.0.0b6"` line
-in INSTALL.md §1.
+`pyproject.toml` floor, its `uv.lock`, and the
+`uv pip install "qblox-scheduler==1.0.0b6" "qblox-instruments==1.3.0"` line in INSTALL.md §1.
+
+**Pin both halves of the pair, not just the scheduler.** Until 2026-09-20 that INSTALL.md line
+named only `qblox-scheduler`; a rebuild that day resolved `qblox-instruments` to **1.3.1**,
+released after the pair was proven. The suite passed at 1.3.1 in both environments — the
+mandatory second run does **not** catch this, because both environments compile fine, they just
+compile against different vendor code than the cluster's firmware was proven with. Only an
+explicit version comparison catches it.
 
 The consequence is scqo-qblox's **mandatory second test run** (see the table). Compiling in one
-environment proves nothing about the other.
+environment proves nothing about the other. Run the versions side by side as well:
+
+```bash
+<parent>/.venv-qblox/Scripts/python.exe -c "from importlib.metadata import version as V; print(V('qblox-scheduler'), V('qblox-instruments'))"
+scqo-qblox/.venv/Scripts/python.exe     -c "from importlib.metadata import version as V; print(V('qblox-scheduler'), V('qblox-instruments'))"
+```
 
 The QM side has the same shape with a different mechanism: its stack is pinned by
 `scqo-qm/requirements-qm.lock.txt` at Python 3.11, and there is only ONE environment for it —

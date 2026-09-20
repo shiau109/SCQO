@@ -112,7 +112,7 @@ uv pip install --python .venv-view\Scripts\python.exe -e ".\SCQO[viewer]" -e .\s
 # qblox — measurement env for the Qblox cluster
 uv venv .venv-qblox --python 3.12 --prompt qblox
 uv pip install --python .venv-qblox\Scripts\python.exe -e ".\SCQO[viewer]" -e .\scqat -e .\scqo-qblox datasette pytest httpx
-uv pip install --python .venv-qblox\Scripts\python.exe "qblox-scheduler==1.0.0b6"   # exact hardware-proven build (see note)
+uv pip install --python .venv-qblox\Scripts\python.exe "qblox-scheduler==1.0.0b6" "qblox-instruments==1.3.0"   # exact hardware-proven pair (see note)
 
 # qm — measurement env for Quantum Machines (OPX1000 / OPX+; pinned, py3.11)
 uv venv .venv-qm --python 3.11
@@ -133,7 +133,14 @@ only non-prerelease is an empty 0.0.0 placeholder that fails to build; the expli
 deliberately after re-validation, never by accidental rebuild. The floor is not cosmetic:
 b4 and b6 *disagree about whether a schedule is legal*, and on 2026-07-26 a probe compiled
 clean offline on one and died on the cluster with the other. Keep this line, the driver's
-pyproject and its CI pin on the same version.)
+pyproject and its CI pin on the same version.
+**`qblox-instruments` is pinned on the same line, and that is why:** pinning only the
+scheduler does not hold it. Rebuilding this env on 2026-09-20 resolved `qblox-instruments`
+to **1.3.1** — released after the pair was proven — while `uv.lock`, the driver's
+`pyproject.toml` comment and `ENVIRONMENTS.md` all say **1.3.0**, the version that goes with
+Cluster firmware 2.1.0. The suite passed at 1.3.1 in both environments, so nothing but an
+explicit version comparison catches it: a recipe that pins one half of a vendor pair stops
+reproducing its own documented environment the moment the other half ships a release.)
 
 **macOS / Linux** — install uv once with `brew install uv` (or
 `curl -LsSf https://astral.sh/uv/install.sh | sh`). An analysis-only machine needs
