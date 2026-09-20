@@ -201,8 +201,10 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `tests/test_qubit_spectroscopy_flux_estimator.py` (23 passed, 0 skipped at the merge).
 - Done when: the polarity work is reviewed and actually CONSUMED — at minimum the two
   visualizations render dip-fitted peaks distinguishably and the docstrings stop promising
-  a consumer that does not exist — and a `RELEASES.d/` fragment is written. None was
-  written at the merge, so as it stands this ships unannounced in the next combo.
+  a consumer that does not exist. The release fragment is already written
+  (`RELEASES.d/peak-inverted-polarity.toml`, kind `additive`) and says in as many words
+  that the flag has no consumer, so the next combo ANNOUNCES the gap instead of shipping
+  it silently — do not treat that fragment as evidence the feature is finished.
 
 ## Known issues / potential problems (found in passing)
 
