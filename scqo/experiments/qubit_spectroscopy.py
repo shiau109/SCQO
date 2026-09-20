@@ -137,8 +137,7 @@ class QubitSpectroscopy(Experiment):
             self.dataset = self.backend.acquire(self)
         self.Contract.validate(self.dataset)
         self._attach_reference_positions()
-        self.result = self.estimate()
-        return self.result
+        return self.run_estimate()
 
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """A Lorentzian line, pulled low and broadened when the readout tone is live.

@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .datastore import BACKEND_CONFIG_SUBDIR, SCQO_SUBDIR, DataStore
 from .design import Design
 from .device import CompositeView, RecordingDevice
+from .estimate_inputs import embed_run, is_embedded
 from .roster import Roster
 from .stores import (
     PHYSICAL_FILE,
@@ -332,6 +333,17 @@ class Session:
             self.device.set_context(None, None)
 
         payload = result.model_dump(mode="json")
+        if (result.error is None and exp.dataset is not None
+                and not is_embedded(exp.dataset)):
+            # A run() override that called estimate() directly instead of
+            # run_estimate(): the measurement is fine, but its dataset.nc has
+            # no acquisition-time snapshot and can never be re-fitted offline.
+            # Named here because a fork/contrib experiment is the one place the
+            # AST test in this repo cannot reach. Only on a SUCCESSFUL run: a
+            # failure before estimate() has no snapshot for an honest reason.
+            payload["dataset_warning"] = (
+                f"{type(exp).__name__}.run() bypassed run_estimate(): "
+                f"dataset.nc is not self-contained")
         suggestion_dicts = [s.model_dump(mode="json") for s in suggestions]
         if self.datastore is not None:
             try:
@@ -340,6 +352,13 @@ class Session:
                     list(getattr(exp.params, "targets", []))) or {}
             except Exception:
                 power_context = {}
+            versions = self._versions()
+            if exp.dataset is not None:
+                embed_run(exp.dataset, {
+                    "run_id": run_id, "device": self.datastore.device_name,
+                    "backend": self.backend_label,
+                    "cooldown": self.cooldown_id, "setup": self.setup_name,
+                    "started_at": started_at, "versions": versions})
             try:
                 self.datastore.persist_run(
                     run_id=run_id, run_dir=run_dir, experiment=experiment,
@@ -358,7 +377,8 @@ class Session:
                         [*self.default_tags, *(tags or []),
                          *getattr(exp, "seed_tags", [])])),
                     note=note,
-                    campaign=campaign)
+                    campaign=campaign,
+                    versions=versions)
             except Exception as err:  # never lose a measurement over a save
                 payload["datastore_error"] = f"{type(err).__name__}: {err}"
             else:
@@ -1719,23 +1739,35 @@ class Session:
         except Exception:
             return {}
 
-    def _snapshot_manifest(self, run_id) -> dict:
-        """The run-specific half of a snapshot manifest: era stamps, the first run
-        that produced it, and the scqo + driver/vendor versions (``versions()``
-        hook) a later ``scqo restore`` compares against its own environment."""
-        versions: dict = {}
-        try:
-            from importlib.metadata import version
+    def _versions(self) -> dict:
+        """The packages this session ANALYSES with: scqo, scqat, plus whatever
+        the backend's ``versions()`` hook reports (driver + vendor stack).
 
-            versions["scqo"] = version("scqo")
-        except Exception:
-            pass
+        Stamped on every run record and on the setup snapshot manifest. scqat
+        is in there because a fit correction ships in scqat: without its
+        version a saved run cannot say which side of that fix it was analysed
+        on. Best effort — a missing package is simply absent."""
+        versions: dict = {}
+        for package in ("scqo", "scqat"):
+            try:
+                from importlib.metadata import version
+
+                versions[package] = version(package)
+            except Exception:
+                pass
         hook = getattr(self.backend, "versions", None)
         if callable(hook):
             try:
                 versions.update({str(k): str(v) for k, v in (hook() or {}).items()})
             except Exception:
                 pass
+        return versions
+
+    def _snapshot_manifest(self, run_id) -> dict:
+        """The run-specific half of a snapshot manifest: era stamps, the first run
+        that produced it, and the scqo + driver/vendor versions (:meth:`_versions`)
+        a later ``scqo restore`` compares against its own environment."""
+        versions = self._versions()
         return {"backend": self.backend_label, "created_at": _now(),
                 "first_run_id": run_id, "cooldown": self.cooldown_id,
                 "setup": self.setup_name, "versions": versions}

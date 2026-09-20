@@ -222,6 +222,12 @@ class RunRecord(BaseModel):
     #: exp.run() without being restored. record.json-only like power_context;
     #: {} for the simulated backend; {"error": ...} when storing failed.
     setup_snapshot: dict = Field(default_factory=dict)
+    #: package versions the run was ANALYSED with (scqo, scqat, the driver's
+    #: own ``versions()`` hook). Every run carries its own: the setup
+    #: snapshot's manifest records the versions of the FIRST run that produced
+    #: that snapshot, so it cannot answer "was this fitted before or after the
+    #: fit was corrected?". record.json-only, like power_context.
+    versions: dict = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     note: str = ""
     path: str  # run folder, relative to data_root (forward slashes)
@@ -435,6 +441,7 @@ class DataStore:
         power_context: dict | None = None,
         campaign: tuple[str, int, int] | None = None,
         setup_snapshot: dict | None = None,
+        versions: dict | None = None,
     ) -> RunRecord:
         """Write the run folder (``record.json`` last) and upsert the index row.
 
@@ -490,6 +497,7 @@ class DataStore:
             suggestions=list(suggestions or []),
             power_context=_scrub(dict(power_context or {})),
             setup_snapshot=snapshot_ref,
+            versions=dict(versions or {}),
             tags=list(tags or []),
             note=note,
             path=run_dir.relative_to(self.data_root).as_posix(),
