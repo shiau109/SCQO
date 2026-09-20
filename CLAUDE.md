@@ -184,6 +184,18 @@ scqo/
                   #   origin="operator" = human-attached via Session.suggest.
                   #   CAMPAIGN-level rows (on campaign.json) additionally carry
                   #   `experiment` — the proposing step; the accept groups by it
+  estimate_inputs.py  # the mirror of suggestions.py, around estimate() instead of
+                  #   update(): embed() writes the acquisition-time snapshot (device
+                  #   knobs+monitors, physical facts, design, parameters) into
+                  #   dataset.nc's global attrs, load_frozen() rebuilds the three
+                  #   read-only surfaces from it, and Experiment.run_estimate() runs
+                  #   estimate() against THOSE — live runs included, so what is stored
+                  #   and what is fitted cannot disagree. FrozenDevice reuses the
+                  #   recording entity views (device.entity_view), so its read
+                  #   semantics are identical by construction; every write is refused
+                  #   by name. note_acquisition() is the home for values run() computes
+                  #   and estimate() needs (never instance state — a re-fit is a fresh
+                  #   instance). scqat never sees the scqo_* attrs (strip_attrs)
   provenance.py   # live-source provenance: which run — or campaign-level accept —
                   #   each CURRENT value traces to (statuses run|campaign|manual|
                   #   external|unrecorded; strict-match, run outranks campaign)
@@ -212,7 +224,9 @@ scqo/
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update)
                   #   + backend half (probe); kind-based gating (target_kinds) +
-                  #   validate_targets pre-probe hook; knobs via device.channel(t, kind)
+                  #   validate_targets pre-probe hook; knobs via device.channel(t, kind).
+                  #   run_estimate() is the ONE caller of estimate() (see
+                  #   estimate_inputs.py) - a run() override calls it, never estimate()
   _scqat.py       # the one scqat import point (lazy): per-target split + analyze() loop
   session.py      # Session: catalog() / run() / run_campaign() / accept() / reject() /
                   #   suggest() / set_values() / find_runs() / load_run() / tag_run() /

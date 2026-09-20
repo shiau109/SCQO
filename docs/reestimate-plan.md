@@ -1,6 +1,9 @@
 # 離線重新估計（`scqo estimate`）＋ 自足的 `dataset.nc` — 實作計畫
 
-狀態：**計畫，未實作**（2026-09-17）。本文件在功能落地後刪除（內容移入 TUTORIAL / CLAUDE.md 的對應段落）。
+狀態：**P1 已落地（2026-09-20）；P2 / P3 未實作**。P1 = §3.1–3.3 的自足 `dataset.nc`
+（`Experiment.run_estimate` + `scqo/estimate_inputs.py` + 內嵌快照 + `RunRecord.versions`），
+D3 依建議採用。剩下的工作與 §8 的延後項已進 `BACKLOG.md` F11，D1/D2/D4/D5 仍待拍板。
+本文件在整個功能落地後刪除（內容移入 TUTORIAL / CLAUDE.md 的對應段落）。
 
 ## 0. 要解決的兩件事
 
@@ -285,7 +288,7 @@ class Parameters:  # classmethod
 
 | 階段 | 內容 | 驗收 |
 |---|---|---|
-| **P1 自足的 dataset** | §3.1–3.3 ＋ `_scqat.py` ＋ `t1_bayesian` / punchout 的 instance 狀態搬進 dataset ＋ `RunRecord.versions` | SCQO 全套綠；任一新 run 的 `dataset.nc` 有全部 `scqo_*` attrs；live 結果與改動前逐位元相同 |
+| **P1 自足的 dataset** (DONE 2026-09-20) | §3.1–3.3 ＋ `_scqat.py` ＋ `t1_bayesian` / punchout 的 instance 狀態搬進 dataset ＋ `RunRecord.versions` | SCQO 全套綠；任一新 run 的 `dataset.nc` 有全部 `scqo_*` attrs；live 結果與改動前逐位元相同 |
 | **P2 動詞** | §3.4–3.8 ＋ 測試 1–8 | 往返測試涵蓋 45/45；對一個**真實的舊 5Q4C `resonator_spectroscopy` run** 做 `--set analysis_method=circle`，肉眼確認圖與絕對頻率 |
 | **P3 周邊** | viewer 連結、文件、driver AST 測試、release fragment | 兩個 driver 套件綠；`test_docs_current.py` 綠 |
 

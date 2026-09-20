@@ -140,6 +140,36 @@ provenance or a trap a user can walk into, **low** = hygiene.
   on an OPX+ port, the round trip is pinned offline against a real built tree
   (`scripts/make_opxp_fixture.py`), and the CLI stops being hidden on those trees.
 
+### F11 Offline re-estimate: the `scqo estimate` verb (P2) and its surroundings (P3)
+- Added 2026-09-20, when P1 of `docs/reestimate-plan.md` landed (the self-contained
+  `dataset.nc`: `Experiment.run_estimate`, `scqo/estimate_inputs.py`, the embedded
+  acquisition-time snapshot). The plan itself was not in this file at all, so the
+  remaining two thirds were invisible to "consult BACKLOG.md before planning".
+- P2 is the verb: `Session.reestimate()` + `scqo estimate <run_id> [--set k=v]`, the
+  estimate-stage field marking (`estimate_field` in `parameters.py`; only a field no
+  probe reads may be overridden), the derived-run shape (`reestimate_of`, era inherited
+  from the root, no campaign stamp), index `SCHEMA_VERSION` 10 -> 11, and the
+  whole-registry round-trip test. Old runs (no embedded attrs) take their inputs from
+  `device_before.json` + the setup snapshot — with an UNAVAILABLE physical store when
+  the run predates 2026-09-03, because an empty one would silently downgrade
+  `fact_sourced()` from measured to design.
+- Still to decide before P2 starts (plan §1): D1 verb name, D2 derived-run dataset is a
+  COPY, D4 `update="apply"` refused at re-estimate, D5 the first batch of
+  estimate-stage fields. D3 (embed the whole snapshot) was decided and is implemented.
+- P3 is the surroundings: viewer links between a root and its re-fits, TUTORIAL/AGENTS
+  sections, the two drivers' AST tests (no `self.estimate()`), release fragment.
+- Also deferred with the plan (§8): campaign statistics recomputed after a child is
+  re-fitted; BATCH re-estimation (refresh a window of old runs after a fit fix — needs a
+  folder-multiplication policy first); rebuilding pre-2026-09-03 facts from
+  `history.sqlite` by `started_at` instead of `--facts live`; `design.toml` in the setup
+  snapshot; folding the 5 `run()` overriders into base `run()` + an `acquire()` hook
+  (they are all "boundary write around acquire", and none calls
+  `attach_acquisition_coords()`).
+- Done when: `scqo estimate <run_id> --set analysis_method=circle` produces a derived run
+  on a REAL old 5Q4C `resonator_spectroscopy` run, with the figure and the absolute
+  frequency checked by eye; and `docs/reestimate-plan.md` is deleted, its content moved
+  into TUTORIAL/CLAUDE.md.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
