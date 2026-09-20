@@ -170,6 +170,40 @@ provenance or a trap a user can walk into, **low** = hygiene.
   frequency checked by eye; and `docs/reestimate-plan.md` is deleted, its content moved
   into TUTORIAL/CLAUDE.md.
 
+### F12 Finish and review the `peak_inverted` polarity carrier (medium)
+- Added 2026-09-20, when the WIP branch `claude/vigilant-nobel-92e114` was merged into
+  scqat main (merge `0b14f0a`, one commit `193b3f0`). That commit calls ITSELF
+  "UNFINISHED AND UNREVIEWED": it was last edited 2026-08-26 and committed only to
+  preserve worktree state across the `D:\github` -> `D:\project\scqo_system` move, so it
+  has never had a review pass. It merged clean (main had touched none of its 9 files) and
+  the three touched test files pass, which is why it is a backlog entry and not a revert.
+- What landed: `peak_fit.fit_peaks` picks the stronger polarity per row and, when the dip
+  wins, fits POSITIVE Lorentzians on the negated trace — so `peak_amplitude` is
+  polarity-NORMALIZED and cannot by itself tell an absorption dip from an emission peak
+  (a NEGATIVE amplitude means a badly-conditioned fit, not a dip). `peak_inverted` (per
+  peak) and `n_inverted` (per map) now carry that distinction through `track_peaks`'
+  pooling and out through both estimators' plot_data/attrs; `reduced_map` is never negated.
+- What is NOT finished: the flag has NO consumer. Both visualizations only state that it
+  "rides along in plot_data for consumers that need dip-vs-peak" — nothing plots it,
+  nothing branches on it, and nobody takes the signed
+  `np.where(peak_inverted, -peak_amplitude, peak_amplitude)` the docstrings advertise. A
+  dip-heavy map still reads as if every peak were an emission peak, which is the trap the
+  commit set out to close.
+- Second trap, for whoever writes that consumer: this CHANGED the result contract of
+  `track_peaks` and of both estimators' plot_data. A consumer must tolerate
+  `peak_inverted` being ABSENT, or replotting any `plotdata.nc` written before
+  2026-09-20 breaks — the same way the readout average-mode change already stopped old
+  readout plotdata from replotting.
+- Where: `scqat/tools/peak_map.py` (`track_peaks`);
+  `scqat/estimators/parametric_drive_resonance/{estimator,visualization}.py`;
+  `scqat/estimators/qubit_spectroscopy_flux/{estimator,peaks,visualization}.py`. Tests:
+  `tests/test_peak_map.py`, `tests/test_parametric_drive_resonance_estimator.py`,
+  `tests/test_qubit_spectroscopy_flux_estimator.py` (23 passed, 0 skipped at the merge).
+- Done when: the polarity work is reviewed and actually CONSUMED — at minimum the two
+  visualizations render dip-fitted peaks distinguishably and the docstrings stop promising
+  a consumer that does not exist — and a `RELEASES.d/` fragment is written. None was
+  written at the merge, so as it stands this ships unannounced in the next combo.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
