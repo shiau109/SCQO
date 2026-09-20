@@ -88,6 +88,22 @@ dependencies = [
                         # LOUD but late: estimate() imports the new estimator
                         # package, an ImportError after the instrument time is
                         # spent. See RELEASES.toml [v3-12-0].
+                        # The NEXT floor is scqat v0.27.0 for
+                        # qc_swap_flux_stark's compensation ridge, and it is
+                        # SILENT in BOTH halves - the worst shape this block
+                        # records. estimate() forwards three new kwargs
+                        # (swap_count / swap_angle_rad / min_row_contrast) to an
+                        # estimator that takes bare **kwargs on both hooks and
+                        # opts into no allowlist, so an older scqat SWALLOWS
+                        # them; and the fourteen RIDGE_KEYS are lifted through
+                        # .get(key, nan) while the outcome comes from the
+                        # independent transfer verdict. Result: SUCCESSFUL, one
+                        # figure instead of two, and every compensation number
+                        # NaN - exactly the v3.11.0 failure, doubled. Unlike
+                        # COMPENSATION_KEYS this one HAS a test
+                        # (test_model_experiments.py::
+                        # test_qc_swap_flux_stark_lifts_the_ridge_read_into_the_fit),
+                        # which catches the pairing in the offline suite.
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]

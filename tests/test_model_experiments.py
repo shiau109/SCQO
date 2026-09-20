@@ -2196,3 +2196,56 @@ def test_resonator_spectroscopy_branches_never_write_both_frequencies(session):
     assert res.get("f_dress0_hz") == dress0_before
     # the standing tone is left exactly where it was
     assert session.device_state()["q0_ro"]["readout_freq_hz"] == tone_before
+
+
+def test_qc_swap_flux_stark_lifts_the_ridge_read_into_the_fit(session):
+    """The compensation ridge, not the map's argmax, is this experiment's answer.
+
+    Every RIDGE_KEY must be present and a float even when a gate is shut, because
+    `Result.fit` is a flat scalar surface and a missing key reads as a schema
+    change rather than as a closed gate. With the prior supplied, the simulated
+    map sits at N*theta = pi/4 (SIM_SWAP_FRACTION), so both gates open and the
+    refined angle must come back near the injected one.
+    """
+    from scqo.experiments.qc_swap_flux_stark import RIDGE_KEYS, SIM_SWAP_FRACTION
+
+    n_swaps = 4
+    theta = SIM_SWAP_FRACTION * math.pi / n_swaps
+    out = session.run("qc_swap_flux_stark",
+                      {"targets": ["q0_q1"], "swap_count": n_swaps,
+                       "swap_angle_rad": theta}, update="none")
+    assert out.get("error") is None, out.get("error")
+    fit = out["fit"]["q0_q1"]
+    for key in RIDGE_KEYS:
+        assert key in fit, key
+        assert isinstance(fit[key], float), key
+    assert fit["ridge_ok"] == 1.0 and fit["branch_ok"] == 1.0
+    assert fit["n_ridge_rows"] > 4
+    assert math.isfinite(fit["compensating_stark_amp"])
+    assert fit["swap_angle_rad_prior"] == pytest.approx(theta)
+    assert fit["swap_angle_rad_refined"] == pytest.approx(theta, rel=0.25)
+    assert fit["swap_angle_consistent"] == 1.0
+
+
+def test_qc_swap_flux_stark_without_a_prior_keeps_both_gates_shut(session):
+    """No prior means no branch selector — the ridge is still fitted, the two
+    gated numbers are NaN, and the run is still SUCCESSFUL."""
+    out = session.run("qc_swap_flux_stark",
+                      {"targets": ["q0_q1"], "swap_count": 4}, update="none")
+    fit = out["fit"]["q0_q1"]
+    assert fit["ridge_ok"] == 0.0 and fit["branch_ok"] == 0.0
+    assert math.isnan(fit["compensating_stark_amp"])
+    assert math.isnan(fit["swap_angle_rad_refined"])
+    assert math.isfinite(fit["ridge_slope_per_v"])
+    assert out["outcomes"]["q0_q1"] == "successful"
+
+
+def test_qc_swap_flux_stark_refuses_an_impossible_prior():
+    """The prior is an exchange angle: a full swap is pi/2 and nothing exceeds it."""
+    cls = registry.get("qc_swap_flux_stark")
+    for bad in (0.0, -0.1, 2.0):
+        with pytest.raises(ValueError):
+            cls.Parameters(targets=["q0_q1"], swap_angle_rad=bad)
+    ok = cls.Parameters(targets=["q0_q1"], swap_angle_rad=math.pi / 2)
+    assert ok.swap_angle_rad == pytest.approx(math.pi / 2)
+    assert ok.min_row_contrast == 0.3
