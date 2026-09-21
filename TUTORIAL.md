@@ -213,7 +213,7 @@ Once the readout is in place, the qubit experiments follow the same pattern:
 scqo run qubit_ramsey --targets q1 --set num_points=201            # drive_freq_hz + T2*
 scqo run qubit_power_rabi --accept                                # apply updates immediately
 scqo run resonator_spectroscopy --no-update ...                   # analyze only, nothing suggested
-scqo run qubit_ramsey --params my.json                            # parameters from a file
+scqo run qubit_ramsey --params my.toml                            # parameters from a file (.toml or .json)
 ```
 
 **See the sequence before you run it** — `--preview` builds and compiles the
@@ -289,9 +289,13 @@ Three tiers of parameters — each overriding the previous:
    `default=15e6 [parameters.toml]`. With this file in place, most runs need no
    parameter flags at all.
 3. **The command line** — always wins. **`--set KEY=VALUE`** changes *one* knob
-   (repeat it for several), while **`--params`** loads a *whole set* as JSON — a file
-   path or an inline object like `--params "{""num_points"": 201}"`. Don't mix the
-   two syntaxes.
+   (repeat it for several), while **`--params`** loads a *whole set* — from a file,
+   read as TOML when it ends in `.toml` and as JSON otherwise, or from an inline JSON
+   object like `--params "{""num_points"": 201}"`. The file holds the keys at its top
+   level (no `[experiment]` table: that layout is `parameters.toml`'s), and a relative
+   path is resolved against the directory you run from. When both name a key, `--set`
+   wins. TOML has no null, so a knob that `parameters.toml` sets can only be reset to
+   None with `--set KEY=null`. Don't mix the two syntaxes.
 
 See every knob an experiment has — with your standing defaults marked — via
 `scqo run <experiment> --help`.

@@ -2,7 +2,8 @@
 
 Subprocess-based (python -m scqo.cli), cwd = an arbitrary tmp dir — the commands must
 work from ANY directory. Absorbs the parameter-cascade coverage that previously lived
-in LCHQBDriver/tests/test_cli_parameters.py.
+in LCHQBDriver/tests/test_cli_parameters.py. The --params loader (``_load_params``)
+is also tested in-process, for the file-handling cases a run need not pay for.
 
 Greenfield: the temp lab now writes a schema-3 components.toml (modes + lines; the
 readout rider mints q0_res/q0_ro, the drive rider q0_xy) plus the design.toml the
@@ -18,6 +19,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+from scqo.cli._engine import _load_params
 
 #: Design targets the simulated vendor seeds from — without a datasheet the
 #: readout/drive knobs have no standing value and every run fails pre-probe.
@@ -127,6 +132,95 @@ def test_cli_set_beats_file_defaults(tmp_path):
     assert proc.returncode == 0, proc.stderr
     saved = json.loads((Path(_result(proc)["data_path"]) / "parameters.json").read_text(encoding="utf-8"))
     assert saved["num_readout_freq_points"] == 99
+
+
+# ------------------------------------------------------------------ --params files
+
+
+def test_toml_params_sit_between_the_parameters_file_and_set(tmp_path):
+    # a RELATIVE path, resolved against the cwd (_run_cli runs in tmp_path)
+    (tmp_path / "run.toml").write_text(
+        'targets = ["q0"]\nnum_readout_freq_points = 61\nstart_readout_detuning_hz = -6e6\n',
+        encoding="utf-8")
+    proc = _run_cli(
+        tmp_path, "run", "resonator_spectroscopy", "--params", "run.toml",
+        "--set", "num_readout_freq_points=71",
+        parameters_toml="[resonator_spectroscopy]\nnum_readout_freq_points = 51\n"
+                        "start_readout_detuning_hz = -5e6\n",
+    )
+    assert proc.returncode == 0, proc.stderr
+    result = _result(proc)
+    assert result["outcomes"] == {"q0": "successful"}
+    saved = json.loads((Path(result["data_path"]) / "parameters.json").read_text(encoding="utf-8"))
+    assert saved["start_readout_detuning_hz"] == -6e6  # the TOML file beats parameters.toml
+    assert saved["num_readout_freq_points"] == 71  # --set beats the TOML file
+    # both keys parameters.toml sets were overridden, so it contributed nothing
+    assert "# parameter defaults from" not in proc.stderr
+
+
+def test_params_file_is_read_as_toml_by_its_extension(tmp_path):
+    path = tmp_path / "chain.TOML"  # the extension check ignores case
+    path.write_text('first_pair = { pair = "q1_q2", operation = "partial_swap" }\n'
+                    "num_averages = 400\nstark_detuning_hz = 50e6\n", encoding="utf-8")
+    # a table-valued PARAMETER is fine: only a table named after an experiment is refused
+    assert _load_params(str(path), {"qc_unidirectional_trotter"}) == {
+        "first_pair": {"pair": "q1_q2", "operation": "partial_swap"},
+        "num_averages": 400,
+        "stark_detuning_hz": 50e6,
+    }
+
+
+def test_params_files_with_a_bom_parse(tmp_path):
+    # Windows PowerShell 5.1's `Out-File -Encoding utf8` writes UTF-8 WITH a BOM
+    (tmp_path / "p.json").write_text('{"num_points": 201}', encoding="utf-8-sig")
+    (tmp_path / "p.toml").write_text("num_points = 201\n", encoding="utf-8-sig")
+    for name in ("p.json", "p.toml"):
+        assert _load_params(str(tmp_path / name), set()) == {"num_points": 201}
+
+
+def test_a_missing_params_file_is_reported_as_missing(tmp_path, monkeypatch):
+    # not as malformed inline JSON, which is what a relative path run from the
+    # wrong directory used to produce
+    monkeypatch.chdir(tmp_path)
+    for name in ("chain.toml", "chain.json"):
+        with pytest.raises(SystemExit) as exc:
+            _load_params(name, set())
+        message = str(exc.value)
+        assert "file not found" in message
+        assert str((tmp_path / name).resolve()) in message
+
+
+def test_a_leading_tilde_is_expanded(tmp_path, monkeypatch):
+    # PowerShell hands `~` to a native command unexpanded
+    monkeypatch.setenv("HOME", str(tmp_path))  # POSIX
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+    (tmp_path / "p.toml").write_text("num_points = 201\n", encoding="utf-8")
+    assert _load_params("~/p.toml", set()) == {"num_points": 201}
+
+
+def test_a_broken_toml_file_names_itself(tmp_path):
+    path = tmp_path / "bad.toml"
+    path.write_text("num_points =\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        _load_params(str(path), set())
+    assert "invalid TOML" in str(exc.value) and "bad.toml" in str(exc.value)
+
+
+def test_an_experiment_table_is_refused_with_the_layout_hint(tmp_path):
+    # the parameters.toml layout pasted into a --params file
+    path = tmp_path / "p.toml"
+    path.write_text("[resonator_spectroscopy]\nnum_readout_freq_points = 51\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        _load_params(str(path), {"resonator_spectroscopy", "qubit_ramsey"})
+    assert "resonator_spectroscopy" in str(exc.value) and "parameters.toml" in str(exc.value)
+
+
+def test_inline_json_params_keep_their_behavior():
+    assert _load_params('{"num_points": 201}', set()) == {"num_points": 201}
+    with pytest.raises(SystemExit, match="Did you mean:  --set num_points=201"):
+        _load_params("num_points=201", set())
+    with pytest.raises(SystemExit, match="must be a JSON object"):
+        _load_params("[1, 2]", set())
 
 
 # ------------------------------------------------------- suggest / review / accept
