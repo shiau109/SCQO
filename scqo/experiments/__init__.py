@@ -191,6 +191,7 @@ from .qubit_power_rabi import QubitPowerRabi  # noqa: E402
 from .qubit_ramsey import QubitRamsey  # noqa: E402
 from .qubit_relaxation import QubitRelaxation  # noqa: E402
 from .qubit_relaxation_flux_pulse import QubitRelaxationFluxPulse  # noqa: E402
+from .qubit_resonator_stark import QubitResonatorStark  # noqa: E402
 from .qubit_spectroscopy import QubitSpectroscopy  # noqa: E402
 from .qubit_spectroscopy_cryoscope import QubitSpectroscopyCryoscope  # noqa: E402
 from .qubit_spectroscopy_flux_pulse import (  # noqa: E402
@@ -236,7 +237,7 @@ __all__ = [
     "QubitEchoFluxPulse", "QubitParametricDriveAmp", "QubitParametricDriveTime",
     "QubitParitySwitchContinuous", "QubitParitySwitchDiscrete",
     "QubitPiPulseError", "QubitPowerRabi", "QubitRamsey",
-    "QubitRelaxation", "QubitRelaxationFluxPulse", "QubitSQRB",
+    "QubitRelaxation", "QubitRelaxationFluxPulse", "QubitResonatorStark", "QubitSQRB",
     "QubitSpectroscopy", "QubitSpectroscopyCryoscope", "QubitSpectroscopyFluxPulse",
     "QubitStarkPhaseEcho",
     "QubitT1Ade", "QubitT1Bayesian",

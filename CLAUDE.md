@@ -309,7 +309,8 @@ scqo/
                     #   sharing ONE axis (DETUNING_AXIS = `detuning_hz`; a frame is
                     #   an origin, not a different quantity). drive_detuning =
                     #   start/end_drive_detuning_hz + num_drive_freq_points, RELATIVE
-                    #   to the current drive_freq_hz (the four qubit_spectroscopy*);
+                    #   to the current drive_freq_hz (the qubit_spectroscopy* family +
+                    #   qubit_resonator_stark);
                     #   readout_detuning = start/end_readout_detuning_hz +
                     #   num_readout_freq_points, RELATIVE to readout_freq_hz (the four
                     #   resonator_spectroscopy* + readout_frequency). Explicit
@@ -334,6 +335,11 @@ scqo/
                     #   the derived set by test_capabilities)
     _gate_target.py             # which drag knob a target_gate selects (drag_knob)
     _overlap.py                 # the concurrent-tone timing shared by the overlap probe
+    _stark_tone.py              # qubit_resonator_stark's timing, both probes: the Stark
+                                #   tone rings up ONE depletion wait before the drive,
+                                #   ends with it, and the readout waits one more; the
+                                #   wait is resolved (and an ungoverned one refused) in
+                                #   define_sweep, before any instrument time
     _punchout.py                # the two punchouts' shared branch/plateau extraction
     _time_grid.py               # the shared swept-TIME axes. log_time_axis_ns SHRINKS:
                                 #   points snap to the 4 ns grid and de-duplicate, so the
@@ -366,27 +372,28 @@ tests/test_campaign.py          # the pure aggregator + run_campaign orchestrati
 ### The registered experiments
 
 <!-- BEGIN generated: experiments -->
-**45 registered experiments.** This list is GENERATED from the registry
+**46 registered experiments.** This list is GENERATED from the registry
 (`scqo.catalog()`) - refresh it with `python scripts/update_docs.py`. Descriptions are
 catalog-quality and live in the registry, never here: read one with
 `scqo run <name> --help`, or browse by capability with `scqo run --capability <name>`.
 
 ```
-broadband_qubit_spectroscopy        qubit_echo_flux_pulse               qubit_sqrb
-broadband_resonator_spectroscopy    qubit_parametric_drive_amp          qubit_stark_phase_echo
-pair_swap_angle                     qubit_parametric_drive_time         qubit_t1_ade
-pair_swap_chevron                   qubit_parity_switch_continuous      qubit_t1_bayesian
-pair_swap_flux_map                  qubit_parity_switch_discrete        qubit_thermal_population
-pair_zz_coupler                     qubit_pi_pulse_error                qubit_tomography
-qc_n_stark_amp                      qubit_power_rabi                    qubit_xyz_delay
-qc_n_swap_amp                       qubit_ramsey                        readout_frequency
-qc_swap_flux_stark                  qubit_ramsey_cryoscope              readout_power
-qc_trotter_compensation             qubit_ramsey_phasor                 resonator_spectroscopy
-qc_unidirectional_trotter           qubit_relaxation                    resonator_spectroscopy_flux
-qubit_deterministic_benchmarking    qubit_relaxation_flux_pulse         resonator_spectroscopy_power_amp
-qubit_drag_alternating              qubit_spectroscopy                  resonator_spectroscopy_power_chain
-qubit_drag_equator                  qubit_spectroscopy_cryoscope        single_shot_readout
-qubit_echo                          qubit_spectroscopy_flux_pulse       single_shot_readout_gef
+broadband_qubit_spectroscopy        qubit_parametric_drive_amp          qubit_stark_phase_echo
+broadband_resonator_spectroscopy    qubit_parametric_drive_time         qubit_t1_ade
+pair_swap_angle                     qubit_parity_switch_continuous      qubit_t1_bayesian
+pair_swap_chevron                   qubit_parity_switch_discrete        qubit_thermal_population
+pair_swap_flux_map                  qubit_pi_pulse_error                qubit_tomography
+pair_zz_coupler                     qubit_power_rabi                    qubit_xyz_delay
+qc_n_stark_amp                      qubit_ramsey                        readout_frequency
+qc_n_swap_amp                       qubit_ramsey_cryoscope              readout_power
+qc_swap_flux_stark                  qubit_ramsey_phasor                 resonator_spectroscopy
+qc_trotter_compensation             qubit_relaxation                    resonator_spectroscopy_flux
+qc_unidirectional_trotter           qubit_relaxation_flux_pulse         resonator_spectroscopy_power_amp
+qubit_deterministic_benchmarking    qubit_resonator_stark               resonator_spectroscopy_power_chain
+qubit_drag_alternating              qubit_spectroscopy                  single_shot_readout
+qubit_drag_equator                  qubit_spectroscopy_cryoscope        single_shot_readout_gef
+qubit_echo                          qubit_spectroscopy_flux_pulse
+qubit_echo_flux_pulse               qubit_sqrb
 ```
 <!-- END generated: experiments -->
 
@@ -402,6 +409,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 
 | scqat estimator | experiments |
 |---|---|
+| `ac_stark_shift` | qubit_resonator_stark |
 | `broadband_qubit_spectroscopy` | broadband_qubit_spectroscopy |
 | `broadband_resonator_spectroscopy` | broadband_resonator_spectroscopy |
 | `pair_swap_angle` | pair_swap_angle |

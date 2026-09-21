@@ -33,7 +33,8 @@ RECORD_ONLY = {"qubit_sqrb", "qubit_tomography", "qubit_echo_flux_pulse",
                "pair_swap_angle", "qc_trotter_compensation",
                "qubit_t1_ade", "qubit_t1_bayesian",
                "broadband_resonator_spectroscopy", "broadband_qubit_spectroscopy",
-               "qubit_parametric_drive_amp", "qubit_parametric_drive_time"}
+               "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
+               "qubit_resonator_stark"}
 
 
 #: the readout reference an accepted single_shot_readout would have left behind.
@@ -242,6 +243,97 @@ def test_parametric_drive_amp_finds_the_seeded_resonance(session):
     # and a negative one signals a badly-conditioned fit, not a dip.
     span = f_hi - f_lo
     assert 0.0 < fit["best_fwhm_hz"] < 0.25 * span
+
+
+def _stark_session(tmp_path, *, depletion=True):
+    """A one-qubit session seeded like the module fixture, with the depletion
+    knob individually controllable (the refusal test needs it absent)."""
+    roster = demo_components(tunable=True)
+    design = demo_design(roster)
+    vendor = InMemoryDevice(roster, demo_vendor_state(roster, design))
+    s = Session(SimulatedBackend(vendor), roster, design=design,
+                scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
+                device_name="chipT", setup_name="sim", cooldown_id="cd1")
+    if depletion:
+        s.set_values({"q0_ro.readout_depletion_s": 1e-6})
+    return s
+
+
+def test_resonator_stark_recovers_the_planted_shift(session):
+    """The sim pulls the line down by ``pull * (a / a_max)**2``. The reported shift
+    per amp_prefactor**2 must come back as ``-pull / a_max**2`` — the Stark shift
+    at the calibrated readout_amp — with the zero-photon line where it was planted
+    and no row lost to a width gate (the line broadens with the power by design)."""
+    from scqo.experiments._sim import stable_seed
+
+    out = session.run("qubit_resonator_stark", {"targets": ["q0"]}, update="none")
+    assert out.get("error") is None, out.get("error")
+    assert out["outcomes"]["q0"] == "successful"
+    fit = out["fit"]["q0"]
+
+    p = registry.get("qubit_resonator_stark").Parameters(targets=["q0"])
+    low, high = window_bounds(p.start_drive_detuning_hz, p.end_drive_detuning_hz)
+    width = high - low
+    # redraw what simulate() hid for this seeded target, in its draw order
+    rng = np.random.default_rng(stable_seed("qubit_resonator_stark", "q0"))
+    f0 = high - rng.uniform(0.2, 0.35) * width
+    pull = rng.uniform(0.25, 0.45) * width
+    assert fit["stark_shift_at_readout_hz"] == pytest.approx(
+        -pull / p.max_amp_factor ** 2, rel=0.03)
+    assert fit["zero_photon_detuning_hz"] == pytest.approx(f0, abs=0.3e6)
+    assert fit["zero_photon_freq_hz"] == pytest.approx(
+        fit["old_drive_freq_hz"] + fit["zero_photon_detuning_hz"])
+    assert fit["n_rows_fit"] == p.num_amp_points
+    assert fit["broadening_at_readout_hz"] > 0
+    assert fit["stark_hz_per_amp2"] == pytest.approx(
+        fit["stark_shift_at_readout_hz"] / fit["old_readout_amp"] ** 2)
+    # no chi_hz on this device: no photon number, and a NaN rather than a guess
+    assert math.isnan(fit["n_readout"]) and math.isnan(fit["chi_hz_used"])
+
+
+def test_resonator_stark_converts_to_photons_with_the_stored_chi(tmp_path):
+    """chi_hz = (f_dress0 - f_dress1)/2 > 0 pulls the qubit DOWN by 2*chi per
+    photon, so the sim's downward shift must read as a POSITIVE photon number."""
+    s = _stark_session(tmp_path)
+    s.set_values({"q0_res.chi_hz": 0.5e6})
+    out = s.run("qubit_resonator_stark", {"targets": ["q0"]}, update="none")
+    assert out.get("error") is None, out.get("error")
+    fit = out["fit"]["q0"]
+    assert fit["chi_hz_used"] == pytest.approx(0.5e6)
+    assert fit["n_readout"] == pytest.approx(
+        fit["stark_shift_at_readout_hz"] / (-2 * 0.5e6))
+    assert fit["n_readout"] > 0
+    assert fit["photons_per_amp2"] == pytest.approx(
+        fit["n_readout"] / fit["old_readout_amp"] ** 2)
+
+
+def test_resonator_stark_refuses_an_ungoverned_depletion_before_acquiring(tmp_path):
+    """The Stark photons must be gone before the readout, so a wait nobody governed
+    is refused by name in define_sweep — before the drive-power boundary, before
+    any instrument time — and the per-run override is the named way out."""
+    s = _stark_session(tmp_path, depletion=False)
+    out = s.run("qubit_resonator_stark", {"targets": ["q0"]}, update="none")
+    assert "no governed depletion wait for q0" in str(out.get("error"))
+    ok = s.run("qubit_resonator_stark",
+               {"targets": ["q0"], "readout_depletion_ns": 800.0}, update="none")
+    assert ok.get("error") is None, ok.get("error")
+
+
+def test_resonator_stark_records_the_timing_that_played(session):
+    """dataset.nc carries the resolved windows, so the run folder alone says how
+    long the tone rang up and how long the readout waited."""
+    import xarray as xr
+
+    from scqo.estimate_inputs import acquisition_note
+
+    out = session.run("qubit_resonator_stark", {"targets": ["q0"], "drive_len_ns": 2000.0},
+                      update="none")
+    assert out.get("error") is None, out.get("error")
+    with xr.open_dataset(f"{out['data_path']}/dataset.nc") as ds:
+        windows = acquisition_note(ds, "stark_windows")
+    # the module fixture governs readout_depletion_s = 1 us
+    assert windows == {"ring_up_ns": 1000.0, "drive_len_ns": 2000.0,
+                       "tone_len_ns": 3000.0, "depletion_ns": 1000.0}
 
 
 def _sweep(session, name, **params):

@@ -165,6 +165,9 @@ EXPECTED_CAPABILITIES = {
     "readout_power": ["qubit_reset", "amplitude"],
     "readout_frequency": ["qubit_reset", "readout_detuning"],
     "qubit_spectroscopy": ["qubit_reset", "drive_detuning"],
+    # the Stark tone's amplitude is a factor of readout_amp; the drive sweeps a
+    # drive-detuning window, as in qubit_spectroscopy
+    "qubit_resonator_stark": ["qubit_reset", "amplitude", "drive_detuning"],
     "qubit_tomography": ["qubit_reset"],
     "qubit_drag_equator": ["qubit_reset"],
     "qubit_drag_alternating": ["qubit_reset"],
@@ -499,6 +502,11 @@ AMPLITUDE_CARRIERS = [
     ("qubit_deterministic_benchmarking",
      {"num_amp_points": 5, "target_gate": "x90", "max_repetitions": 20},
      "pi_amp_x90"),
+    # a fresh demo device has no readout_depletion_s, which this one refuses
+    # without — the per-run override stands in for it
+    ("qubit_resonator_stark",
+     {"num_amp_points": 4, "num_drive_freq_points": 41, "readout_depletion_ns": 1000.0},
+     "readout_amp"),
 ]
 
 
@@ -604,10 +612,11 @@ def test_the_amplitude_capability_is_derived_from_the_mixin():
 # --------------------------------------------------------------------------
 # drive_detuning capability: the swept drive-frequency window
 # --------------------------------------------------------------------------
-#: the three carriers — every drive-frequency window in the registry. The
-#: readout-side detuning sweeps share the axis NAME but are relative to
-#: readout_freq_hz, and carry the SIBLING readout_detuning capability instead.
+#: every drive-frequency window in the registry. The readout-side detuning
+#: sweeps share the axis NAME but are relative to readout_freq_hz, and carry
+#: the SIBLING readout_detuning capability instead.
 DRIVE_DETUNING_CARRIERS = {
+    "qubit_resonator_stark",
     "qubit_spectroscopy",
     "qubit_spectroscopy_cryoscope",
     "qubit_spectroscopy_flux_pulse",

@@ -1,10 +1,11 @@
 """Amplitude-sweep capability: the absolute amplitude behind a swept RATIO.
 
-Four experiments sweep a drive or readout pulse amplitude as a dimensionless
+Five experiments sweep a drive or readout-channel amplitude as a dimensionless
 FACTOR of whatever the target currently stores — ``qubit_power_rabi`` and
 ``qubit_pi_pulse_error`` against the drive channel's ``pi_amp``,
 ``qubit_deterministic_benchmarking`` against ``pi_amp`` or ``pi_amp_x90``, and
-``readout_power`` against the readout channel's ``readout_amp``.
+``readout_power`` (the readout pulse) and ``qubit_resonator_stark`` (its Stark
+tone) against the readout channel's ``readout_amp``.
 
 THE RATIO IS THE INPUT, ON PURPOSE. One factor array serves every target in a
 multiplexed run: q1 with ``pi_amp`` 0.15 and q2 with 0.35 are each driven around
