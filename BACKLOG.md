@@ -325,7 +325,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: the comment is dropped or rewritten and the assert reflects what is actually
   guaranteed now that both ends of the pipe are pinned.
 
-### I16 scqo-agent: three hardware traps to close before Phase C (medium)
+### I16 scqo-agent: four problems to close before Phase C (medium)
 - Found 2026-09-21 while surveying `D:\github\scqo-agent` for an autonomous single-qubit
   bring-up design. Read from the code, not exercised on an instrument.
 - (1) Nothing gates `run_experiment` on a human. `server.py::create_agent` sets
@@ -372,6 +372,25 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: each of these fails (or flags) a value at or within a step of its bound, the
   T1/echo guard is consistent with the tau bound, and a test per estimator pins a
   window-too-short / feature-off-window case.
+
+### I18 chipA's dev-box data: a datasheet that is not this chip, and a second qubit named q1 (low)
+- Found 2026-09-21 while choosing which measured facts could seed a simulated chip. Data on
+  this dev box's scratch `data_root` (`D:\qpu_data_dev`), not repo content.
+- `chipA/design.toml` (header: "Carried over from the pre-cutover roster") says
+  `q1_res.f_dress0_hz = 5.94e9`, `q1.f_01_hz = 4.73e9`. Both chipA setups that measured q1
+  agree with each other and not with it: `cd1/qblox` and `cd1/qm_OPX1000` physical.json give
+  5.0118 GHz and 2.9413 GHz. A resonator 16 % (and a qubit 38 %) off its layout is far
+  outside a normal fabrication spread, so the datasheet most likely describes another chip or
+  was a placeholder — confirm with whoever wrote it. Until then every design-seeded anchor and
+  the `scqo state --design` column compare against it, and its `g_hz` / `kappa_tot_hz` /
+  `anharmonicity_hz` are suspect for the same reason.
+- `cd1/qblox_q2` stores a DIFFERENT physical qubit as `q1` (f01 3.2774 GHz, resonator
+  5.1130 GHz), while `components.toml` states q1 is the same qubit in every vendor config.
+  Cross-context views (the device page's facts matrix, /trends port 2, the whole-cooldown
+  lab-report context) therefore mix two qubits under one name.
+- Done when: `design.toml` carries chipA's real layout values (or its q1 block is removed
+  until known), and the second qubit is either a `q2` mode in `components.toml` measured
+  under that name, or its setup moves to its own device.
 
 **5Q4C q1_q2 `decouple_offset` = 0.08 V does not decouple (found 2026-09-15, hardware).**
 Every probe parks the coupler there (`initialize_qpu` -> `apply_all_couplers_to_min()` ->
