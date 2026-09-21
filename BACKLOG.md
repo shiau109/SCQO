@@ -325,6 +325,48 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: the comment is dropped or rewritten and the assert reflects what is actually
   guaranteed now that both ends of the pipe are pinned.
 
+### I16 scqo-agent: three hardware traps to close before Phase C (medium)
+- Found 2026-09-21 while surveying `D:\github\scqo-agent` for an autonomous single-qubit
+  bring-up design. Read from the code, not exercised on an instrument.
+- (1) Nothing gates `run_experiment` on a human. `server.py::create_agent` sets
+  `interrupt_on = {}` (the approval block is commented out) and the CLI's `-n` mode sets
+  `auto_approve=True`, while `tools/lab_tool.py::run_experiment`'s docstring says "Requires
+  approval before running" and `02_Calibration_Workflow.md` asks for confirmation before each
+  hardware step. Under `launch/run-qblox.ps1` / `run-qm.ps1` that prose is the only brake.
+  Writebacks stay suggest-only, so the device state is safe; the instrument is not gated.
+- (2) Stop and Delete undo the QM `detach` policy. `server.py::stop_workflow` and
+  `delete_workflow` call `procutil.terminate_tree(pid)` on the whole QCA process tree,
+  experiment children included — the kill that `core/runner.py` says orphans the
+  instrument-side job and wedges the gateway for every later run.
+- (3) Nothing refuses a second experiment while a detached QM child is still running; the
+  rule exists only in `system-prompt.md`.
+- Done when: hardware deployments gate `run_experiment` on a human (or the Phase C notes say
+  plainly that they do not); Stop/Delete under `detach` leave an in-flight experiment child
+  running or refuse while one runs; a second start is refused while a detached child lives.
+
+### I17 A value pinned at its swept-window bound still reports SUCCESSFUL (medium)
+- Found 2026-09-21 while checking whether `Outcome` could gate an unattended bring-up step.
+  Read from the code, not reproduced on data. `update()` writes for every SUCCESSFUL target,
+  so each case below proposes a writeback from a value the window cut off.
+- `qubit_relaxation` / `qubit_echo`: `scqat/tools/fit_exp_decay.py` bounds tau at 4x the
+  swept span, so the estimators' `0 < t1 < 10 * t_span` guard can never fire. A T1 longer
+  than the window comes back pinned and still proposes `t1_s` AND the
+  `thermalization_time_s` knob (the reset wait) from it.
+- `qubit_spectroscopy`: `scqat/tools/peak_fit.py::fit_peaks` bounds x0 inside the local fit
+  window and, when the fit raises, falls back to the initial guess with NaN errors and still
+  returns the peak; SCQO's `low <= det <= high` check therefore cannot fail.
+- `resonator_spectroscopy` (lorentzian): x0 is bounded to the sweep and `in_span` in
+  `scqat/tools/dip_fit.py` is inclusive, so a centre sitting on the bound passes.
+- `readout_frequency` / `readout_power`: the best point is `nanargmax` over the sweep
+  (`readout_fidelity/estimator.py::_select_best_index`) and an endpoint is accepted.
+- Related: the uncertainties that would expose this (`detuning_err`, `fwhm_err`,
+  `chi_square`, peak stderrs, Ramsey `var_explained`) are computed but reach only
+  `analysis/<target>/*_metadata.json` — not `Result.fit`, and not at all under
+  `skip_artifacts`. Only T1 and T2echo carry a stderr in `Result.fit`.
+- Done when: each of these fails (or flags) a value at or within a step of its bound, the
+  T1/echo guard is consistent with the tau bound, and a test per estimator pins a
+  window-too-short / feature-off-window case.
+
 **5Q4C q1_q2 `decouple_offset` = 0.08 V does not decouple (found 2026-09-15, hardware).**
 Every probe parks the coupler there (`initialize_qpu` -> `apply_all_couplers_to_min()` ->
 `to_decouple_idle()`), and coupler pulses ride ON TOP of it — so the park is the standing
