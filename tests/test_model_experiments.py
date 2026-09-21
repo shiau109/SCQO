@@ -2221,7 +2221,15 @@ def test_qc_swap_flux_stark_lifts_the_ridge_read_into_the_fit(session):
         assert isinstance(fit[key], float), key
     assert fit["ridge_ok"] == 1.0 and fit["branch_ok"] == 1.0
     assert fit["n_ridge_rows"] > 4
+    # the simulated window is sized to hold the whole arch (SIM_EDGE_DETUNING),
+    # so its fitted centre must be ACCEPTED, with an error to go with it
+    assert fit["resonance_at_edge"] == 0.0
+    assert fit["resonance_unresolved"] == 0.0
+    assert fit["compensation_in_gap"] == 0.0
+    assert math.isfinite(fit["resonance_flux_amp_v"])
+    assert 0.0 < fit["resonance_flux_err_v"] < math.inf
     assert math.isfinite(fit["compensating_stark_amp"])
+    assert math.isfinite(fit["compensating_stark_err"])
     assert fit["swap_angle_rad_prior"] == pytest.approx(theta)
     assert fit["swap_angle_rad_refined"] == pytest.approx(theta, rel=0.25)
     assert fit["swap_angle_consistent"] == 1.0
@@ -2237,6 +2245,8 @@ def test_qc_swap_flux_stark_without_a_prior_keeps_both_gates_shut(session):
     assert math.isnan(fit["compensating_stark_amp"])
     assert math.isnan(fit["swap_angle_rad_refined"])
     assert math.isnan(fit["ridge_slope_per_v"])
+    # a shut gate is not a refusal: nothing was fitted, so nothing is flagged
+    assert fit["resonance_unresolved"] == 0.0 and fit["resonance_at_edge"] == 0.0
     # the rows themselves need no prior — only the reading that needs a branch
     # selector is withheld
     assert fit["n_ridge_rows"] > 4

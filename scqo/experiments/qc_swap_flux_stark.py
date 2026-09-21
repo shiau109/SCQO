@@ -41,13 +41,17 @@ TWO THINGS TO KNOW BEFORE READING THE MAP:
 
 HOW THE RIDGE IS READ, and what the prior is for. Along any FIXED flux row the
 largest transfer is at ``phi = 0`` exactly — the row's own compensation — as long
-as ``theta <= pi/N``; the line through those per-row optima is the ridge, and it
-gives the compensating amplitude at any flux including one whose own row carried
-no signal. Locating the RESONANCE on that ridge, and turning its transfer into an
-angle, both need to know how far ``N*theta`` has run, which a fixed-N map cannot
-tell you. That is what ``swap_angle_rad`` supplies — a prior from a preceding
-``pair_swap_flux_map``, used as a branch selector rather than a fitted value, and
-accurate to ``pi/(2N)`` is enough.
+as ``theta <= pi/N``, and that row's peak is the transfer ON the ridge. Read along
+the flux, those peaks trace an ARCH whose centre is the resonance. The estimator
+FITS the arch rather than taking its largest row, because the top is flat and
+shot noise decides which row wins (1.3 mV from the fitted centre on 5Q4C's N=5 map
+of 2026-09-21, against a +-0.10 mV fit), and it interpolates the compensating
+amplitude between the two live rows that bracket that centre. Fitting the arch,
+and turning its height into an angle, both need to know how far ``N*theta`` has
+run — past ``pi/2`` the arch folds into a dip between two maxima — which a fixed-N
+map cannot tell you. That is what ``swap_angle_rad`` supplies — a prior from a
+preceding ``pair_swap_flux_map``, used as a branch selector rather than a fitted
+value, and accurate to ``pi/(2N)`` is enough.
 
 READOUT (the unified readout schema): digital, both modes, exactly as
 ``qc_n_swap_amp`` — ``readout_mode="average"`` (default) stores the pair's
@@ -109,7 +113,7 @@ PHASE_AT_EDGE = 2.5
 SIM_SWAP_FRACTION = 0.25
 
 #: detuning at the edge of the SIMULATED flux window, in units of ``2J``. Sized
-#: from the WINDOW, not from the grid step: the reading is a line fitted ACROSS
+#: from the WINDOW, not from the grid step: the resonance is an arch fitted ACROSS
 #: the flux rows, so a stripe only a few points wide would leave nothing to fit
 #: however finely the axis is sampled. 1.75 is what 5Q4C q1_q2 measured on
 #: 2026-09-20 (5.75 mV FWHM in a 10 mV window), and it leaves a comfortable
@@ -121,12 +125,17 @@ SIM_EDGE_DETUNING = 1.75
 #: of them NaN without raising (see this repo's pyproject scqat-floor block).
 RIDGE_KEYS = (
     "compensating_stark_amp",
-    "compensating_is_refined",
+    "compensating_stark_err",
+    "compensation_in_gap",
     "resonance_flux_amp_v",
-    "resonance_in_gap",
+    "resonance_flux_err_v",
+    "resonance_at_edge",
+    "resonance_unresolved",
+    "arch_r_squared",
     "ridge_peak_flux_amp_v",
     "ridge_peak_transfer",
     "swap_angle_rad_refined",
+    "swap_angle_err_rad",
     "swap_angle_rad_prior",
     "swap_angle_consistent",
     "ridge_slope_per_v",
@@ -252,21 +261,33 @@ class QcSwapFluxStarkResult(Result):
 
     Ridge read (:data:`RIDGE_KEYS`) — ``compensating_stark_amp`` at
     ``resonance_flux_amp_v`` is the answer, with ``swap_angle_rad_refined`` the
-    N-amplified exchange angle. Each is behind its own gate: ``ridge_ok``
-    (``N*theta <= pi``) for the first pair, ``branch_ok`` (``N*theta <= pi/2``)
-    for the angle, both decided by the ``swap_angle_rad`` prior and both NaN
-    when shut. A third way to get nothing is ``resonance_in_gap``: the resonance
-    row carried no stark signal, so there is nothing local to interpolate and
-    reaching it would need a phase-vs-amplitude model this experiment does not
-    carry.
+    N-amplified exchange angle, each with its one-sigma error
+    (``compensating_stark_err``, ``resonance_flux_err_v``,
+    ``swap_angle_err_rad``). The resonance is the centre of the arch the
+    phase-compensated transfer traces along the flux, FITTED rather than picked
+    (``arch_r_squared`` is that fit's), and the compensation is interpolated
+    between the two live rows that bracket it. Each is behind its own gate:
+    ``ridge_ok`` (``N*theta <= pi``) for the first pair, ``branch_ok``
+    (``N*theta <= pi/2``) for the angle, both decided by the ``swap_angle_rad``
+    prior and both NaN when shut.
+
+    Refusals — with a gate open, three flags NaN their numbers while leaving the
+    errors in place to show why. ``resonance_at_edge``: the fitted centre lies
+    outside the live rows, so it was extrapolated — move the flux window onto
+    it. ``resonance_unresolved``: its error exceeds a tenth of the live span or
+    a stark step's worth of compensation, or the fit failed — widen the window
+    or average more. ``compensation_in_gap``: the resonance sits in a dead band
+    of rows with no stark signal; the arch reaches it from its two flanks, but
+    the compensation would have to be interpolated across the band, so only
+    that number is withheld.
 
     Ungated — ``ridge_peak_flux_amp_v`` is the flux where the phase-compensated
     transfer is largest, with ``ridge_peak_transfer`` its height. It needs no
     prior because it is a MEASUREMENT rather than a claim, so it is the flux to
-    act on from a run that carried no priors at all; it equals
-    ``resonance_flux_amp_v`` whenever the angle has not folded, and is one of
-    the two flanks instead when it has — which is precisely what the prior is
-    there to tell you.
+    act on from a run that carried no priors at all. With a prior, prefer the
+    fitted resonance: on a flat-topped arch the largest row is decided by shot
+    noise, and past the fold it is one of the two flanks instead — which is
+    precisely what the prior is there to tell you.
 
     Diagnostics — ``ridge_slope_per_v`` is how fast the compensation moves with
     the flux (how tightly the flux must be held) and ``ridge_local_rms`` how
@@ -453,8 +474,9 @@ class QcSwapFluxStark(Experiment):
         # scqat artifacts (two figures + plotdata + metadata, one folder per
         # pair). With the count frozen there is no axis to FIT along, so the
         # estimator fits ACROSS the flux rows instead: each row's optimum along
-        # stark is phi = 0, and the line through them gives the compensating
-        # amplitude at any flux. It still proposes nothing.
+        # stark is phi = 0, the transfer on those optima is an arch whose fitted
+        # centre is the resonance, and the compensation is read between the
+        # rows bracketing it. It still proposes nothing.
         from scqat.estimators.qc_swap_flux_stark import QcSwapFluxStarkEstimator
         from .._scqat import per_qubit_results
 

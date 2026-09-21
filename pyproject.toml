@@ -91,15 +91,18 @@ dependencies = [
                         # The NEXT floor is scqat v0.27.0 for
                         # qc_swap_flux_stark's compensation ridge, and it is
                         # SILENT in BOTH halves - the worst shape this block
-                        # records. estimate() forwards three new kwargs
-                        # (swap_count / swap_angle_rad / min_row_contrast) to an
-                        # estimator that takes bare **kwargs on both hooks and
-                        # opts into no allowlist, so an older scqat SWALLOWS
-                        # them; and the fourteen RIDGE_KEYS are lifted through
-                        # .get(key, nan) while the outcome comes from the
-                        # independent transfer verdict. Result: SUCCESSFUL, one
-                        # figure instead of two, and every compensation number
-                        # NaN - exactly the v3.11.0 failure, doubled. Unlike
+                        # records. estimate() forwards four new kwargs
+                        # (swap_count / swap_angle_rad / stark_amp_2pi /
+                        # min_row_contrast) to an estimator that takes bare
+                        # **kwargs on both hooks and opts into no allowlist, so
+                        # an older scqat SWALLOWS them; and every RIDGE_KEY is
+                        # lifted through .get(key, nan) while the outcome comes
+                        # from the independent transfer verdict. Result:
+                        # SUCCESSFUL, one figure instead of two, and every
+                        # compensation number NaN - exactly the v3.11.0 failure,
+                        # doubled. The arch-fit keys (the errors and the three
+                        # refusal flags) are NaN on any scqat before the fit
+                        # landed, even one that has the ridge. Unlike
                         # COMPENSATION_KEYS this one HAS a test
                         # (test_model_experiments.py::
                         # test_qc_swap_flux_stark_lifts_the_ridge_read_into_the_fit),
