@@ -426,6 +426,19 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 
+### I20 QM `qubit_spectroscopy_flux_pulse` plays its drive and z pulses 4x too long (medium)
+- Found 2026-09-21 while writing the `qubit_resonator_stark` QM probe. Read from the code,
+  not reproduced on the instrument.
+- `scqo-qm/scqo_qm/experiments/qubit_spectroscopy_flux_pulse.py:109-111` computes
+  `length * u.ns` BEFORE `with program()`. qualang_tools' `u.ns` is 0.25 only while a
+  `Program` is in scope and 1.0 outside it (`qualang_tools/units/units.py`), so the value
+  stays in ns and is then passed as `duration=`, which QUA reads as 4 ns clock cycles. The
+  scqo probe passes `operation_len=None`, so every run plays the saturation AND the z pulse at
+  4x the saturation op's length. Silent: a longer saturation still fits.
+- Done when: the builder converts with an explicit `// 4` (the `_cycles` helper of
+  `qubit_spectroscopy.py` / `qubit_resonator_stark.py`) and a generated-QUA test pins the
+  played duration against the op length.
+
 **5Q4C q1_q2 `decouple_offset` = 0.08 V does not decouple (found 2026-09-15, hardware).**
 Every probe parks the coupler there (`initialize_qpu` -> `apply_all_couplers_to_min()` ->
 `to_decouple_idle()`), and coupler pulses ride ON TOP of it — so the park is the standing
@@ -461,6 +474,12 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   returns inside `_CLUSTER_CLOSE_TIMEOUT_S` and actually frees the four sockets can
   only be seen on hardware: run a campaign at a terminal, leave the prompt open, and
   check that a second process can connect.
+- `qubit_resonator_stark` (added 2026-09-21, fragment `qubit-resonator-stark`; offline-only
+  on both backends). QM: before trusting a map, check in `--preview`'s simulated analog
+  traces that the resonator's Stark tone and the xy drive really OVERLAP — same-core
+  elements serialize and hand back a map with no shift and a clean fit. Qblox: the first
+  cluster run of a non-`Measure` pulse on the readout port-clock. Both: once `chi_hz` is
+  measured, sanity-check `n_readout` against an independent photon estimate.
 
 **OPX+ / Octave (added 2026-09-11, scqo-qm)** - the whole family has NEVER run on
 hardware: six startup audits, the Octave gain+amplitude power solve, the mixer
