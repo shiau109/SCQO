@@ -2241,6 +2241,10 @@ def test_qc_swap_flux_stark_without_a_prior_keeps_both_gates_shut(session):
     # selector is withheld
     assert fit["n_ridge_rows"] > 4
     assert math.isfinite(fit["max_row_contrast"])
+    # WHERE the compensated transfer peaks is a measurement, not a claim, so it
+    # is reported anyway — that is the flux an operator can act on
+    assert math.isfinite(fit["ridge_peak_flux_amp_v"])
+    assert math.isfinite(fit["ridge_peak_transfer"])
     assert out["outcomes"]["q0_q1"] == "successful"
 
 

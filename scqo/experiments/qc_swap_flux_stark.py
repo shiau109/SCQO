@@ -124,6 +124,8 @@ RIDGE_KEYS = (
     "compensating_is_refined",
     "resonance_flux_amp_v",
     "resonance_in_gap",
+    "ridge_peak_flux_amp_v",
+    "ridge_peak_transfer",
     "swap_angle_rad_refined",
     "swap_angle_rad_prior",
     "swap_angle_consistent",
@@ -257,6 +259,14 @@ class QcSwapFluxStarkResult(Result):
     row carried no stark signal, so there is nothing local to interpolate and
     reaching it would need a phase-vs-amplitude model this experiment does not
     carry.
+
+    Ungated — ``ridge_peak_flux_amp_v`` is the flux where the phase-compensated
+    transfer is largest, with ``ridge_peak_transfer`` its height. It needs no
+    prior because it is a MEASUREMENT rather than a claim, so it is the flux to
+    act on from a run that carried no priors at all; it equals
+    ``resonance_flux_amp_v`` whenever the angle has not folded, and is one of
+    the two flanks instead when it has — which is precisely what the prior is
+    there to tell you.
 
     Diagnostics — ``ridge_slope_per_v`` is how fast the compensation moves with
     the flux (how tightly the flux must be held) and ``ridge_local_rms`` how
