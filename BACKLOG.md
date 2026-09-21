@@ -340,9 +340,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   instrument-side job and wedges the gateway for every later run.
 - (3) Nothing refuses a second experiment while a detached QM child is still running; the
   rule exists only in `system-prompt.md`.
+- (4) The chain the LLM is taught is out of order. `data/knowledge/documents/
+  02_Calibration_Workflow.md` puts `readout_power` (step 2, described as "best power below
+  punch-out") and `readout_frequency` (step 3) BEFORE qubit spectroscopy — but both sweep
+  `prepared_state` 0/1, so they need a calibrated pi pulse and belong after power Rabi. The
+  punchout it describes is `resonator_spectroscopy_power_amp`, which the chain omits.
 - Done when: hardware deployments gate `run_experiment` on a human (or the Phase C notes say
   plainly that they do not); Stop/Delete under `detach` leave an in-flight experiment child
-  running or refuse while one runs; a second start is refused while a detached child lives.
+  running or refuse while one runs; a second start is refused while a detached child lives;
+  the taught chain runs punchout before, and readout optimization after, the pi pulse.
 
 ### I17 A value pinned at its swept-window bound still reports SUCCESSFUL (medium)
 - Found 2026-09-21 while checking whether `Outcome` could gate an unattended bring-up step.
