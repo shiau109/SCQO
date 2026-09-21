@@ -392,6 +392,40 @@ provenance or a trap a user can walk into, **low** = hygiene.
   until known), and the second qubit is either a `q2` mode in `components.toml` measured
   under that name, or its setup moves to its own device.
 
+### I19 Backend-parity gaps in the basic single-qubit bring-up (medium)
+- Found 2026-09-21 while specifying the emulated backend (`docs/emulated-backend-plan.md`),
+  which has to pick ONE realization per experiment. Read from the code, not exercised; each
+  item cites both drivers' `experiments/<name>.py` unless noted.
+- `qubit_ramsey` realizes different sequences: QM plays `y90` - idle - `x90` with the phase
+  as a frame rotation, amplitude `pi_amp_x90` and a vendor-only x90 length; Qblox plays
+  `X90` - idle - `Rxy(90, phi)` at `pi_amp/2` and `pi_duration_s` (`pi_amp_x90` is Unrealized
+  there). `qubit_echo`'s x90s split the same way. The fitted frequency survives (free fit
+  phase); the pulse area and the knob the loop must calibrate do not.
+- The stored time coordinate differs: QM keeps the realized grid times (4 ns cycles, 8 ns for
+  the echo's two arms; `qm_backend.py` `_to_canonical` only renames), Qblox the requested
+  axis. Same Parameters, different `dataset.nc` coords for ramsey / relaxation / echo.
+- Amplitude guard: Qblox refuses `factor x pi_amp > 1` (`experiments/_amp_limits.py`), QM
+  only `|factor| >= 2` (QUA's `amplitude_scale` range). CLAUDE.md's `amplitude.py` paragraph
+  says both refuse the former.
+- `_capabilities/qubit_reset.py`'s BOUNDARY RULE ("drivers resolve the wait through
+  `reset_wait_ns`") is followed by neither driver — no driver module calls it. Each wraps
+  its own override around the vendor reset, and QM's thermal reset silently falls back to
+  5 x T1 when `thermalization_time` is unset instead of raising.
+- `resonator_spectroscopy.readout_amplitude` (and `broadband_resonator_spectroscopy`'s power
+  overrides) are Parameters no driver reads — the "a backend ignores it" shape CLAUDE.md's
+  parity section calls a counter-example.
+- `resonator_spectroscopy` shot spacing: QM waits `readout_depletion_s`, Qblox a hard-coded
+  10 us `IdlePulse`.
+- Docs: `scqo_qm/experiments/qubit_echo.py`'s docstring says the final +x90 refocuses to |1>,
+  but Rx(pi/2) Rx(pi) Rx(pi/2) = Rx(2 pi) refocuses to |0> (the estimator's a exp(-t/tau) + c
+  fits either); `scqo-qblox/CLAUDE.md` still says `qubit_spectroscopy` refuses active reset,
+  which the code allows. QM has no driver test pinning the Ramsey detuning sign (Qblox does,
+  `tests/test_ramsey_detuning.py`).
+- No basic bring-up step calibrates `pi_amp_x90`: only `qubit_deterministic_benchmarking`
+  with an x90 `target_gate`, and only on QM.
+- Done when: each item is either aligned (one realization, the other driver changed) or
+  declared as an optional capability refused by name, and CLAUDE.md states what the code does.
+
 **5Q4C q1_q2 `decouple_offset` = 0.08 V does not decouple (found 2026-09-15, hardware).**
 Every probe parks the coupler there (`initialize_qpu` -> `apply_all_couplers_to_min()` ->
 `to_decouple_idle()`), and coupler pulses ride ON TOP of it — so the park is the standing
