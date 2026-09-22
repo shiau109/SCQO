@@ -1,0 +1,8 @@
+name = "chain-compensation-combinations"
+repos = { scqo = "604ddb2" }
+kind = "additive"
+coupling = ""
+validated = "documentation of hardware results, 5Q4C q1-q2-q3 2026-09-22: q3 compensation scans for the four 030/060 combinations (six scans, two of them repeats that agreed within 0.002) and one qc_unidirectional_trotter per combination; SCQO tests/test_docs_current.py 3 passed. No code changed."
+notes = '''DOCS: procedures/chain-trotter-compensation now says the chain's stark compensation belongs to the COMBINATION of the two pair operations. On 5Q4C the four 030/060 combinations gave 0.330 / 0.402 / 0.243 / 0.332, and each pair's share adds independently in the sink's stark phase: replacing either operation moved it by about 0.06 turn, which costs roughly half of the sink's gain if the old value is kept. The pair calibrations cannot predict it: the pair-to-chain relation got the second pair's sign wrong and missed the first pair's share entirely. The likely reason is the pair's shared frequency during its swap pulse, which cancels inside a pair experiment. So the section on predicting from pairs is marked not reliable (the measured round lengths stay), and three measured combinations predict the fourth instead.
+
+Steps 2-3 now read the vertex of the sink averaged over rounds >= 2 rather than best_compensation_amp, which is the brightest single pixel and landed 0.02-0.04 off on four scans (BACKLOG F14 updated with that evidence). New traps: any operation change moves the optimum; the 030/030 optimum drifted from 0.23 to 0.33 in 2.5 h with the vendor config unchanged.'''
