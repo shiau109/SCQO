@@ -206,6 +206,66 @@ provenance or a trap a user can walk into, **low** = hygiene.
   that the flag has no consumer, so the next combo ANNOUNCES the gap instead of shipping
   it silently — do not treat that fragment as evidence the feature is finished.
 
+### F13 A registration tool for pair operations (medium)
+- Added 2026-09-22 while calibrating `partial_swap_030` on 5Q4C q1_q2 + q2_q3
+  (`procedures/pair-partial-swap`, Step 2).
+- Problem: `scqo-qm/quam_config/register_swap_macro.py` is a template with hard-coded
+  placeholders, so every new angle means hand-editing it. The session used a scratch script
+  whose contract should become the tool: load through `build_session()`'s QM backend, add
+  or retune the control-z pulse + coupler pulse + `ISwapImplementation` macro, copy
+  `state.json`/`wiring.json` aside, save to a staging folder, and write the live folder only
+  when the saved tree differs by those three entries.
+- Where: `scqo-qm/quam_config/` (a new `register_partial_swap.py`).
+- Done when: `python quam_config/register_partial_swap.py --pair <p> --name partial_swap_<t>
+  --z-amp <v> --coupler-amp <v> [--update] [--dry-run]` exists with that contract, is tested
+  on a copy of a live tree, and the procedure's Step 2 names it.
+
+### F14 `qc_trotter_compensation`: report a refined optimum (medium)
+- Added 2026-09-22 (`procedures/chain-trotter-compensation`, Step 3).
+- Problem: `best_compensation_amp` is the grid argmax (0.042 steps over 0-1.25) while the
+  sink peak is only ~0.1 wide in amplitude, and 0.07 off costs 30-40% of the sink. The
+  session rescanned finely and fitted a parabola to the round-averaged sink by hand
+  (0.2276 / 0.2299).
+- Where: scqat `estimators/qc_trotter_compensation/` + SCQO
+  `experiments/qc_trotter_compensation.py` result keys.
+- Done when: a `best_compensation_amp_refined` (vertex over the sink averaged across rounds,
+  with its spread) is in `result.fit` and drawn.
+
+### F15 `qc_n_stark_amp`: an error bar on `compensating_theta_rad` (low)
+- Added 2026-09-22 (`procedures/pair-partial-swap`, Step 4).
+- Problem: the procedure stops at |theta - target| <= 0.01 rad, but the period-based angle
+  scatters ~+-0.007 rad run to run and the estimator reports no uncertainty, so the stop
+  rule cannot tell a real miss from noise.
+- Where: scqat `estimators/qc_n_stark_amp/` (the period fit's covariance at the compensating
+  row).
+- Done when: `compensating_theta_err_rad` is reported.
+
+### F16 Record the actual round length of repeated-round experiments (medium)
+- Added 2026-09-22 while comparing the pair and chain compensations.
+- Problem: a stark compensation only means something at the round length it was measured
+  at (frequency difference x round length: 0.19-0.2 turn per 4 ns clock cycle on 5Q4C),
+  and the programs run longer than their nominal rounds — `qc_n_stark_amp` /
+  `qc_swap_flux_stark` = swap + gap + stark + 8 ns, the Trotter chain = nominal + 20 ns
+  (the reset macro's `update_frequency`/`reset_if_phase` and the aligns). Found only by
+  measuring pulse spacings on the QM gateway simulator with a scratch script.
+- Where: the four QM probes (`qc_n_stark_amp`, `qc_swap_flux_stark`,
+  `qc_trotter_compensation`, `qc_unidirectional_trotter`) and the run record.
+- Done when: each run records its round period (measured once per program build, or derived
+  from the compiled program) — or the probes pad a round to a declared length — and the
+  simulator measurement is a script in `scqo-qm/scripts/`.
+
+### F17 A shorter Trotter round: the stark tones during the relay reset (medium)
+- Added 2026-09-22 after the `partial_swap_030` chain run `20260922-202034-457`.
+- Problem: 80 ns of the 360 ns round swaps; the rest is three gaps (60), the relay reset
+  (140 + overhead) and the stark tones (60). The sink decays with ~19 rounds (6.9 us),
+  close to the q1-q3 combined dephasing, so round length is the lever. The tones act on the
+  source and sink, the reset on the relay, so they could play concurrently (~280 ns round).
+- Where: the round body of `scqo-qm` `qc_unidirectional_trotter.py` /
+  `qc_trotter_compensation.py` (the align before the tones), the Qblox probes for parity,
+  and the SCQO docs.
+- Done when: a Parameters switch plays the tones during the reset on both backends, the
+  compensation is re-measured, and the sink curve is compared with the 360 ns round.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -461,10 +521,21 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   re-derived against the NEW park, and TUTORIAL section 12 step 0's premise ("the swap only
   happens while the coupler pulse plays") actually holds on this chip.
 
+### I21 A pair map with a collapsed member readout passes as a result (medium)
+- Found 2026-09-22 on 5Q4C (`20260922-181347-904`, `qc_swap_flux_stark` q1_q2). After the IQ
+  phase drifted during the day, q1's stored threshold sat outside both blobs: q1's joint
+  states "10"/"11" were exactly 0.000 across all 961 pixels, and q2's too-close threshold
+  inflated "01" to ~0.4 far from resonance. The run reported SUCCESSFUL; only
+  `resonance_unresolved` was set.
+- Where: the pair estimators in scqat (`_pair_swap_maps` and the `qc_*` / `pair_swap_*`
+  families), or one shared check in the pair readout reduction.
+- Done when: a member whose marginal is identically 0 (or 1) over the whole map raises a
+  named flag (e.g. `readout_suspect`) in `result.fit` and the figure title.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
   `qubit_tomography` interleaved noise; XY-Z delay (`qubit_xyz_delay`); readout average mode;
-  `qc_n_stark_amp` (+ `register_stark.py`); broadband RESONATOR variant (offline-only on both
+  broadband RESONATOR variant (offline-only on both
   backends); scqo-agent Phase C; `qm-session-hardening` fa1ba06 reverted, QPX1000_4 restart
   owed; the setup-snapshot feature's first real run (compare
   `<device>/setup_snapshots/<hash>/backend_config/state.json` with the setup's file, then
