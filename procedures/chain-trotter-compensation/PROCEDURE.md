@@ -1,6 +1,6 @@
 ---
 name: chain-trotter-compensation
-description: Take two calibrated pair operations into the unidirectional Trotter chain. Calibrate the chain's per-round source-sink phase compensation with qc_trotter_compensation, write it into the chain parameter file, and run qc_unidirectional_trotter. Use after pair-partial-swap has produced both pairs' operations for the target (theta1, theta2), and again after any change to the round's timing.
+description: Take two calibrated pair operations into the unidirectional Trotter chain. Calibrate the chain's per-round source-sink phase compensation with qc_trotter_compensation, write it into the chain parameter file, and run qc_unidirectional_trotter. Use after pair-partial-swap has produced both pairs' operations for the target (theta1, theta2), and again after any change to either operation or to the round's timing.
 goal: A chain parameter file whose compensation_amps zero the source-sink phase per round, and a qc_unidirectional_trotter run on it.
 inputs:
   chain: source, relay and sink qubits (5Q4C q1, q2, q3)
@@ -13,7 +13,7 @@ outputs:
 experiments: [qc_trotter_compensation, qc_unidirectional_trotter]
 backends: [qm]
 depends_on: [pair-partial-swap]
-validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30, 0.30)
+validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and both mixed combinations)
 ---
 
 # chain-trotter-compensation
@@ -25,18 +25,27 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30, 0.30)
   - Only the **differential** source − sink phase per round is observable, and 0 maximizes
     the sink.
   - The relay's tone is inert: it plays after the reset, onto an emptied qubit.
+- **That phase belongs to the combination of the two operations.** The first pair's swap
+  adds its share to the source's phase, the second pair's swap to the sink's.
+  - The shares add independently: on 5Q4C the four 030/060 combinations close to within
+    0.008 turn.
+  - They are large: replacing either operation moved the phase by about 0.06 turn.
+  - The pair calibrations cannot see these shares (see *Predicting the compensation from
+    the pair calibrations*). The compensation is therefore measured in the chain, once per
+    combination.
 - **Ideal sink after M rounds** with that phase at 0, for pair angles (θ1, θ2):
   P(M) = [sin θ1 sin θ2 Σ_{j<M} cos^(M−1−j)θ2 cos^j θ1]².
-  - For equal small angles it peaks at about 4/e² ≈ 0.54, at M ≈ 2/θ². For θ = 0.30 that is
-    round 22.
+  - For equal small angles it peaks at about 4/e² ≈ 0.54, at M ≈ 2/θ²: round 22 for
+    θ = 0.30, round 5 for 0.60.
   - Larger angles reach the same peak in fewer rounds, so decoherence costs them less.
 
 ## Prerequisites
 
-1. `pair-partial-swap` done for both pairs, with the readout freshly calibrated on all three
+1. `pair-partial-swap` done for both pairs, with the readout freshly checked on all three
    qubits.
-2. One parameter file shared by both experiments, so they cannot disagree about the round.
-   5Q4C uses `~/.scqo/chain.json` (`--params` also reads TOML):
+2. One parameter file per operation combination, shared by both experiments, so they cannot
+   disagree about the round. 5Q4C uses `~/.scqo/chain.json` (030/030) and
+   `~/.scqo/chain_060.json` (060/060); `--params` also reads TOML.
    - It holds only keys **both** Parameters classes accept. Parameters is `extra="forbid"`:
      a compensation-only key in the file makes `qc_unidirectional_trotter` refuse it.
    - Compensation-only keys go on the command line: `compensation_target`,
@@ -55,7 +64,7 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30, 0.30)
      "swap_coupler_flux": {},
      "stark_operation": "stark",
      "stark_detuning_hz": 50000000.0,
-     "compensation_amps": {"q3": 0.23},
+     "compensation_amps": {"q3": 0.33},
      "prep_qubit": null,
      "prep_operation": "x180",
      "operation_gap_ns": 20,
@@ -72,7 +81,9 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30, 0.30)
 
 ### Step 1: operations into the file
 
-Set `first_pair` and `second_pair` to the operations from `pair-partial-swap`.
+Set `first_pair` and `second_pair` to the operations from `pair-partial-swap`. A
+compensation measured for another combination does not carry over: run Steps 2–3 again
+after changing either operation.
 
 ### Step 2: coarse compensation scan
 
@@ -81,39 +92,47 @@ Set `first_pair` and `second_pair` to the operations from `pair-partial-swap`.
   - If `compensation_amps` already holds the sink, add `--set "compensation_amps={}"`. The
     experiment refuses a qubit that is both swept and held fixed.
   - Takes about 1.5 minutes.
-- **Read** `best_compensation_amp`, `best_sink_p_max` and `best_n_at_max`, plus the sink
-  population against amplitude from `dataset.nc`. The grid step (0.033) is coarse next to a
-  peak only about 0.1 wide.
+- **Read** the sink population against amplitude and round from `dataset.nc`
+  (`population`, dims `target × compensation_amp × round_count`).
+  - Average it over rounds ≥ 2. Rounds 0 and 1 carry no phase information: the sink holds
+    at most one path. Starting at round 2 or at round 4 changed the result by ≤ 0.002 on
+    four scans.
+  - The peak of that curve is the compensation. `best_sink_p_max` and `best_n_at_max`
+    describe the transport at the estimator's pick.
+  - Do not take `best_compensation_amp`, the dashed line on the map. It is the single
+    brightest (amplitude, round) pixel, and it landed 0.02–0.04 away from the ridge centre
+    on 5Q4C (Trap 4).
 - **Decide**:
   - Sweep only the **sink** and leave the source untoned. Only the difference matters.
   - On 5Q4C, q1's tone at 5192.9 MHz sits 2.6 MHz from q3 and would drive it.
   - The window stops at 1.0, one full turn (`procedures/README.md`), so it holds exactly
-    one optimum (5Q4C: 0.23). The same phase one turn higher (1.05 on 5Q4C) is never used:
+    one optimum. The same phase one turn higher (1.05 for 030/030 at 20:14) is never used:
     a tone that strong drives the qubit.
 
 ### Step 3: fine scan
 
 - **Run** the same command with `min_compensation_amp` and `max_compensation_amp` at the
   best value ± 0.12, clipped to 0–1.0, and 25 points (step 0.01).
-- **Read**: average the sink over rounds 4..`max_rounds` and fit a parabola against
-  amplitude, within ±0.05 of the best point. Cross-check with the per-amplitude maximum over
-  rounds. The vertex is the compensation (2026-09-22: 0.2276 and 0.2299 → 0.23). The
-  estimator itself reports only the grid argmax (Open issues).
+- **Read**: fit a parabola to the sink averaged over rounds ≥ 2, within ±0.08 of that
+  curve's grid best. The vertex is the compensation. Resampling the rounds gives its spread:
+  ±0.001–0.003 on 5Q4C.
+  - On 5Q4C a coarse-scan vertex landed within 0.004 of the fine one run minutes later
+    (060/060), so the fine scan is a confirmation.
+  - The estimator itself reports only the brightest pixel (Open issues: F14).
 
 ### Step 4: write it and run the chain
 
 - Write `"compensation_amps": {"<sink>": a}` into the chain file.
 - **Run** `scqo run qc_unidirectional_trotter --params chain.json` (about 15 s).
 - **Read** `sink_p_max` and `n_at_max`, and each qubit's population against round count.
-- **Check** against the ideal curve of Physics in brief times a decay. 5Q4C 2026-09-22:
-  - sink maximum 0.2675 at round 12
-  - sink ≈ 0.05 + 0.93 × ideal(0.297, 0.306) × e^(−N/19): 19 rounds is 6.9 µs at 360 ns a
-    round, close to q1's and q3's combined T2*
+- **Check** against the ideal curve of Physics in brief times a decay, c + A·P(M)·e^(−M/τ).
+  With the ideal peak beyond `max_rounds` (030/030), A and τ trade off, so fix A at the
+  readout contrast (0.9 on 5Q4C) to compare runs.
 
 ## Predicting the compensation from the pair calibrations
 
-This is an optional cross-check, and it explains why Step 3 cannot be skipped. In turns,
-modulo 1:
+This was tried on 5Q4C and is **not reliable**. It is kept for the round-length
+measurements and for the reason it fails. In turns, modulo 1:
 
     s_sink(a*) = s_sink(a_sink,pair) − s_source(a_source,pair) + (f_source − f_sink)·(T_chain − T_pair)
 
@@ -133,14 +152,37 @@ On 5Q4C the gateway simulator measured:
 
 f_q1 − f_q3 = −47.4 MHz, so one 4 ns clock cycle shifts the phase by 0.19 turn.
 
-Verified on 2026-09-22:
+Outcome on 2026-09-22:
 
-- **Gap 260 with the frame term:** predicted 0.248 / 0.251, measured 0.23–0.24 (0.005 turn
-  apart).
-- **Gap 252, equal rounds, no frame term:** predicted 0.29, measured 0.21–0.22 (0.05 turn
-  apart). The q2_q3 compensation sat at the phase-wrap point.
-- **Consequence:** the prediction lands in the right neighbourhood but not precisely enough.
-  An amplitude error of 0.07 costs 30–40% of the sink. Step 3 gives the final value.
+- **Equal operations:** predicted 0.25 (030/030) and 0.37 (060/060), measured 0.23 and
+  0.327. That looked close, but the 030/030 optimum later drifted to 0.33 with the vendor
+  config unchanged (Trap 3), so the agreement says little.
+- **Mixed operations:** the q1_q2 pair compensation hardly moves between 030 and 060, while
+  q2_q3's does. The relation therefore predicts that the optimum follows the second pair:
+  (060,030) ≈ (030,030) and (030,060) ≈ (060,060). Measured within one half hour:
+
+  | first / second | predicted | measured |
+  |---|---|---|
+  | 030 / 030 | 0.25 | 0.330 |
+  | 060 / 030 | 0.25 | 0.402 |
+  | 030 / 060 | 0.37 | 0.243 |
+  | 060 / 060 | 0.37 | 0.332 |
+
+  In q3's stark phase, replacing the first pair's operation moved the optimum by
+  −0.064 turn and replacing the second pair's by +0.063 turn. That is as much for the first
+  pair as for the second, and for the second pair the prediction had the opposite sign.
+- **Likely reason (not verified):**
+  - A pair experiment measures only the phase difference between the pair's two qubits.
+  - During a swap both of them sit at a shared frequency, which the coupler pulse shifts.
+    That shared part cancels inside the pair.
+  - In the chain it adds to the source's phase (first swap) or to the sink's (second
+    swap).
+  - Both 060 coupler pulses are about 9 mV stronger than the 030 ones. Both shares came
+    out near 0.064 turn, i.e. about 1.6 MHz over the 40 ns pulse.
+- **What does work:** the shares add in phase. Measure three combinations and the fourth
+  follows from s(o1,o2) = s(o1,x) + s(y,o2) − s(y,x), where s is the sink's stark phase at
+  the optimum. On 5Q4C that predicted each combination from the other three within
+  0.006–0.014 in amplitude.
 
 ## Stop criteria
 
@@ -152,36 +194,69 @@ Verified on 2026-09-22:
 
 1. **Any timing change moves the optimum:** the gap, the reset length, the stark length, or
    align overhead. Rerun Steps 2–3 after changing the round.
-2. **Drift.** Three scans within 30 minutes gave 0.23–0.24, 0.21–0.22 and 0.228–0.230. Run
-   Step 3 right before the trotter run.
-3. **One file, two consumers.** Keep compensation-only keys out of the chain file, and add
+2. **Any operation change moves it too.**
+   - *Case:* 5Q4C, 2026-09-22 22:47–23:01. Replacing the first pair's 030 by 060 moved
+     q3's optimum from 0.330 to 0.402; replacing the second pair's moved it to 0.243.
+   - *Cost:* keeping the old value (0.07–0.09 off) loses roughly 40–60% of the sink's gain
+     over background.
+   - *Cure:* rescan after any operation change, or predict from three measured
+     combinations.
+3. **Drift.**
+   - Within 30 minutes: 0.23–0.24, 0.21–0.22 and 0.228–0.230.
+   - Over hours: 030/030 moved from 0.23 (20:14) to 0.33 (22:47). The setup snapshots of
+     the two scans differ only by operations added in between.
+   - Repeats 10 minutes apart then agreed within 0.002.
+   - Run Steps 2–3 right before a trotter run.
+4. **`best_compensation_amp` is the brightest pixel, not the ridge centre.** On 5Q4C:
+   - 060/060: 0.367 against the round-averaged vertex 0.331 (coarse), and 0.350 against
+     0.327 (fine).
+   - 030/030: 0.25 against 0.232 (coarse), and 0.23 against 0.224 (fine).
+   - Read the round-averaged vertex (Step 2).
+5. **One file, two consumers.** Keep compensation-only keys out of the chain file, and add
    `--set "compensation_amps={}"` when rescanning a sink that is already compensated.
-4. **Stale readout,** as in `pair-partial-swap`.
+6. **Stale readout,** as in `pair-partial-swap`.
 
 ## Typical values
 
-5Q4C cooldown cd2, 2026-09-22, both pairs `partial_swap_030`, gap 20:
+5Q4C cooldown cd2, 2026-09-22. Gap 20 gives a 360 ns round in every combination, since all
+four operations are 40 ns. 20 rounds, 400 averages, compensation on q3 only:
 
-| | value |
-|---|---|
-| sink compensation | q3 0.23 |
-| round length | 360 ns |
-| trotter sink maximum | 0.2675 at round 12 |
-| trotter decay | about 19 rounds |
+| first / second pair | q3 compensation | sink maximum (round) | ideal peak (round) | decay, A fixed at 0.9 |
+|---|---|---|---|---|
+| 030 / 030 | 0.23 (20:14), 0.33 (22:47) | 0.2675 (12) at 0.23; 0.273 (12) at 0.33 | 0.538 (≥ 20) | 14.9 ± 1.2 rounds |
+| 060 / 030 | 0.402 | 0.260 (7) | 0.395 (10) | 15.3 ± 1.3 rounds |
+| 030 / 060 | 0.243 | 0.247 (7) | 0.387 (10) | 11.8 ± 0.9 rounds |
+| 060 / 060 | 0.327–0.332 | 0.37–0.44 (4–5), three runs | 0.547 (5) | 12.5 ± 1.3 rounds |
+
+- **The q3 tone itself:** q3's `stark` operation is a 60 ns pulse stored at 0.4364 of full
+  scale, played 50 MHz above q3. A factor of 0.33 plays 0.144 of full scale and moves q3 by
+  −0.143 turn per round (about 2.4 MHz for those 60 ns). The phase grows roughly with the
+  square of the factor, with 1.0 set to one full turn.
+- **Decay:** it looks set by the second pair's operation (about 15 rounds with 030, 12 with
+  060), not by the tone's strength. The cause is open.
+- **Fit dependence:** the 030/030 run at 20:20 gave 19 rounds with A free (0.93), so decays
+  compare only within one fit model.
 
 ## Evidence
 
 5Q4C runs (all `20260922-`):
 
-- **Coarse scans:** `194717-192`, `200826-906`
-- **Fine scan:** `201332-432`
-- **Trotter:** `202034-457`
+- **030 / 030:** coarse scans `194717-192`, `200826-906`; fine scan `201332-432`; trotter
+  `202034-457`.
+- **060 / 060:** coarse scan `222749-171`; fine scan `222941-753`; trotters `223659-049`
+  (14 rounds), `224700-690`.
+- **Combination scans, in run order:** `224737-805` (030/030), `224921-396` (060/030),
+  `225414-374` (030/060), `225557-608` (060/060), `225740-356` (030/030), `225922-725`
+  (060/030).
+- **Combination trotters:** `230954-808` (030/030), `231009-683` (060/030), `231024-703`
+  (030/060), `231040-123` (060/060).
 
 ## Open issues
 
 `BACKLOG.md`:
 
-- **F14:** a refined optimum in `qc_trotter_compensation`
+- **F14:** a refined optimum in `qc_trotter_compensation` (the round-averaged vertex of
+  Steps 2–3)
 - **F16:** recording the actual round length
 - **F17:** a shorter round, with the stark tones played during the relay reset
 - **F18:** a stark amplitude-to-phase conversion, so the one-turn bound can live in code

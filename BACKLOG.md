@@ -208,14 +208,20 @@ provenance or a trap a user can walk into, **low** = hygiene.
 
 ### F14 `qc_trotter_compensation`: report a refined optimum (medium)
 - Added 2026-09-22 (`procedures/chain-trotter-compensation`, Step 3).
-- Problem: `best_compensation_amp` is the grid argmax (0.033 steps over 0-1.0) while the
-  sink peak is only ~0.1 wide in amplitude, and 0.07 off costs 30-40% of the sink. The
-  session rescanned finely and fitted a parabola to the round-averaged sink by hand
-  (0.2276 / 0.2299).
-- Where: scqat `estimators/qc_trotter_compensation/` + SCQO
+- Problem: `best_compensation_amp` is the argmax of the per-amplitude maximum over rounds,
+  i.e. the single brightest (amplitude, round) pixel and the dashed line on the map. On
+  four 5Q4C scans it landed 0.02-0.04 from the ridge centre (0.367 vs 0.331, 0.350 vs
+  0.327, 0.25 vs 0.232, 0.23 vs 0.224), while 0.07 off costs 30-40% of the sink. The
+  procedure now fits by hand: a parabola to the sink averaged over rounds >= 2 (rounds 0-1
+  carry no phase information), within +-0.08 of that curve's grid best. Resampling the
+  rounds gives +-0.001-0.003, and starting at round 4 instead changes it by <= 0.002, so
+  the definition needs no parameter. The operator noticed the offset on the map
+  (2026-09-22).
+- Where: scqat `estimators/qc_trotter_compensation/` (estimator + both figures) + SCQO
   `experiments/qc_trotter_compensation.py` result keys.
-- Done when: a `best_compensation_amp_refined` (vertex over the sink averaged across rounds,
-  with its spread) is in `result.fit` and drawn.
+- Done when: a `best_compensation_amp_refined` (that vertex, with its spread and a refusal
+  flag when the curve has no interior maximum) is in `result.fit` and drawn on both
+  figures, with the argmax kept as the raw measurement.
 
 ### F15 `qc_n_stark_amp`: an error bar on `compensating_theta_rad` (low)
 - Added 2026-09-22 (`procedures/pair-partial-swap`, Step 4).
