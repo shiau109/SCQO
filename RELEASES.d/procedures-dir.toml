@@ -1,0 +1,10 @@
+name = "procedures-dir"
+repos = { scqo = "c9e8cd0" }
+kind = "additive"
+coupling = ""
+validated = "documentation only; the two procedures carry their own validation lines (hardware 5Q4C 2026-09-22, theta = 0.30 on q1_q2 and q2_q3, Trotter chain q1-q2-q3)"
+notes = '''NEW: `procedures/`, a documentation surface for goal-driven calibration sequences, written for operators and AI agents alike. A procedure is the adaptive sequence of cataloged experiments that produces or tunes something the device carries, with the decision rule each step applies to named result.fit keys. It is neither a campaign (fixed steps, no decisions) nor the TUTORIAL (the tools). The format is in procedures/README.md, and the term is in CLAUDE.md's terminology.
+
+The first two, from the 2026-09-22 5Q4C session: `pair-partial-swap` (make or re-tune a partial swap of a target angle: flux-map starting point, register the operation, qc_swap_flux_stark resonance, qc_n_stark_amp period angle, iterate on the coupler) and `chain-trotter-compensation` (calibrate the chain's source-sink compensation, write it into the shared chain file, run qc_unidirectional_trotter). The second includes the pair-to-chain phase relation and the measured round lengths: the chain round is 360 ns against a nominal 340, and pair rounds are nominal + 8 ns.
+
+BACKLOG gains F13-F17 and I21 from that session. `qc_n_stark_amp` leaves the hardware-validation-owed list: on 5Q4C 2026-09-21/22 its compensation agrees with qc_swap_flux_stark within 0.015 on both pairs.'''
