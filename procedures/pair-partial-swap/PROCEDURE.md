@@ -14,7 +14,7 @@ outputs:
   compensating_stark_amp: per-round compensation at the round length used, with that round length
 experiments: [single_shot_readout, pair_swap_flux_map, qc_swap_flux_stark, qc_n_stark_amp]
 backends: [qm]
-validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30)
+validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
 ---
 
 # pair-partial-swap
@@ -32,12 +32,15 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30)
 
 ## Prerequisites
 
-1. **Fresh readout on both members.** Run `single_shot_readout` on both qubits and accept its
-   suggestions at the start of the session, and again after hours. The pair experiments
-   discriminate with the *stored* threshold and rotation. A stale one zeroes a member
-   silently (see Traps).
+1. **Fresh readout on both members.** Run `single_shot_readout` on both qubits at the start
+   of the session, and again after hours. The pair experiments discriminate with the
+   *stored* threshold and rotation, and a stale one zeroes a member silently (see Traps).
+   Accept its suggestions when the stored rotation has moved or the stored threshold no
+   longer sits between the two blobs.
 2. The moving qubit carries the `stark` xy operation (`scqo-qm/quam_config/register_stark.py`)
-   and a chosen `stark_detuning_hz` (5Q4C: 50 MHz).
+   and a chosen `stark_detuning_hz` (5Q4C: 50 MHz). Its amplitude is scaled so that factor
+   1.0 is one full turn of stark phase (5Q4C q1 and q3). Every stark window below stops
+   there, as `procedures/README.md` requires.
 3. Converting a compensation amplitude into a phase also needs that qubit's measured phase(a)
    curve from `qubit_stark_phase_echo` plotdata. Never use the fitted k for this: the Stark
    shift saturates.
@@ -48,43 +51,48 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30)
 
 - **Run** `pair_swap_flux_map --targets <pair>` with `swap_time_ns` equal to the operation's
   length. Use a coupler window from the off point up to θ ≈ 1 rad (5Q4C: q1_q2 0.07–0.11 V,
-  q2_q3 0.06–0.09 V) and a qubit window of ±5 mV around the known resonance.
+  q2_q3 0.06–0.09 V) and a qubit window of ±5 mV around the known resonance. An existing
+  map of the pair can be reused.
 - **Read** the per-column `theta_rad` and `resonance_qubit_flux_v` from
   `analysis/<pair>/pair_swap_flux_map_plotdata.nc`. `result.fit` holds only the summary.
 - **Decide**:
   - **Coupler start:** where the per-column θ crosses the target, interpolated between
     successfully fitted columns.
-  - **Flux-map bias:** the flux map's θ differs from the period-based θ of Step 4 by 0–10% at
-    small angles. If an earlier operation on the pair has a known period θ, scale by that
-    ratio.
-  - **z start:** the column's resonance, or the pair's last `qc_swap_flux_stark` resonance.
+  - **Flux-map bias:** the flux map's θ differs from the period-based θ of Step 4 by 0–10%.
+    The ratio belongs to the pair, not to the angle, so the ratio an earlier operation on the
+    pair measured carries over. On 5Q4C (period θ / flux-map θ): q1_q2 0.98 at θ 0.30 and
+    1.00 at 0.60, q2_q3 1.10 and 1.09. Corrected this way, the 0.60 starts landed 0.013 and
+    0.0015 rad from the target.
+  - **z start:** the pair's last `qc_swap_flux_stark` resonance, shifted by the change of the
+    map's `resonance_poly_curve` between the two coupler amplitudes. From θ 0.30 to 0.60 the
+    resonance moved by +0.17 mV on q1_q2 and −0.35 mV on q2_q3.
 
 ### Step 2: register the operation
 
-The operation is three entries in the setup's QUAM tree
-(`<data_root>/<device>/<cycle>/<setup>/backend_config/state.json`):
-
-- `qubit_control.z.operations["partial_swap_square_<t>"]`: `SquarePulse(amplitude=z start, length)`
-- `coupler.operations["partial_swap_square_<t>"]`: `SquarePulse(amplitude=coupler start, length)`
-- `macros["partial_swap_<t>"]`: `ISwapImplementation(flux_pulse="partial_swap_square_<t>")`
-
-Load and save through the QM backend of `build_session()`, so it is the setup's own folder,
-with `machine.save(path=state_dir)`. Copy `state.json` and `wiring.json` aside first, save to
-a staging folder, and write the live folder only after checking that the saved tree differs
-by these three entries alone. Re-tuning later changes the two amplitudes only.
-
-Tool: pending, see Open issues. The 2026-09-22 session used a scratch script with exactly
-this contract.
+- **Run**, in `.venv-qm`:
+  `python -m scqo_qm.backend.register_partial_swap --pair <pair> --name partial_swap_<t> --z-amp <z start> --coupler-amp <coupler start>`.
+  `--length` defaults to 40 ns.
+- It writes three entries into the active setup's QUAM tree
+  (`<data_root>/<device>/<cycle>/<setup>/backend_config/state.json`):
+  - `qubit_control.z.operations["partial_swap_square_<t>"]`: `SquarePulse(amplitude=z start, length)`
+  - `coupler.operations["partial_swap_square_<t>"]`: `SquarePulse(amplitude=coupler start, length)`
+  - `macros["partial_swap_<t>"]`: `ISwapImplementation(flux_pulse="partial_swap_square_<t>")`
+- Later steps retune with `--update --z-amp <v>` or `--update --coupler-amp <v>`, which
+  change the two amplitudes only. `--list` shows what every pair carries.
+- The tool replaces the live `state.json` only after a staged save shows that nothing else
+  changes. It refuses an amplitude the port would clip. Run it between measurements: an edit
+  made during a run shows up as setup-snapshot drift in that run's record.
 
 ### Step 3: the resonance, and the compensation at this round length
 
 - **Run** `qc_swap_flux_stark --targets <pair>` with:
   - `swap_operation=partial_swap_<t>`
-  - `swap_count` N with N·θ ≲ 1.2. For θ = 0.30 use N = 4. N·θ must stay below π/2, or the
-    arch folds.
+  - `swap_count` N = round(1.2/θ): 4 at θ = 0.30, 2 at 0.60. N·θ must stay below π/2, or
+    the arch folds.
   - `swap_angle_rad=θ`
   - a flux window of ±3.5 mV around the z start (31 points)
-  - stark 0–1.0 (31 points); widen to 1.3 when the compensation sits near an edge
+  - stark 0–1.0 (31 points), never wider. A compensation near 1.0 is the same phase as one
+    near 0 (Trap 4).
   - the chosen `operation_gap_ns` (see Traps: round length)
   - `num_averages=200`
 - **Read**:
@@ -93,15 +101,16 @@ this contract.
   - `compensating_stark_amp` ± `compensating_stark_err`
 - **Decide**: if the resonance is at the edge or unresolved, move the window onto the fitted
   centre and rerun once. Otherwise set the operation's z amplitude to
-  `resonance_flux_amp_v`. Do not use `swap_angle_rad_refined`, the arch-fit angle, as the
-  stop criterion: decoherence biases it low, by 2–9% on 5Q4C.
+  `resonance_flux_amp_v` (`register_partial_swap --update --z-amp`). Do not use
+  `swap_angle_rad_refined`, the arch-fit angle, as the stop criterion: decoherence biases
+  it low, by 2–9% on 5Q4C.
 
 ### Step 4: the angle from the N-oscillation
 
 - **Run** `qc_n_stark_amp --targets <pair>` with `swap_operation=partial_swap_<t>`,
-  `swap_counts` 0..20, the same stark window and gap as Step 3 (21–27 points) and
-  `num_averages=200`. The counts should span at least two periods, i.e. 2π/θ counts: 21 at
-  θ = 0.30. Lengthen them for smaller angles.
+  `swap_counts` 0..20, stark 0–1.0 (21 points), the gap of Step 3 and `num_averages=200`.
+  The counts should span at least two periods, i.e. 2π/θ counts: 21 at θ = 0.30. 0..20
+  spans about four periods at 0.60. Lengthen them for smaller angles.
 - **Read**:
   - `compensating_theta_rad`, which is π / `compensating_osc_period`
   - `compensating_stark_amp_refined`
@@ -109,12 +118,14 @@ this contract.
   - `min_osc_period`, which must stay ≥ 2: no stark row may swap by more than π/2 per count
 - **Decide**:
   - **Done** if |θ − target| ≤ 0.01.
-  - **Otherwise** change the coupler amplitude by (target − θ)/slope and repeat Steps 3–4. The
-    resonance moves by about 0.1–0.2 mV when the coupler changes.
-  - **Slope** near the off point on 5Q4C was 0.03–0.043 rad/mV (q1_q2 0.043, q2_q3 0.031).
-    Once two points are measured, interpolate between them instead.
-  - **Expect** two iterations. A single run's θ scatters by about ±0.007 rad, so iterating
-    below that chases noise.
+  - **Otherwise** change the coupler amplitude by (target − θ)/slope
+    (`register_partial_swap --update --coupler-amp`) and repeat Steps 3–4. The resonance
+    moves by about 0.1–0.2 mV when the coupler changes.
+  - **Slope** on 5Q4C: q1_q2 0.043 rad/mV at θ 0.30 and 0.039 at 0.60; q2_q3 0.031 at 0.30
+    and about 0.066 at 0.60 (from the flux map; that pair needed no second point). Once two
+    points are measured, interpolate between them instead.
+  - **Expect** one or two iterations. A single run's θ scatters by about ±0.007 rad, so
+    iterating below that chases noise.
 
 ## Stop criteria
 
@@ -138,29 +149,42 @@ this contract.
    - Always store the gap with a compensation value.
    - Comparing compensations across different round lengths needs the frame term; see
      `chain-trotter-compensation`.
-3. **Two estimates of θ.** The flux-map θ is a starting point only (0–10% bias at small
-   angles). The arch θ from Step 3 is biased low. The period θ from Step 4 is the reference.
+3. **Two estimates of θ.** The flux-map θ is a starting point only (0–10% bias). The arch θ
+   from Step 3 is biased low. The period θ from Step 4 is the reference.
 4. **A compensation at the phase-wrap point.** When the compensating phase is about one full
    turn, the pick can land near stark 0 in one experiment and near the top of the window in
    the other, as q2_q3 did at gap 252 (1.000 and 0.018). Both are the same phase.
 5. **Drift.** The resonance moved about 0.7 mV overnight. Rerun Step 3 before relying on an
    old z amplitude.
+6. **A stark window wider than one turn.**
+   - *Symptom:* two compensations one turn apart inside the window, and
+     `osc_criteria_agree` = 0 because the contrast and period criteria each pick a different
+     one. The two can also read different angles.
+   - *Case:* 5Q4C q1_q2, θ 0.60, window 0–1.3, `20260922-213409-297`: branches at 0.47 and
+     1.19. The upper one read θ 0.598 and would have ended the iteration. The rerun with
+     0–1.0, `20260922-213557-000`, read 0.6135 at 0.45, which needed a second iteration.
+   - *Cure:* windows stop at one turn (`procedures/README.md`). The upper branch also means a
+     tone strong enough to drive the qubit.
 
 ## Typical values
 
-5Q4C cooldown cd2, 2026-09-22, θ target 0.30, 40 ns square pulses, `stark_detuning_hz` 50 MHz:
+5Q4C cooldown cd2, 2026-09-22, 40 ns square pulses, `stark_detuning_hz` 50 MHz:
 
-| pair | control | coupler (V) | z (V) | θ period | θ arch | compensating stark, gap 260 | gap 252 |
-|---|---|---|---|---|---|---|---|
-| q1_q2 | q1 | 0.08692 | −0.15004 | 0.292 / 0.302 | 0.285 | 0.475–0.490 | 0.93 |
-| q2_q3 | q3 | 0.0714 | −0.15425 | 0.306 / 0.305 | 0.285 | 0.849–0.856 | 1.00 ≡ 0 (one turn) |
+| θ target | pair | control | coupler (V) | z (V) | θ period | θ arch | compensating stark, gap 260 | gap 252 |
+|---|---|---|---|---|---|---|---|---|
+| 0.30 | q1_q2 | q1 | 0.08692 | −0.15004 | 0.292 / 0.302 | 0.285 | 0.475–0.490 | 0.93 |
+| 0.30 | q2_q3 | q3 | 0.0714 | −0.15425 | 0.306 / 0.305 | 0.285 | 0.849–0.856 | 1.00 ≡ 0 (one turn) |
+| 0.60 | q1_q2 | q1 | 0.0958 | −0.14987 | 0.602 | 0.577 | 0.484–0.487 | — |
+| 0.60 | q2_q3 | q3 | 0.0797 | −0.15460 | 0.5985 | 0.589 | 0.892–0.904 | — |
 
 Iterations:
 
-| pair | coupler (V) | θ period (rad) |
-|---|---|---|
-| q1_q2 | 0.0875 → 0.08692 | 0.317 → 0.292 |
-| q2_q3 | 0.0725 → 0.0714 | 0.340 → 0.306 |
+| θ target | pair | coupler (V) | θ period (rad) |
+|---|---|---|---|
+| 0.30 | q1_q2 | 0.0875 → 0.08692 | 0.317 → 0.292 |
+| 0.30 | q2_q3 | 0.0725 → 0.0714 | 0.340 → 0.306 |
+| 0.60 | q1_q2 | 0.0961 → 0.0958 | 0.6135 → 0.602 |
+| 0.60 | q2_q3 | 0.0797 | 0.5985 |
 
 Each iteration costs about 2.5 minutes of instrument time.
 
@@ -168,17 +192,20 @@ Each iteration costs about 2.5 minutes of instrument time.
 
 5Q4C runs (all `20260922-` unless dated otherwise):
 
-- **Flux maps:** q1_q2 `094311-796`; q2_q3 `20260921-215258-520`.
-- **q1_q2:** round 1 `190651-183`, `190952-035`; round 2 `191202-726`, `191430-328`.
-- **q2_q3:** round 1 `192421-043`, `192643-893`; round 2 `192844-092`, `193104-093`.
-- **Gap-252 re-measurements:** `200343-879`, `200454-326`, `200547-676`, `200707-291`.
+- **Flux maps:** q1_q2 `094311-796`; q2_q3 `20260921-215258-520`, `20260921-202125-547`.
+- **θ 0.30, q1_q2:** round 1 `190651-183`, `190952-035`; round 2 `191202-726`, `191430-328`.
+- **θ 0.30, q2_q3:** round 1 `192421-043`, `192643-893`; round 2 `192844-092`, `193104-093`.
+- **θ 0.30, gap-252 re-measurements:** `200343-879`, `200454-326`, `200547-676`, `200707-291`.
+- **θ 0.60, q1_q2:** round 1 `213123-952`, `213557-000` (and `213409-297`, Trap 6); round 2
+  `213742-598`, `213932-285`.
+- **θ 0.60, q2_q3:** `220355-949`, `220541-535`.
 - **Invalid (stale readout):** `181347-904`.
 
 ## Open issues
 
 `BACKLOG.md`:
 
-- **F13:** a registration tool for Step 2
 - **F15:** an error bar on `compensating_theta_rad`
 - **F16:** recording the actual round length
+- **F18:** a stark amplitude-to-phase conversion, so the one-turn bound can live in code
 - **I21:** a flag for a member whose readout collapsed

@@ -61,10 +61,15 @@ Rules:
   instrument.
 - When a step's rule changes, update the procedure in the same commit as the code change that
   caused it.
+- A stark compensation tone stays below one full turn of stark phase. Take the solution with
+  the lowest amplitude, and stop every scan window at one turn (5Q4C: amplitude factor 1.0,
+  since the `stark` operations are scaled so that 1.0 is 2π on q1 and q3). A stronger tone
+  starts to drive the qubit instead of only shifting it. A window wider than one turn also
+  holds two solutions, which can split an estimator's criteria.
 
 ## Index
 
 | procedure | produces | backends | validated |
 |---|---|---|---|
-| [pair-partial-swap](pair-partial-swap/PROCEDURE.md) | a square partial-swap operation of angle θ on one pair, at resonance | qm | hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 |
+| [pair-partial-swap](pair-partial-swap/PROCEDURE.md) | a square partial-swap operation of angle θ on one pair, at resonance | qm | hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (θ 0.30, 0.60) |
 | [chain-trotter-compensation](chain-trotter-compensation/PROCEDURE.md) | the chain's per-round phase compensation, then a `qc_unidirectional_trotter` run | qm | hardware 5Q4C q1-q2-q3, 2026-09-22 |

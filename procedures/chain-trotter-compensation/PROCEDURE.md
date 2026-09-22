@@ -77,23 +77,24 @@ Set `first_pair` and `second_pair` to the operations from `pair-partial-swap`.
 ### Step 2: coarse compensation scan
 
 - **Run**
-  `scqo run qc_trotter_compensation --params chain.json --set compensation_target=<sink> --set max_compensation_amp=1.25 --set num_amp_points=31`.
+  `scqo run qc_trotter_compensation --params chain.json --set compensation_target=<sink> --set max_compensation_amp=1.0 --set num_amp_points=31`.
   - If `compensation_amps` already holds the sink, add `--set "compensation_amps={}"`. The
     experiment refuses a qubit that is both swept and held fixed.
   - Takes about 1.5 minutes.
 - **Read** `best_compensation_amp`, `best_sink_p_max` and `best_n_at_max`, plus the sink
-  population against amplitude from `dataset.nc`. The grid step (0.042) is coarse next to a
+  population against amplitude from `dataset.nc`. The grid step (0.033) is coarse next to a
   peak only about 0.1 wide.
 - **Decide**:
   - Sweep only the **sink** and leave the source untoned. Only the difference matters.
   - On 5Q4C, q1's tone at 5192.9 MHz sits 2.6 MHz from q3 and would drive it.
-  - There are two optima one turn apart (5Q4C: 0.23 and 1.05). Take the lower one: less
-    drive.
+  - The window stops at 1.0, one full turn (`procedures/README.md`), so it holds exactly
+    one optimum (5Q4C: 0.23). The same phase one turn higher (1.05 on 5Q4C) is never used:
+    a tone that strong drives the qubit.
 
 ### Step 3: fine scan
 
 - **Run** the same command with `min_compensation_amp` and `max_compensation_amp` at the
-  best value ± 0.12, and 25 points (step 0.01).
+  best value ± 0.12, clipped to 0–1.0, and 25 points (step 0.01).
 - **Read**: average the sink over rounds 4..`max_rounds` and fit a parabola against
   amplitude, within ±0.05 of the best point. Cross-check with the per-amplitude maximum over
   rounds. The vertex is the compensation (2026-09-22: 0.2276 and 0.2299 → 0.23). The
@@ -163,7 +164,7 @@ Verified on 2026-09-22:
 
 | | value |
 |---|---|
-| sink compensation | q3 0.23 (the second optimum is 1.05) |
+| sink compensation | q3 0.23 |
 | round length | 360 ns |
 | trotter sink maximum | 0.2675 at round 12 |
 | trotter decay | about 19 rounds |
@@ -183,3 +184,4 @@ Verified on 2026-09-22:
 - **F14:** a refined optimum in `qc_trotter_compensation`
 - **F16:** recording the actual round length
 - **F17:** a shorter round, with the stark tones played during the relay reset
+- **F18:** a stark amplitude-to-phase conversion, so the one-turn bound can live in code

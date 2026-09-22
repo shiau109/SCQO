@@ -206,23 +206,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
   that the flag has no consumer, so the next combo ANNOUNCES the gap instead of shipping
   it silently — do not treat that fragment as evidence the feature is finished.
 
-### F13 A registration tool for pair operations (medium)
-- Added 2026-09-22 while calibrating `partial_swap_030` on 5Q4C q1_q2 + q2_q3
-  (`procedures/pair-partial-swap`, Step 2).
-- Problem: `scqo-qm/quam_config/register_swap_macro.py` is a template with hard-coded
-  placeholders, so every new angle means hand-editing it. The session used a scratch script
-  whose contract should become the tool: load through `build_session()`'s QM backend, add
-  or retune the control-z pulse + coupler pulse + `ISwapImplementation` macro, copy
-  `state.json`/`wiring.json` aside, save to a staging folder, and write the live folder only
-  when the saved tree differs by those three entries.
-- Where: `scqo-qm/quam_config/` (a new `register_partial_swap.py`).
-- Done when: `python quam_config/register_partial_swap.py --pair <p> --name partial_swap_<t>
-  --z-amp <v> --coupler-amp <v> [--update] [--dry-run]` exists with that contract, is tested
-  on a copy of a live tree, and the procedure's Step 2 names it.
-
 ### F14 `qc_trotter_compensation`: report a refined optimum (medium)
 - Added 2026-09-22 (`procedures/chain-trotter-compensation`, Step 3).
-- Problem: `best_compensation_amp` is the grid argmax (0.042 steps over 0-1.25) while the
+- Problem: `best_compensation_amp` is the grid argmax (0.033 steps over 0-1.0) while the
   sink peak is only ~0.1 wide in amplitude, and 0.07 off costs 30-40% of the sink. The
   session rescanned finely and fitted a parabola to the round-averaged sink by hand
   (0.2276 / 0.2299).
@@ -248,8 +234,19 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `qc_swap_flux_stark` = swap + gap + stark + 8 ns, the Trotter chain = nominal + 20 ns
   (the reset macro's `update_frequency`/`reset_if_phase` and the aligns). Found only by
   measuring pulse spacings on the QM gateway simulator with a scratch script.
+- Method of that script, so it can be rebuilt: `Session.preview(name, params, out_dir,
+  options={"simulate_ns": N})` builds the program exactly as a run would; keep
+  `job.get_simulated_samples()`; on the moving qubit's z output (`"<fem>-<port>"` key) the
+  round is the spacing between consecutive swap pulses, detected against the trace's
+  baseline (the output carries the idle DC offset). Preview does not hand the samples out,
+  so the script had to replace the private `QMBackend._simulated_waveforms`; a real tool
+  needs preview to keep the raw samples first. The chain simulation needed a 16 us window
+  and `max_rounds=2`. Deliberately left out of the `register_partial_swap` landing
+  (2026-09-22): it had been used on one day only, and not by the second partial-swap
+  calibration (θ 0.60), whose rounds matched the first.
 - Where: the four QM probes (`qc_n_stark_amp`, `qc_swap_flux_stark`,
-  `qc_trotter_compensation`, `qc_unidirectional_trotter`) and the run record.
+  `qc_trotter_compensation`, `qc_unidirectional_trotter`), the run record, and
+  `QMBackend.preview` (raw samples).
 - Done when: each run records its round period (measured once per program build, or derived
   from the compiled program) — or the probes pad a round to a declared length — and the
   simulator measurement is a script in `scqo-qm/scripts/`.
@@ -265,6 +262,22 @@ provenance or a trap a user can walk into, **low** = hygiene.
   and the SCQO docs.
 - Done when: a Parameters switch plays the tones during the reset on both backends, the
   compensation is re-measured, and the sink curve is compared with the 360 ns round.
+
+### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
+- Added 2026-09-22 with the operator's rule that a stark compensation tone stays below one
+  full turn (a stronger tone drives the qubit), met while calibrating `partial_swap_060`
+  on 5Q4C (`procedures/pair-partial-swap`, Trap 6).
+- Problem: only the procedures enforce the bound (`procedures/README.md` rules): windows
+  stop at amplitude factor 1.0 because 5Q4C's `stark` operations are scaled so that 1.0 is
+  2π on q1 and q3. No code knows that scale. `qc_n_stark_amp`, `qc_swap_flux_stark` (whose
+  `stark_amp_2pi` is only a Parameters prior) and `qc_trotter_compensation` accept any
+  window the QM driver can play (its QUA `amplitude_scale` bound is 2.0,
+  `scqo-qm/scqo_qm/experiments/_amp_limits.py`), and converting an amplitude into a phase
+  means reading the `qubit_stark_phase_echo` plotdata curve by hand.
+- Where: `qubit_stark_phase_echo` (the measurement) and the three experiments that sweep a
+  stark amplitude; where the measured curve is stored is open (placement rule).
+- Done when: those experiments refuse a stark window beyond one turn by name, and a
+  compensation can be reported as a phase as well as an amplitude.
 
 ## Known issues / potential problems (found in passing)
 
