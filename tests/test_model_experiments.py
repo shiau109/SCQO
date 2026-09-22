@@ -2067,6 +2067,13 @@ def test_trotter_compensation_finds_an_optimum_inside_the_window(session):
     assert 0.0 < fit["best_compensation_amp"] < 1.0
     assert fit["contrast"] > 2.0
     assert fit["best_sink_p_max"] > fit["worst_sink_p_max"]
+    # the ridge reading, the value fed back: resolved, inside the window, on the
+    # same peak as the brightest pixel, with a real spread
+    assert fit["compensation_unresolved"] == 0.0
+    assert 0.0 < fit["best_compensation_amp_refined"] < 1.0
+    assert abs(fit["best_compensation_amp_refined"] - fit["best_compensation_amp"]) < 0.1
+    assert np.isfinite(fit["best_compensation_amp_err"])
+    assert fit["best_compensation_amp_err"] >= 0.0
 
 
 def test_trotter_compensation_n_at_max_reads_the_phase_condition(session):
@@ -2085,6 +2092,8 @@ def test_trotter_compensation_reports_the_curve_at_the_optimum(session):
     assert fit["q2"]["p_max"] == pytest.approx(fit["q2"]["best_sink_p_max"])
     # every row carries the run-wide optimum, so one target reads on its own
     assert fit["q1"]["best_compensation_amp"] == fit["q2"]["best_compensation_amp"]
+    assert (fit["q1"]["best_compensation_amp_refined"]
+            == fit["q2"]["best_compensation_amp_refined"])
 
 
 def test_trotter_compensation_is_record_only(session):

@@ -92,16 +92,18 @@ after changing either operation.
   - If `compensation_amps` already holds the sink, add `--set "compensation_amps={}"`. The
     experiment refuses a qubit that is both swept and held fixed.
   - Takes about 1.5 minutes.
-- **Read** the sink population against amplitude and round from `dataset.nc`
-  (`population`, dims `target × compensation_amp × round_count`).
-  - Average it over rounds ≥ 2. Rounds 0 and 1 carry no phase information: the sink holds
-    at most one path. Starting at round 2 or at round 4 changed the result by ≤ 0.002 on
-    four scans.
-  - The peak of that curve is the compensation. `best_sink_p_max` and `best_n_at_max`
-    describe the transport at the estimator's pick.
-  - Do not take `best_compensation_amp`, the dashed line on the map. It is the single
-    brightest (amplitude, round) pixel, and it landed 0.02–0.04 away from the ridge centre
-    on 5Q4C (Trap 4).
+- **Read** `best_compensation_amp_refined` ± `best_compensation_amp_err` and the flag
+  `compensation_unresolved`.
+  - The refined value is the parabola vertex of the sink averaged over rounds ≥ 2, within
+    ±0.08 of that curve's grid best. Rounds 0 and 1 carry no phase information: the sink
+    holds at most one path. Starting at round 2 or at round 4 changed the result by ≤ 0.002
+    on four scans.
+  - The map draws it as the solid line, with its spread as a band.
+  - Do not take `best_compensation_amp`, the dotted line. It is the single brightest
+    (amplitude, round) pixel, and it landed 0.02–0.04 away from the ridge centre on 5Q4C
+    (Trap 4). `best_sink_p_max` and `best_n_at_max` describe the transport at that pixel.
+  - If `compensation_unresolved` = 1, the scan shows no interior peak; `refine_reason` in
+    the estimator metadata says why. Move or widen the window, staying at or below 1.0.
 - **Decide**:
   - Sweep only the **sink** and leave the source untoned. Only the difference matters.
   - On 5Q4C, q1's tone at 5192.9 MHz sits 2.6 MHz from q3 and would drive it.
@@ -113,12 +115,10 @@ after changing either operation.
 
 - **Run** the same command with `min_compensation_amp` and `max_compensation_amp` at the
   best value ± 0.12, clipped to 0–1.0, and 25 points (step 0.01).
-- **Read**: fit a parabola to the sink averaged over rounds ≥ 2, within ±0.08 of that
-  curve's grid best. The vertex is the compensation. Resampling the rounds gives its spread:
-  ±0.001–0.003 on 5Q4C.
+- **Read** `best_compensation_amp_refined` ± `best_compensation_amp_err` again: that is
+  the compensation. The spread was ±0.001–0.003 on 5Q4C.
   - On 5Q4C a coarse-scan vertex landed within 0.004 of the fine one run minutes later
     (060/060), so the fine scan is a confirmation.
-  - The estimator itself reports only the brightest pixel (Open issues: F14).
 
 ### Step 4: write it and run the chain
 
@@ -186,8 +186,8 @@ Outcome on 2026-09-22:
 
 ## Stop criteria
 
-- Done when the fine-scan vertex is written into the chain file and the trotter run
-  completes.
+- Done when the fine scan's `best_compensation_amp_refined` is written into the chain file
+  and the trotter run completes.
 - Abort on any hardware or gateway error, as `procedures/README.md` defines it.
 
 ## Traps
@@ -211,7 +211,7 @@ Outcome on 2026-09-22:
    - 060/060: 0.367 against the round-averaged vertex 0.331 (coarse), and 0.350 against
      0.327 (fine).
    - 030/030: 0.25 against 0.232 (coarse), and 0.23 against 0.224 (fine).
-   - Read the round-averaged vertex (Step 2).
+   - Read `best_compensation_amp_refined` (Step 2).
 5. **One file, two consumers.** Keep compensation-only keys out of the chain file, and add
    `--set "compensation_amps={}"` when rescanning a sink that is already compensated.
 6. **Stale readout,** as in `pair-partial-swap`.
@@ -255,8 +255,6 @@ four operations are 40 ns. 20 rounds, 400 averages, compensation on q3 only:
 
 `BACKLOG.md`:
 
-- **F14:** a refined optimum in `qc_trotter_compensation` (the round-averaged vertex of
-  Steps 2–3)
 - **F16:** recording the actual round length
 - **F17:** a shorter round, with the stark tones played during the relay reset
 - **F18:** a stark amplitude-to-phase conversion, so the one-turn bound can live in code
