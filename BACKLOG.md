@@ -268,6 +268,30 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: those experiments refuse a stark window beyond one turn by name, and a
   compensation can be reported as a phase as well as an amplitude.
 
+### F19 `scqo-qm`: the remaining read-only queries (low)
+- Added 2026-09-24 when `scqo-qm cluster` landed as the first query (the user chose to start
+  with it).
+- Problem: three lookups still hide behind flags of WRITE commands, where one missing flag
+  turns a look into a write: the pairs' partial swaps (`register-partial-swap --list`), the
+  Octave calibration file's location and cached entries (`calibrate-octave --dry-run`), and
+  the exponential filter currently on each z line (no read path at all; only
+  `apply-distortion --dry-run` shows it, as a preview of a write).
+- Where: `scqo-qm/scqo_qm/cli.py` (dispatches from `fieldmap.OPERATOR_COMMANDS`); one module
+  per query under `scqo_qm/backend/`, shaped like `backend/cluster.py`.
+- Done when: `scqo-qm swaps`, `scqo-qm octave` and `scqo-qm filters` exist, read-only, and
+  each write command's listing flag either goes or points at its query.
+
+### F20 `scqo-qblox`: the same operator CLI on the Qblox side (low)
+- Added 2026-09-24 with the `scqo-qm` console script.
+- Problem: Qblox's operator commands are still invoked as `python -m
+  scqo_qblox.backend.apply_distortion` and `python scripts/calibrate_mixers.py <config_dir>`,
+  and the second is a PATH-invoked script that ends its own process with `os._exit`, so it
+  cannot be dispatched as it stands.
+- Where: `scqo-qblox/scqo_qblox/backend/fieldmap.py` `OPERATOR_COMMANDS`,
+  `scqo-qblox/scripts/calibrate_mixers.py`; the QM shape to copy is `scqo-qm/scqo_qm/cli.py`.
+- Done when: `scqo-qblox -h` lists both commands from its `OPERATOR_COMMANDS`, and
+  `calibrate_mixers` lives in the package with the `os._exit` confined to its own entry.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)

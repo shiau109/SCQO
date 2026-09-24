@@ -70,7 +70,7 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
 ### Step 2: register the operation
 
 - **Run**, in `.venv-qm`:
-  `python -m scqo_qm.backend.register_partial_swap --pair <pair> --name partial_swap_<t> --z-amp <z start> --coupler-amp <coupler start>`.
+  `scqo-qm register-partial-swap --pair <pair> --name partial_swap_<t> --z-amp <z start> --coupler-amp <coupler start>`.
   `--length` defaults to 40 ns.
 - It writes three entries into the active setup's QUAM tree
   (`<data_root>/<device>/<cycle>/<setup>/backend_config/state.json`):
@@ -101,7 +101,7 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
   - `compensating_stark_amp` ± `compensating_stark_err`
 - **Decide**: if the resonance is at the edge or unresolved, move the window onto the fitted
   centre and rerun once. Otherwise set the operation's z amplitude to
-  `resonance_flux_amp_v` (`register_partial_swap --update --z-amp`). Do not use
+  `resonance_flux_amp_v` (`scqo-qm register-partial-swap --update --z-amp`). Do not use
   `swap_angle_rad_refined`, the arch-fit angle, as the stop criterion: decoherence biases
   it low, by 2–9% on 5Q4C.
 
@@ -119,7 +119,7 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
 - **Decide**:
   - **Done** if |θ − target| ≤ 0.01.
   - **Otherwise** change the coupler amplitude by (target − θ)/slope
-    (`register_partial_swap --update --coupler-amp`) and repeat Steps 3–4. The resonance
+    (`scqo-qm register-partial-swap --update --coupler-amp`) and repeat Steps 3–4. The resonance
     moves by about 0.1–0.2 mV when the coupler changes.
   - **Slope** on 5Q4C: q1_q2 0.043 rad/mV at θ 0.30 and 0.039 at 0.60; q2_q3 0.031 at 0.30
     and about 0.066 at 0.60 (from the flux map; that pair needed no second point). Once two
