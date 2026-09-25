@@ -300,7 +300,13 @@ provenance or a trap a user can walk into, **low** = hygiene.
   qualibrate data archive's last run is 2026-07-09; and v3.13.0 moved the operator commands to
   `scqo-qm <command>` and took `~/.qualibrate` out of every save (issue #38), so `qm.bat` is
   now only the GUI launcher.
-- What still binds it, all checked 2026-09-22:
+- PHASE 1 LANDED 2026-09-25 (fragment `qualibrate-free-driver`; scqo-qm 79f3715 +
+  b31318c + 2344143, SCQO bc60c59): (a), (b), (c) below are done, and so is the
+  confusion-matrix half of (d). PROVEN: the full scqo-qm suite (729, zero skips) passes
+  in a scratch venv built from the lock with the qualibrate and qualibration-libs lines
+  removed. Nothing is deleted yet - that is the next phase, and it is what the four
+  decisions gate.
+- What bound it, all checked 2026-09-22 (a-c LANDED, see above):
   (a) `scqo_qm/experiments/_lib.py` imports `BatchableList` and `XarrayDataFetcher` from
       `qualibration_libs`. Those two modules never import qualibrate, but the DISTRIBUTION
       requires `qualibrate>=1.0.2`, so installing it drags the whole GUI stack (fastapi,
@@ -315,7 +321,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
       writer of the `resonator.confusion_matrix` that `qubit_t1_bayesian` refuses without, and
       the EF pair 12/13 that `single_shot_readout_gef` names in its refusal (never run here).
       The confusion matrix is derivable from what `single_shot_readout` already stores:
-      alpha = 1 - fidelity_e, beta = 1 - fidelity_g.
+      alpha = 1 - fidelity_e, beta = 1 - fidelity_g - DONE, so 07_iq_blobs is no longer
+      a prerequisite of anything. Time of flight and the EF pair REMAIN, as decisions
+      (1) and (2).
   (e) dead code kept for the GUI path: `amp_mode="prefactor"` in both pair-swap probes (with its
       test and the warn-not-raise rail branch), `qubit_spectroscopy`'s `operation_amp` and its
       `operation_len=None` fallback, `resonator_spectroscopy_power_amp`'s `num_detuning_points`
@@ -340,7 +348,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
   modules verbatim, or rewrite them smaller.
 - Sequence that keeps it reversible: make the driver work without the packages first (a, b, c,
   d), PROVE it by running the full suite in a scratch venv built from a lock with neither
-  package, and only then delete anything.
+  package, and only then delete anything. The first two steps are done; the recipe for the
+  proof env is `grep -vE '^(qualibrate==|qualibration-libs @)' requirements-qm.lock.txt`,
+  then `uv venv` + `uv pip install -r <it>` + the three editables `--no-deps`.
 - Done when: neither `qualibrate` nor `qualibration-libs` appears in `scqo-qm/pyproject.toml`
   or `requirements-qm.lock.txt`, the full scqo-qm suite passes in a venv built from that lock,
   no doc describes a GUI path, and the fragment names the last release tag that still carries
@@ -614,23 +624,12 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: a member whose marginal is identically 0 (or 1) over the whole map raises a
   named flag (e.g. `readout_suspect`) in `result.fit` and the figure title.
 
-### I22 `quam_config`'s register/populate scripts write wherever `~/.qualibrate` points (medium)
-- Found 2026-09-22 while fixing issue #38; `convert_state_rf_literal.py` was fixed in v3.13.0,
-  the others were left as they were.
-- Problem: `register_flattop_cosine.py`, `register_reset_macro.py`, `register_stark.py`,
-  `register_swap_macro.py` and both `populate_quam_*.py` call a bare `Quam.load()` and save, so
-  their target is `QUAM_STATE_PATH` or qualibrate's `[quam] state_path` - not the active scqo
-  setup's `backend_config/`. On this box that config still names
-  `D:\github\scqo-qm\quam_state`, which the workspace migration left behind, so a register
-  script run here edits a tree nobody loads and says nothing about it. `QuamRoot.load(path)`
-  does not remember `path`, so loading the right folder first does not help either.
-- Where: `scqo-qm/quam_config/register_*.py` and `populate_quam_*.py`; the door is
-  `scqo_qm.quam_io.save_state`, and the resolution to copy is
-  `scqo_qm/backend/register_partial_swap.py`, which resolves the active setup and stages the
-  save. Related: I6 (the env var), F21 (b).
-- Done when: each script takes the state folder explicitly or resolves the active setup, saves
-  through `quam_io`, and an AST scan refuses a bare `Quam.load()` or a `.save()` with no path
-  outside `quam_io` (`tests/test_amp_limits.py`'s one-home scan is the precedent).
+### I22 the register/populate scripts' save target — LANDED 2026-09-25
+- Fixed by the `qualibrate-free-driver` fragment (scqo-qm 2344143): each script names the
+  state folder (an argument for `register_*`, a STATE_DIR constant for the cell-style
+  `populate_*`), loads and saves through `scqo_qm.quam_io`, and the AST scan in
+  `tests/test_quam_io_door.py` keeps a bare `Quam.load()` / `.save()` out. Drop this entry
+  once the fragment ships.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
