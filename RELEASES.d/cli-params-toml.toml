@@ -1,8 +1,0 @@
-name = "cli-params-toml"
-repos = { scqo = "bdf7a2d" }
-kind = "additive"
-coupling = ""
-validated = "offline 2026-09-21 — SCQO: tests/test_cli_run.py 24 passed (8 new: one subprocess run over the simulated backend proving code defaults < parameters.toml < a relative TOML --params file < --set, plus seven in-process _load_params cases) and test_cli_listing + test_preview 28 passed, all in SCQO/.venv. No driver change: neither driver parses --params, and their launchers share this engine."
-notes = '''NEW: `scqo run <name> --params <file>` reads a file ending in `.toml` as TOML; any other file is read as JSON, as before, so a run folder's parameters.json (the `scqo restore` flow) is unchanged, and inline JSON is unchanged. The file holds the parameters at the TOP level, like the JSON form: a top-level table named after an experiment (the parameters.toml layout) is refused with that hint. TOML has no null, so a knob that parameters.toml sets can only be reset to None with `--set KEY=null`, which already worked.
-
-Two --params traps fixed in the same block. (1) A value ending in .json/.toml that is not a file (the usual cause: a relative path run from another directory) used to fall through to inline-JSON parsing and fail as "--params expects a JSON file path or inline JSON ... Expecting value"; it is now reported as a missing file, naming the absolute path looked at and the current directory. (2) Files are read as utf-8-sig, so a JSON file written by Windows PowerShell 5.1's `Out-File -Encoding utf8` (UTF-8 with a BOM) no longer fails to parse. A leading `~` is expanded as well, because PowerShell passes it to a native command unexpanded.'''
