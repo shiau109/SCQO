@@ -341,11 +341,18 @@ provenance or a trap a user can walk into, **low** = hygiene.
   CLAUDE/INSTALL/ENVIRONMENTS/CONTRIBUTING/TUTORIAL and the "8001 qualibrate" port line in
   `scqo/browse.py` and `scqo/viewer/__main__.py`). scqat's `qualibrate_parser` STAYS: it reads
   the frozen legacy archive and imports nothing.
-- Four decisions the user has not made: (1) build `readout_time_of_flight` first, or accept a
-  hand edit at the next re-cabling; (2) EF now, or a backlog entry and a reworded refusal;
-  (3) delete `customized/` + `calibrations/exclude/` outright, which overrides scqo-qm
-  CLAUDE.md rule 3, or move them to an archive repo; (4) vendor the two `qualibration_libs`
-  modules verbatim, or rewrite them smaller.
+- The four decisions are MADE (user, 2026-09-25), so the removal is no longer gated:
+  (1) time of flight is DEFERRED and will be built WITH the Qblox side as one experiment for
+  both backends, not a QM-only stopgap - F22; until then a re-cabling means hand-editing
+  `time_of_flight`. (2) REMOVE everything gef rather than keep the gap: `single_shot_readout_gef`
+  (SCQO shell + QM probe), the catalog's `fidelity_f`, the prepared-state-2 (EF_x180) branch of
+  `scqo_qm/experiments/_readout_fidelity.py` and the scqat estimator bound to it, to be rebuilt
+  from scratch if a real need appears. Settle one thing while doing it: `qubit_thermal_population`
+  prepares `[0]` only and never needs `EF_x180`, so it is not a gef experiment in the preparation
+  sense - check whether its estimator still needs the three-state fit before removing it too
+  (it probably stays). (3) DELETE `customized/` + `calibrations/exclude/` outright, which
+  overrides scqo-qm CLAUDE.md rule 3 by the user's explicit agreement; the fragment must say the
+  archive lives in tag v3.13.0 and in git history. (4) vendored verbatim - DONE in phase 1.
 - Sequence that keeps it reversible: make the driver work without the packages first (a, b, c,
   d), PROVE it by running the full suite in a scratch venv built from a lock with neither
   package, and only then delete anything. The first two steps are done; the recipe for the
@@ -355,6 +362,21 @@ provenance or a trap a user can walk into, **low** = hygiene.
   or `requirements-qm.lock.txt`, the full scqo-qm suite passes in a venv built from that lock,
   no doc describes a GUI path, and the fragment names the last release tag that still carries
   the vendored nodes as where they live now.
+
+### F22 `readout_time_of_flight`, on both backends (medium)
+- Added 2026-09-25 as decision (1) of F21: the qualibrate nodes 01a/01b are the only path that
+  measures time of flight today, and they go with the removal.
+- The user's call: do NOT build a QM-only stopgap first. It is ONE experiment for both backends
+  when it comes - QM's `resonator.time_of_flight` and Qblox's `acq_delay` are the same quantity,
+  and the Qblox side has no path either.
+- Problem meanwhile: after a re-cabling nothing measures the delay, so `time_of_flight` is a
+  hand edit from a known-good value (it is VendorOnly on both drivers - `scqo set` cannot reach
+  it). A wrong one shifts the ADC window and costs readout fidelity with nothing saying so.
+- Where: a new `scqo/experiments/readout_time_of_flight.py` + a probe per driver; the shape to
+  copy for the writeback is the cryoscope pair, which prints the vendor command rather than
+  proposing a neutral knob. Last real use: 01b_time_of_flight_mw_fem, 2026-06-05.
+- Done when: one `scqo run readout_time_of_flight` on each backend reports a delay that matches
+  the node's number on the same wiring, and the docs stop naming the retired nodes.
 
 ## Known issues / potential problems (found in passing)
 
