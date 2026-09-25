@@ -324,7 +324,16 @@ provenance or a trap a user can walk into, **low** = hygiene.
       alpha = 1 - fidelity_e, beta = 1 - fidelity_g - DONE, so 07_iq_blobs is no longer
       a prerequisite of anything. Time of flight and the EF pair REMAIN, as decisions
       (1) and (2).
-  (e) dead code kept for the GUI path: `amp_mode="prefactor"` in both pair-swap probes (with its
+  (e) LANDED 2026-09-25, scqo-qm `24edf03` (718 passed, zero skips; the QUA generated for
+      every surviving path is unchanged). Removing `amp_mode` made THREE guards unreachable
+      and they went with it rather than staying as defence in depth (I17's own rule): the
+      shared-flux-element collision (absolute mode bakes ONE reference for every pair), the
+      `max|qua_amps|` bound (`amplitudes / max|amplitudes|` peaks at exactly 1.0), and the
+      chevron's `>16 ns branch` check, which was a DUPLICATE of the `peak/reference` that
+      `check_flux_pulse_relative` already refuses earlier and better.
+      `qubit_spectroscopy_flux_pulse.py` carried the same `operation_amp` and was done too.
+      The original entry, for reference:
+      dead code kept for the GUI path: `amp_mode="prefactor"` in both pair-swap probes (with its
       test and the warn-not-raise rail branch), `qubit_spectroscopy`'s `operation_amp` and its
       `operation_len=None` fallback, `resonator_spectroscopy_power_amp`'s `num_detuning_points`
       argument name, and `quam_config/instrument_limits.py` (NOT only `calibration_utils` -
