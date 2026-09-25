@@ -221,7 +221,6 @@ from .resonator_spectroscopy_power_chain import (  # noqa: E402
     ResonatorSpectroscopyPowerChain,
 )
 from .single_shot_readout import SingleShotReadout  # noqa: E402
-from .single_shot_readout_gef import SingleShotReadoutGEF  # noqa: E402
 
 __all__ = [
     "catalog", "get", "register",
@@ -244,6 +243,6 @@ __all__ = [
     "QubitThermalPopulation", "QubitTomography", "QubitXyzDelay",
     "ReadoutFrequency", "ReadoutPower", "ResonatorSpectroscopy",
     "ResonatorSpectroscopyFlux", "ResonatorSpectroscopyPowerAmp",
-    "ResonatorSpectroscopyPowerChain", "SingleShotReadout", "SingleShotReadoutGEF",
+    "ResonatorSpectroscopyPowerChain", "SingleShotReadout",
 ]
 

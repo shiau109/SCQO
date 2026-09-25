@@ -1395,60 +1395,6 @@ def test_single_shot_populations_are_nan_when_the_blobs_degenerate(session, monk
     assert out["outcomes"]["q0"] == "failed"  # NaN fidelity fails the gate
 
 
-def test_gef_proposes_three_state_monitors(session):
-    """Three blob centers and three per-state fidelities, all on the readout
-    channel. No discriminator knob: a scalar threshold on one rotated quadrature
-    cannot separate three blobs, so single_shot_readout keeps that job."""
-    proposed = _suggest(session, "single_shot_readout_gef")
-    assert {("q0_ro", f"pos_{letter}_{axis}")
-            for letter in ("g", "e", "f") for axis in ("i", "q")} | {
-        ("q0_ro", "fidelity_g"), ("q0_ro", "fidelity_e"), ("q0_ro", "fidelity_f")
-    } == proposed
-    assert not any(f.startswith("readout_") for _, f in proposed)
-
-
-def test_gef_reports_the_full_confusion_matrix_counted_and_fitted(session):
-    """Six off-diagonals, each counted and fitted — the same two-quantity rule the
-    two-state run follows, one matrix bigger. The fit only removes overlap, never
-    adds any, so no fitted weight can exceed its count."""
-    out = session.run("single_shot_readout_gef", {"targets": ["q0"]}, update="none")
-    fit = out["fit"]["q0"]
-    for prep in ("g", "e", "f"):
-        for assigned in ("g", "e", "f"):
-            if prep == assigned:
-                continue
-            counted, fitted = f"p_{assigned}_given_{prep}", f"pop_{assigned}_prep_{prep}"
-            assert math.isfinite(fit[counted]), counted
-            assert 0.0 <= fit[counted] <= 1.0, counted
-            assert math.isfinite(fit[fitted]), fitted
-            assert fit[fitted] <= fit[counted] + 1e-9, fitted
-    assert 0.5 < fit["readout_fidelity"] <= 1.0
-    assert out["outcomes"]["q0"] == "successful"
-
-
-def test_gef_confusion_is_nan_when_the_blobs_degenerate(session, monkeypatch):
-    """A collapsed fit must yield NaN and a failed outcome, not an IndexError —
-    the three-state twin of the two-state degenerate case."""
-    import scqo.experiments.single_shot_readout_gef as module
-
-    real = module.per_qubit_results
-
-    def one_blob(*args, **kwargs):
-        out = real(*args, **kwargs)
-        for results in out.values():  # collapse to a single center
-            results["direct_counts"] = np.ones((3, 1))
-            results["gaussian_norms"] = np.ones((3, 1))
-        return out
-
-    monkeypatch.setattr(module, "per_qubit_results", one_blob)
-    out = session.run("single_shot_readout_gef", {"targets": ["q0"]}, update="none")
-    fit = out["fit"]["q0"]
-    assert out.get("error") is None
-    assert all(math.isnan(fit[k]) for k in
-               ("p_e_given_g", "p_f_given_g", "pop_e_prep_g", "mean_f_i"))
-    assert out["outcomes"]["q0"] == "failed"
-
-
 def test_thermal_population_writes_the_mode_fact(session):
     """n_th is a chip FACT: the population the qubit sits at in the dark, with no
     instrument setting realizing it. Nothing else is proposed — the readout's own

@@ -155,7 +155,6 @@ EXPECTED_CAPABILITIES = {
     "qc_trotter_compensation": ["qubit_reset"],
     "qc_unidirectional_trotter": ["qubit_reset"],
     "single_shot_readout": ["qubit_reset"],
-    "single_shot_readout_gef": ["qubit_reset"],
     "qubit_thermal_population": ["qubit_reset"],
     # T1 trackers: qubit_reset only — their probes ALWAYS discriminate (the
     # on-FPGA math consumes the state bit), so there is no I/Q-vs-state choice
