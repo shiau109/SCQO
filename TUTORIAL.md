@@ -687,8 +687,7 @@ One command opens the lab's data as a website (one-time: viewer extras via
 python -m scqo.viewer            # -> http://127.0.0.1:8080
 ```
 
-Six pages (port convention: **8001 qualibrate · 8080 viewer · 8081 datasette** —
-all can run at once):
+Six pages (port convention: **8080 viewer · 8081 datasette** — both can run at once):
 
 - **Runs** — filter by experiment / qubit / tag / outcome / date / campaign, plus a
   **pending only** checkbox for runs with undecided suggested updates; click any run.

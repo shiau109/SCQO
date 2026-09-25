@@ -18,7 +18,7 @@ The word **"protocol" is retired**; use these names across all repos.
 - **campaign** — an ordered list of experiment STEPS walked N times (`CampaignPlan` / `Session.run_campaign()` / `campaign_id`). OUTER repetition: every (repeat, step) is a full `run()` with its own folder, dataset, fit and TIMESTAMP, stamped `campaign`/`repeat_idx`/`step_idx`; the campaign owns only the plan, the cadence, the stop conditions and the per-(experiment, target, quantity) statistics. Repeating ONE experiment is the degenerate 1-step case. Do NOT call it a *repetition* (scqat's `repetition_data` splitter, the drivers' HW-averaging loop and `pulse_repetitions` already own that word) nor a *series* (the /trends time series).
 - **procedure** — a goal-driven, ADAPTIVE sequence of cataloged experiments (plus any backend tool a step needs) that produces or tunes something the device carries, e.g. a partial-swap operation of a chosen angle; each step reads named `result.fit` keys and decides the next. `procedures/<name>/PROCEDURE.md`, format in `procedures/README.md`; written for operators and AI agents alike. Not a campaign (a fixed step list, no decisions) and not the TUTORIAL (which teaches the tools, not how to reach a goal with them).
 
-The scqo stack uses this vocabulary throughout — **scqat** (`estimators/`, `tools/`, `BaseEstimator`), **SCQO** (`Experiment`, `scqo.experiments`, `probe()`, `estimate()`), and the drivers **scqo-qblox** + **scqo-qm** (`probe()`-only experiments). scqat's estimator keeps its own orchestrator method `analyze()` (a different layer). scqo-qm's vendored official qualibrate nodes keep qualibrate's own `node` framework and never import scqo (its scqo surface is the `scqo_qm` package). (QBLOX_training documents Qblox's *own* `Experiment` ABC — a different class from this `Experiment`.)
+The scqo stack uses this vocabulary throughout — **scqat** (`estimators/`, `tools/`, `BaseEstimator`), **SCQO** (`Experiment`, `scqo.experiments`, `probe()`, `estimate()`), and the drivers **scqo-qblox** + **scqo-qm** (`probe()`-only experiments). scqat's estimator keeps its own orchestrator method `analyze()` (a different layer). (QBLOX_training documents Qblox's *own* `Experiment` ABC — a different class from this `Experiment`.)
 
 ### The estimator binding (1:1, in both directions)
 
@@ -92,7 +92,7 @@ documents Qblox's own `Experiment` ABC, a different class from this one.
 | Instrument | Quantum Machines: OPX1000 (MW-FEM + LF-FEM) or OPX+ (Octave) | Qblox Cluster (QCM / QCM-RF / QRM-RF) |
 | Low-level API | `qm-qua` (QUA DSL) | `qblox_scheduler` (`Schedule` + `Operations`) |
 | Device model | QUAM — `Quam(FluxTunableQuam)`; qubit = `.xy/.z/.resonator`; param e.g. `q.f_01` | `QuantumDevice` + `BasicTransmonElement`/`FluxTunableTransmonElement`; param e.g. `q.clock_freqs.f01` |
-| Experiment framework | `qualibrate` `QualibrationNode` + `@node.run_action` + web GUI | hand-rolled `Experiment` ABC, notebook-driven, no GUI |
+| Experiment framework | `qualibrate` `QualibrationNode` + `@node.run_action` + web GUI (retired: scqo-qm dropped it after v3.13.0) | hand-rolled `Experiment` ABC, notebook-driven, no GUI |
 | Parameters | `NodeParameters` (pydantic, mixin inheritance, validated) | positional kwargs to `execute(...)`, no schema |
 | Pulse DSL | `qubit.xy.play("x180")` (QUAM macros) | `X(qubit)`, `Measure(...)` (scheduler operations) |
 | Sweep | QUA `for_` loops, xarray `sweep_axes` | `Schedule.loop(linspace/arange)` |
@@ -512,7 +512,7 @@ half-walked bundle whose quantities no longer share a drift epoch. Runs carry se
 **tags** (`run(..., tags=[...])`, config `default_tags`, retroactive `tag_run`). Change
 history records the `run_id` that caused each device update. State authority:
 `state_sync="pull"` (default) seeds from the vendor at startup (safe when another tool also
-calibrates, e.g. qualibrate on QM); `"push"` restores the saved SCQO config into the vendor
+calibrates the same instrument, or when its config is hand-edited); `"push"` restores the saved SCQO config into the vendor
 and is TEMPORARILY refused for every hardware backend (`make_session`, keyed on
 `backend_label != "simulated"`): a push seeds the vendor from `scqo_state.json` with no
 history rows and would clobber hand edits of the vendor config. Only the built-in simulated
@@ -692,7 +692,7 @@ install. [CONTRIBUTING.md](CONTRIBUTING.md) has the layout.
 - **[scqat](https://github.com/shiau109/scqat)** — the analysis half: every estimator and
   fitter SCQO lazy-imports from `estimate()`. A hard dependency, and the one repo whose
   version SCQO pins a floor against (see `RELEASES.toml`).
-- **[scqo-qm](https://github.com/shiau109/scqo-qm)** (was LCHQMDriver) - Quantum Machines (qm-qua / quam / qualibrate); the scqo surface is the `scqo_qm` package (backend/ + experiments/, one fused file per experiment); the qualibrate GUI serves the vendored OFFICIAL nodes only (the LCH shells are retired; `customized/` is a frozen archive); `quam_config/my_quam.py` stays the QUAM entrypoint.
+- **[scqo-qm](https://github.com/shiau109/scqo-qm)** (was LCHQMDriver) - Quantum Machines (qm-qua / quam); the scqo surface is the `scqo_qm` package (backend/ + experiments/, one fused file per experiment) and there is no GUI - the vendored qualibrate nodes and the frozen `customized/` archive were removed after v3.13.0, the tag that still carries them; `quam_config/my_quam.py` stays the QUAM entrypoint.
 - **[scqo-qblox](https://github.com/shiau109/scqo-qblox)** (was LCHQBDriver) - Qblox (qblox-scheduler); the `scqo_qblox` package, independent of the QM stack.
 - **QBLOX_training** - the vendor's read-only Qblox example repo (`docs/applications/superconducting/...`). It is a LOCAL reference checkout on the lab machine, not part of this project and not needed to build or test anything here.
 
