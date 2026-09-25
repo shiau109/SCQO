@@ -327,20 +327,54 @@ provenance or a trap a user can walk into, **low** = hygiene.
   (e) dead code kept for the GUI path: `amp_mode="prefactor"` in both pair-swap probes (with its
       test and the warn-not-raise rail branch), `qubit_spectroscopy`'s `operation_amp` and its
       `operation_len=None` fallback, `resonator_spectroscopy_power_amp`'s `num_detuning_points`
-      argument name, and `quam_config/instrument_limits.py` (only `calibration_utils` imports it).
+      argument name, and `quam_config/instrument_limits.py` (NOT only `calibration_utils` -
+      see the correction under *To remove*). Checked 2026-09-25, and none of the first three
+      is a plain delete: `amp_mode="prefactor"` is the DEFAULT of
+      `pair_swap_chevron.build_program` while both scqo probes pass `"absolute"` explicitly,
+      so removing it changes a public default; `operation_amp` is always `1.0` at all three
+      live call sites but dropping the kwarg changes the generated QUA (`amplitude_scale=1.0`
+      emits an `amp()` wrapper), so it becomes a literal, not a deletion; only
+      `operation_len=None` is dead outright, no live caller passes None.
   (f) `scqo_backend.py`'s `state_sync` guard says "forbidden while qualibrate nodes still write
       QUAM". That reason goes with the GUI; the CORE push refusal stays, because its reason is
       hand edits of the vendor config (F7 is the same question from the other side).
+- PHASE 2, STEP 1 LANDED 2026-09-25 (SCQO `cea0669` + scqo-qm `69e16df`): the whole gef
+  surface is gone - the SCQO shell, the QM probe, the `case_(2)` EF branch and
+  `readout_freq_shift_hz` of `_readout_fidelity.py`, the catalog's `fidelity_f` /
+  `pos_f_i` / `pos_f_q`. Validated: SCQO 1078 passed and scqo-qm 726 passed, both zero
+  skips. THREE corrections to what this entry said, each found by checking:
+  (i) scqat has NO estimator bound to gef, so it is untouched and needs no release -
+  `state_discrimination` is SHARED with qubit_thermal_population and single_shot_readout
+  and sizes its mixture from the prepared states; the known-shared-binding entry just
+  shrank from three experiments to two. (ii) `qubit_thermal_population` fits TWO pinned
+  centers (a 1x2 contract) and never needed the three-state path - it stays, question
+  settled. (iii) no stored data carried the f monitors (0 rows across all three
+  history.sqlite, 0 keys in every scqo_state.json), so this is not stored-data breakage
+  and does not force a MAJOR.
 - To remove: `calibrations/` (with `exclude/` and `offline_graph/`), `calibration_utils/`,
   `customized/`, `sync_official.py`, `calibration_links.toml`, `official_sync.json`, `qm.bat`,
-  `qm.command`, `ANALYSIS_MIGRATION.md`, the GUI-era `calibration_db.json` and `qua_config.json`
-  at the repo root, the `qualibrate` + `qualibration-libs` dependencies and the four with no
+  `qm.command`, `ANALYSIS_MIGRATION.md`, `calibration_db.json` and `qua_config.json`
+  at the repo root, `quam_config/instrument_limits.py`, the `qualibrate` +
+  `qualibration-libs` dependencies and the four with no
   importer at all (`qiskit`, `qiskit-experiments`, `tqdm`, `lmfit`); then regenerate
-  `requirements-qm.lock.txt` - KEEPING `qualibrate-config`, which `quam` imports - and rewrite
+  `requirements-qm.lock.txt` - KEEPING `qualibrate-config`, which `quam` imports, and
+  `plotly`, which `qm_backend.py` imports - and rewrite
   the docs (scqo-qm CLAUDE/AGENTS/README/ENVIRONMENTS + `quam_config/README.md`; SCQO
   CLAUDE/INSTALL/ENVIRONMENTS/CONTRIBUTING/TUTORIAL and the "8001 qualibrate" port line in
   `scqo/browse.py` and `scqo/viewer/__main__.py`). scqat's `qualibrate_parser` STAYS: it reads
-  the frozen legacy archive and imports nothing.
+  the frozen legacy archive and imports nothing. Two things this list got wrong, checked
+  2026-09-25: `calibration_db.json` is NOT GUI-era - it is the Octave mixer-calibration
+  database the QM stack writes to the CWD when `octaves.<name>.calibration_db_path` is
+  unset (the case `fieldmap.py` already warns about), a machine artifact that got
+  committed, so `.gitignore` must gain it in the same commit; and
+  `quam_config/instrument_limits.py` has a LIVE importer besides `calibration_utils` -
+  `tests/test_octave_power.py` cross-checks its 0.5 V Octave DAC ceiling against
+  `_power.MAX_IF_AMP_V`, so the module and both cross-check tests go together and
+  `MAX_IF_AMP_V` becomes the one home for that number (the `_amp_limits` shape).
+  Scale of the deletion, for whoever runs it: 345 tracked files, ~39k lines, and all 742
+  `import qualibrate` / `import qualibration_libs` occurrences in the repo - outside those
+  three directories the only mention left is one line of `_vendored/.../README.md` quoting
+  upstream's own import path. `data/` and `temp/` are UNTRACKED and are not in it.
 - The four decisions are MADE (user, 2026-09-25), so the removal is no longer gated:
   (1) time of flight is DEFERRED and will be built WITH the Qblox side as one experiment for
   both backends, not a QM-only stopgap - F22; until then a re-cabling means hand-editing
