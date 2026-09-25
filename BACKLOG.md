@@ -292,6 +292,60 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: `scqo-qblox -h` lists both commands from its `OPERATOR_COMMANDS`, and
   `calibrate_mixers` lives in the package with the `os._exit` confined to its own entry.
 
+### F21 Retire qualibrate: a QM backend with no GUI stack (medium)
+- Added 2026-09-25 after the v3.13.0 cut, from the review the user asked for: can scqo-qm run
+  with no qualibrate at all?
+- Where it already stands: `scqo_qm/` has no `import qualibrate`; no stored `state.json` under
+  this box's data_root names a qualibrate or `customized.*` class (0 of all of them); the
+  qualibrate data archive's last run is 2026-07-09; and v3.13.0 moved the operator commands to
+  `scqo-qm <command>` and took `~/.qualibrate` out of every save (issue #38), so `qm.bat` is
+  now only the GUI launcher.
+- What still binds it, all checked 2026-09-22:
+  (a) `scqo_qm/experiments/_lib.py` imports `BatchableList` and `XarrayDataFetcher` from
+      `qualibration_libs`. Those two modules never import qualibrate, but the DISTRIBUTION
+      requires `qualibrate>=1.0.2`, so installing it drags the whole GUI stack (fastapi,
+      uvicorn, sqlalchemy, psycopg2) in. ~500 lines, BSD-3, upstream `09fc735`.
+  (b) the LOAD side still resolves through the env var and the config file, and nothing forbids
+      a bare `Quam.load()` / `machine.save()` anywhere else - see I22. Only the save door landed.
+  (c) the suite has no hermetic gate: `tests/test_quam_save_hermetic.py` hides the config for
+      its own three tests. An autouse fixture pointing `QUAM_CONFIG_FILE` at a missing file
+      would pin the whole suite (never `HOME`: `qualibrate_config` computes its path at import).
+  (d) three official nodes have no scqo counterpart and two of them were really used: time of
+      flight (01a/01b, last run 2026-06-05), `07_iq_blobs` (20 runs to 2026-07-09), the only
+      writer of the `resonator.confusion_matrix` that `qubit_t1_bayesian` refuses without, and
+      the EF pair 12/13 that `single_shot_readout_gef` names in its refusal (never run here).
+      The confusion matrix is derivable from what `single_shot_readout` already stores:
+      alpha = 1 - fidelity_e, beta = 1 - fidelity_g.
+  (e) dead code kept for the GUI path: `amp_mode="prefactor"` in both pair-swap probes (with its
+      test and the warn-not-raise rail branch), `qubit_spectroscopy`'s `operation_amp` and its
+      `operation_len=None` fallback, `resonator_spectroscopy_power_amp`'s `num_detuning_points`
+      argument name, and `quam_config/instrument_limits.py` (only `calibration_utils` imports it).
+  (f) `scqo_backend.py`'s `state_sync` guard says "forbidden while qualibrate nodes still write
+      QUAM". That reason goes with the GUI; the CORE push refusal stays, because its reason is
+      hand edits of the vendor config (F7 is the same question from the other side).
+- To remove: `calibrations/` (with `exclude/` and `offline_graph/`), `calibration_utils/`,
+  `customized/`, `sync_official.py`, `calibration_links.toml`, `official_sync.json`, `qm.bat`,
+  `qm.command`, `ANALYSIS_MIGRATION.md`, the GUI-era `calibration_db.json` and `qua_config.json`
+  at the repo root, the `qualibrate` + `qualibration-libs` dependencies and the four with no
+  importer at all (`qiskit`, `qiskit-experiments`, `tqdm`, `lmfit`); then regenerate
+  `requirements-qm.lock.txt` - KEEPING `qualibrate-config`, which `quam` imports - and rewrite
+  the docs (scqo-qm CLAUDE/AGENTS/README/ENVIRONMENTS + `quam_config/README.md`; SCQO
+  CLAUDE/INSTALL/ENVIRONMENTS/CONTRIBUTING/TUTORIAL and the "8001 qualibrate" port line in
+  `scqo/browse.py` and `scqo/viewer/__main__.py`). scqat's `qualibrate_parser` STAYS: it reads
+  the frozen legacy archive and imports nothing.
+- Four decisions the user has not made: (1) build `readout_time_of_flight` first, or accept a
+  hand edit at the next re-cabling; (2) EF now, or a backlog entry and a reworded refusal;
+  (3) delete `customized/` + `calibrations/exclude/` outright, which overrides scqo-qm
+  CLAUDE.md rule 3, or move them to an archive repo; (4) vendor the two `qualibration_libs`
+  modules verbatim, or rewrite them smaller.
+- Sequence that keeps it reversible: make the driver work without the packages first (a, b, c,
+  d), PROVE it by running the full suite in a scratch venv built from a lock with neither
+  package, and only then delete anything.
+- Done when: neither `qualibrate` nor `qualibration-libs` appears in `scqo-qm/pyproject.toml`
+  or `requirements-qm.lock.txt`, the full scqo-qm suite passes in a venv built from that lock,
+  no doc describes a GUI path, and the fragment names the last release tag that still carries
+  the vendored nodes as where they live now.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -325,8 +379,10 @@ provenance or a trap a user can walk into, **low** = hygiene.
   refuses the file, and any case-insensitive consumer of a setup snapshot would break.
 
 ### I6 `QUAM_STATE_PATH` is set process-wide and never unset (low)
-- Found 2026-09-03. `QMBackend.load` exports it; `QMDeviceModel(state_dir=None)` relies on
-  it for `save()`; a second session or script in the same process inherits the folder.
+- Found 2026-09-03. `QMBackend.load` exports it, and a second session or script in the same
+  process inherits the folder. Half of this landed in v3.13.0: the backend's own save no
+  longer depends on the variable (`QMBackend.load` passes the folder down as `state_dir`), so
+  what is left is the export itself and everything else that still reads it - see I22.
 
 ### I7 `state_lib/10Q` resonator `f_01` vs `resonator.RF_frequency` disagree (low)
 - Found 2026-09-03: 1.0–1.4 MHz apart on q3/q4/q5. scqo reads the RF only, so it is not a
@@ -557,6 +613,24 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   families), or one shared check in the pair readout reduction.
 - Done when: a member whose marginal is identically 0 (or 1) over the whole map raises a
   named flag (e.g. `readout_suspect`) in `result.fit` and the figure title.
+
+### I22 `quam_config`'s register/populate scripts write wherever `~/.qualibrate` points (medium)
+- Found 2026-09-22 while fixing issue #38; `convert_state_rf_literal.py` was fixed in v3.13.0,
+  the others were left as they were.
+- Problem: `register_flattop_cosine.py`, `register_reset_macro.py`, `register_stark.py`,
+  `register_swap_macro.py` and both `populate_quam_*.py` call a bare `Quam.load()` and save, so
+  their target is `QUAM_STATE_PATH` or qualibrate's `[quam] state_path` - not the active scqo
+  setup's `backend_config/`. On this box that config still names
+  `D:\github\scqo-qm\quam_state`, which the workspace migration left behind, so a register
+  script run here edits a tree nobody loads and says nothing about it. `QuamRoot.load(path)`
+  does not remember `path`, so loading the right folder first does not help either.
+- Where: `scqo-qm/quam_config/register_*.py` and `populate_quam_*.py`; the door is
+  `scqo_qm.quam_io.save_state`, and the resolution to copy is
+  `scqo_qm/backend/register_partial_swap.py`, which resolves the active setup and stages the
+  save. Related: I6 (the env var), F21 (b).
+- Done when: each script takes the state folder explicitly or resolves the active setup, saves
+  through `quam_io`, and an AST scan refuses a bare `Quam.load()` or a `.save()` with no path
+  outside `quam_io` (`tests/test_amp_limits.py`'s one-home scan is the precedent).
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
