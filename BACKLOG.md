@@ -406,22 +406,34 @@ provenance or a trap a user can walk into, **low** = hygiene.
   within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
   measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
 
-### F25 Flux window `start_flux_v` / `end_flux_v` with traversal-ORDER meaning (medium)
-- Decided 2026-09-26 by the user: rename `min_flux_v`/`max_flux_v` on `FluxSweepParameters`
-  (both frames) so the sweep ORDER is explicit - consecutive points are not always
-  independent, and the order has to be visible when debugging. No aliases.
-- The probe walks start -> end; the dataset's `flux_bias_v` coordinate KEEPS the realized
-  order (not re-sorted). Every flux estimator must be order-agnostic: `qubit_flux_arch`,
-  `resonator_spectroscopy_flux`, `qubit_echo_flux`, `qubit_relaxation_flux` each get a
-  descending-axis test first. Carriers: `qubit_spectroscopy_flux_pulse`,
-  `resonator_spectroscopy_flux`, `qubit_echo_flux_pulse`, `qubit_relaxation_flux_pulse`;
-  tests `tests/test_capabilities.py`, `scqo-qblox/tests/test_flux_limits.py`. Shared-core
-  mixin: full suite. `pair_zz_coupler`'s `min/max_coupler_v` follow (with I26).
-- OPEN: the detuning capability also says start/end but normalizes the axis ascending
-  (because `tools/peak_fit.py` misfits a descending axis silently). Same words, different
-  meaning - decide whether detuning moves to order semantics once peak_fit is fixed.
-- Done when: renamed across SCQO + both drivers + scqat tests, and the flux capability
-  docstring states the order semantics next to the detuning difference.
+### F25 Sweep windows `start`/`end` mean traversal ORDER - flux AND detuning (medium)
+- Decided 2026-09-26 by the user. Consecutive points are not always independent, so the
+  sweep order must be explicit and visible when debugging. Three rules:
+  1. Flux: rename `min_flux_v`/`max_flux_v` -> `start_flux_v`/`end_flux_v` on
+     `FluxSweepParameters` (both frames). No aliases.
+  2. Detuning: its `start_*`/`end_*` stop being a window only. Drop the ascending
+     normalisation (`_capabilities/detuning.py::_window_sweep` / `window_bounds`) and rewrite
+     the module docstring that justified it.
+  3. The dataset keeps the REALIZED order (never re-sorted), and **the order must not affect
+     any estimator**: the same data swept in either direction gives the same result.
+- Prerequisite, in scqat FIRST (it is why detuning normalised): `tools/peak_fit.py:289`
+  `gamma_max = detuning[-1] - detuning[0]` goes negative on a descending axis, and a 4 MHz
+  line came back as 174 MHz with no flag. `tools/fit_notch_circle.py:155/162/185` has the same
+  form. Then audit every estimator/tool using `np.interp` (silently wrong for decreasing
+  xp), `searchsorted` or `np.gradient`: `_twin_axis.py`, `dip_fit.py`, `peak_fit.py`,
+  `pulse_arrival.py`, and the `qc_n_stark_amp`, `qc_swap_flux_stark`,
+  `resonator_spectroscopy`, `resonator_spectroscopy_power` estimators. Every estimator that
+  reads a flux or detuning axis gets a "descending == ascending" test.
+- Landing order: scqat -> SCQO (both capabilities, carriers
+  `qubit_spectroscopy_flux_pulse`, `resonator_spectroscopy_flux`, `qubit_echo_flux_pulse`,
+  `qubit_relaxation_flux_pulse` + every detuning carrier; `tests/test_capabilities.py`;
+  shared-core mixin = full suite) -> drivers (both already sweep a descending axis, per the
+  detuning docstring; `scqo-qblox/tests/test_flux_limits.py`). `pair_zz_coupler`'s
+  `min/max_coupler_v` follow with I26.
+- Open, ask the user first: `AmplitudeSweepParameters` still has `min/max_amp_factor`.
+  Same principle, not yet decided.
+- Done when: both capabilities carry the order meaning, no estimator can tell the
+  direction, and the plan doc's F23 builds on it.
 
 ### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
 - Found/decided 2026-09-26 (plan doc §5-§7, hardware 5Q4C, `--tag coupler-scan`). A
