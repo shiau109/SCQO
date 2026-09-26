@@ -402,6 +402,13 @@ provenance or a trap a user can walk into, **low** = hygiene.
   existing descriptions into strengths and weaknesses when this lands.
 - Known cost of the pulse frame: I25 (excursions read 8-15 % large, exact at zero excursion),
   so a large park move converges by re-running from the new point.
+- PROGRESS: scqat half LANDED 2026-09-26 as scqat `37a41ee` - `tools.fringe_frequency` and the
+  `qubit_ramsey_flux_pulse` estimator (full scqat suite green; offline on the 2026-09-26 5Q4C DC
+  scans it reproduces the manual apexes within 0.02 mV). The estimator's `ramp_detuning_hz` is
+  the SIGNED detuning in the qubit_ramsey convention; its result key is `question`
+  (apex|park), NOT `mode` (a netCDF3 global attr named `mode` breaks scipy's writer).
+  SCQO experiment + probes WAIT for F25: overriding the window defaults by the old names
+  after F25's rename would silently ADD a stray `min_flux_v` field, not fail.
 - Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (q1 apex
   within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
   measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
