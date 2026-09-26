@@ -383,6 +383,38 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the path is shared verbatim with `scqo state --fields`, so this is cosmetic - but a
   per-target path would be nicer if VENDOR_ONLY ever grows a formatter.
 
+### F23 `qubit_ramsey_flux` — park a qubit by DC flux (spec FINAL 2026-09-26) (high)
+- Spec: `docs/flux-parking-plan.md` §4 (untracked plan doc, Chinese). Replaces the manual
+  `scqo set idle_flux` + `qubit_ramsey` + periodogram loop used on 5Q4C 2026-09-26, which
+  re-parked all three qubits after a +6..+10 mV DC drift (q3 T1 +48%).
+- Shape: DC (absolute) flux x idle time, averages OUTER / flux middle / idle inner, explicit
+  `flux_settle_ns`; `park_frequency_hz: float | None` (None = apex), `flux_side`; the
+  experiment picks the SIGN of the virtual detuning so the qubit's excursion pushes the
+  fringe away from zero (apex mode cannot fold), and refuses `folding_risk` / `undersampled`
+  pre-probe. New scqat estimator + `tools.fringe_frequency` (periodogram-seeded).
+- Also: `qubit_spectroscopy_flux_pulse` stops proposing `idle_flux` (it is biased by 8-15 %
+  of the excursion, I25); this experiment becomes the `idle_flux` authority.
+- Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (swept-DC
+  vs static-DC within 3 kHz; q1 apex 0.261019 V +-0.1 mV at coupler 0.16 V), Qblox
+  structurally tested, and `procedures/qubit-frequency-park` written.
+
+### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
+- Found/decided 2026-09-26 (plan doc §5-§7, hardware 5Q4C, `--tag coupler-scan`). A
+  neighbour's raw frequency vs coupler DC MIXES two effects: coupler-line crosstalk into the
+  probe's own SQUID (moves the probe's apex LOCATION: q1 -0.055, q3 -0.072 mV per coupler mV
+  on the q1_q2_c line) and the coupler's Lamb shift (moves the apex HEIGHT: q1 +524 kHz for
+  -80 mV). The apex height is the coupler observable: q1_q2_c's own DC apex ~0.074 V
+  (reconstructed), idle 0.16 V sits 86 mV above it.
+- Plan: a PAIR-targeted sibling of F23 (`measure: high|low`, as `pair_zz_coupler`) that nests
+  the F23 apex reading inside a coupler-bias loop -> writes `<coupler>_z.flux_offset`
+  (catalogued, no writer today) and moves the coupler `idle_flux` with its drift.
+- Blocked on the user's decisions (plan doc §7.4): J=0 vs ZZ=0 as the idle criterion;
+  crosstalk matrix as facts + compensated (virtual-flux) moves, or measured only.
+- Also: note in `catalog.py` that a qubit's `flux_offset` / `f_q_max_hz` are measured AT THE
+  CURRENT COUPLER BIASES on a coupler chip.
+- Done when: the sibling experiment exists, one coupler is parked by it on 5Q4C, and the
+  crosstalk matrix (incl. coupler columns) has a home.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -668,6 +700,40 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: either the release checklist regenerates all three (and RELEASING.md step 2
   says so), or the repos that cannot regenerate theirs stop tracking it — `scqo-qm` is the
   clear case, since `uv run` is forbidden there and its lock has been wrong since v3.0.0.
+
+### I24 scqat `ramsey` misreports frequency and T2* at a large virtual detuning (medium)
+- Found 2026-09-26 parking 5Q4C by hand (plan doc §3). At 4 MHz detuning / 4 us / 201 points
+  the fit's frequency was off by >1 MHz and T2* read 0.95 us / 62 us while the raw trace was
+  clean (contrast 0.90; a periodogram reproduced the fringe to 3 kHz). The run still reported
+  its fit, so any consumer that skips `outcomes` takes the wrong number.
+- Where: `scqat/tools/ramsey_fit.py` seeding (`_fit_single` takes FitDampedOscillation's own
+  guess unless `f_seed` is passed).
+- Done when: seeding comes from a periodogram peak (F23's `tools.fringe_frequency`) and the fit
+  is rejected when it leaves that peak by more than half a bin.
+
+### I25 A z PULSE moves the qubit ~10 % less than the same DC step (medium)
+- Found 2026-09-26 on 5Q4C. `qubit_spectroscopy_flux_pulse` run from a park 6-10 mV off the
+  apex (`20260926-145528-751`) put the apex 0.64-0.80 mV further out than DC Ramsey scans did
+  (q1/q2/q3, same sign, ~10 sigma); re-run FROM the DC apex (`20260926-182548-238`) it lands
+  within 0.05 mV. So zero offset at zero excursion, an error proportional to the excursion:
+  the pulse-frame excursion reads 1.08-1.15x the DC one.
+- Why it matters: every pulse-frame flux amplitude (swap resonance points, chevrons, flux
+  maps) is on that scale. Candidates: a real pulse/DC gain on the line (predistortion DC gain,
+  bias-tee), or an arch-fit bias from an asymmetric window. I20 (4x-long pulses) plays in the
+  same probe.
+- Done when: a pulse arch from a DELIBERATE DC offset of +-10 mV off the apex measures the
+  ratio directly on each line, and the cause is named.
+
+### I26 `pair_zz_coupler` writes a pulse amplitude back as an absolute `idle_flux` (medium)
+- Found 2026-09-26 reading it for the coupler-readout design. The QM probe plays the coupler as
+  a PULSE on top of `decouple_offset` (`check_flux_pulse_relative`, `amplitude_scale =
+  amp / const.amplitude`), but SCQO's `update()` writes the fitted zero crossing straight into
+  `<coupler>_z.idle_flux`, and the axis text says "coupler standing bias". The write is off by
+  the standing `decouple_offset` (0.16 V on 5Q4C q1_q2_c today). No Qblox probe; no run in this
+  machine's index.
+- Done when: the experiment takes one frame and says so in its name — either a DC probe
+  (`set_dc_offset`, absolute, no suffix) or `_pulse` + re-referencing
+  `idle_flux = old_idle + fitted` — with a test pinning the frame.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
