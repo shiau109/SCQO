@@ -409,6 +409,14 @@ provenance or a trap a user can walk into, **low** = hygiene.
   (apex|park), NOT `mode` (a netCDF3 global attr named `mode` breaks scipy's writer).
   SCQO experiment + probes WAIT for F25: overriding the window defaults by the old names
   after F25's rename would silently ADD a stray `min_flux_v` field, not fail.
+- HARDWARE PRE-TEST DONE 2026-09-26, 5Q4C q1, with a scratch QUA builder (prototype in
+  `scqat/temp/ramsey_flux_pulse_pretest/`, becomes the real probe after F25). The pulse-frame
+  Ramsey agrees with a same-hour DC reference after one gain factor g ~ 0.96 (apex shift
+  8.0 / 8.35 mV = 0.958; curvature ratio sqrt(0.0141/0.0153) = 0.960) and NO constant offset.
+  Phase is linear in tau (no us tail on a 4 us square pulse). Two lessons for the spec: the DC
+  apex drifts ~0.2 mV/h, so every comparison needs a same-hour DC reference; and the
+  estimator's `apex_flux_stderr` (0.001-0.003 mV) is ~30x smaller than the run-to-run scatter
+  (0.1 mV over 4 min).
 - Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (q1 apex
   within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
   measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
@@ -772,8 +780,11 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   maps) is on that scale. Candidates: a real pulse/DC gain on the line (predistortion DC gain,
   bias-tee), or an arch-fit bias from an asymmetric window. I20 (4x-long pulses) plays in the
   same probe.
-- Done when: a pulse arch from a DELIBERATE DC offset of +-10 mV off the apex measures the
-  ratio directly on each line, and the cause is named.
+- 2026-09-26 later: the pulse-frame RAMSEY prototype on q1 measured g = 0.958 / 0.960 (two
+  methods) with zero offset against a same-hour DC reference - i.e. ~4 %, not 8-15 %. So the
+  spectroscopy arch's larger number is probe-specific (I20 plays there), not the line alone.
+- Done when: the spectroscopy arch's ratio is re-measured from a deliberate DC offset once
+  I20 is fixed, and the difference from the Ramsey probe's g is explained or gone.
 
 ### I26 `pair_zz_coupler` writes a pulse amplitude back as an absolute `idle_flux` (medium)
 - Found 2026-09-26 reading it for the coupler-readout design. The QM probe plays the coupler as
