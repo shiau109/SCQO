@@ -392,8 +392,8 @@ provenance or a trap a user can walk into, **low** = hygiene.
   on the q1_q2_c line) and the coupler's Lamb shift (moves the apex HEIGHT: q1 +524 kHz for
   -80 mV). The apex height is the coupler observable: q1_q2_c's own DC apex ~0.074 V
   (reconstructed), idle 0.16 V sits 86 mV above it.
-- Plan: a PAIR-targeted sibling of F23 (`measure: high|low`, as `pair_zz_coupler`) that nests
-  the F23 apex reading inside a coupler-bias loop -> writes `<coupler>_z.flux_offset`
+- Plan: a PAIR-targeted sibling of `qubit_ramsey_flux_pulse` (`measure: high|low`, as `pair_zz_coupler`) that nests
+  its apex reading inside a coupler-bias loop -> writes `<coupler>_z.flux_offset`
   (catalogued, no writer today) and moves the coupler `idle_flux` with its drift.
 - Blocked on the user's decisions (coupler doc §4.4): J=0 vs ZZ=0 as the idle criterion;
   crosstalk matrix as facts + compensated (virtual-flux) moves, or measured only.
@@ -695,7 +695,7 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   its fit, so any consumer that skips `outcomes` takes the wrong number.
 - Where: `scqat/tools/ramsey_fit.py` seeding (`_fit_single` takes FitDampedOscillation's own
   guess unless `f_seed` is passed).
-- Done when: seeding comes from a periodogram peak (F23's `tools.fringe_frequency`) and the fit
+- Done when: seeding comes from a periodogram peak (`tools.fringe_frequency`) and the fit
   is rejected when it leaves that peak by more than half a bin.
 
 ### I25 A z PULSE moves the qubit ~10 % less than the same DC step (medium)
