@@ -383,20 +383,45 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the path is shared verbatim with `scqo state --fields`, so this is cosmetic - but a
   per-target path would be nicer if VENDOR_ONLY ever grows a formatter.
 
-### F23 `qubit_ramsey_flux` — park a qubit by DC flux (spec FINAL 2026-09-26) (high)
-- Spec: `docs/flux-parking-plan.md` §4 (untracked plan doc, Chinese). Replaces the manual
-  `scqo set idle_flux` + `qubit_ramsey` + periodogram loop used on 5Q4C 2026-09-26, which
-  re-parked all three qubits after a +6..+10 mV DC drift (q3 T1 +48%).
-- Shape: DC (absolute) flux x idle time, averages OUTER / flux middle / idle inner, explicit
-  `flux_settle_ns`; `park_frequency_hz: float | None` (None = apex), `flux_side`; the
-  experiment picks the SIGN of the virtual detuning so the qubit's excursion pushes the
-  fringe away from zero (apex mode cannot fold), and refuses `folding_risk` / `undersampled`
-  pre-probe. New scqat estimator + `tools.fringe_frequency` (periodogram-seeded).
-- Also: `qubit_spectroscopy_flux_pulse` stops proposing `idle_flux` (it is biased by 8-15 %
-  of the excursion, I25); this experiment becomes the `idle_flux` authority.
-- Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (swept-DC
-  vs static-DC within 3 kHz; q1 apex 0.261019 V +-0.1 mV at coupler 0.16 V), Qblox
-  structurally tested, and `procedures/qubit-frequency-park` written.
+### F23 `qubit_ramsey_flux_pulse` — park a qubit by a Ramsey flux map (spec 2026-09-26) (high)
+- Spec: `docs/flux-parking-plan.md` §4 (untracked plan doc, Chinese), revised with the user's
+  three corrections. Automates the manual `scqo set idle_flux` + `qubit_ramsey` + periodogram
+  loop used on 5Q4C 2026-09-26, which re-parked all three qubits after a +6..+10 mV DC drift
+  (q3 T1 +48%).
+- PULSE frame, not DC (user, 2026-09-26): a DC move takes the x90s and the readout off the
+  idle point they were calibrated at. x90 at idle -> square z pulse (relative amplitude a,
+  length tau) -> x90 with the virtual ramp -> readout at idle; averages OUTER / flux
+  start->end / tau inner. `park_frequency_hz: float | None` (None = apex), `flux_side`; the
+  experiment picks the SIGN of the virtual detuning so the excursion pushes the fringe away
+  from zero, and refuses `folding_risk` / `undersampled` pre-probe from the arch facts. New
+  scqat estimator + `tools.fringe_frequency` (periodogram-seeded).
+- COMPLEMENTARY, not an authority (user, 2026-09-26): `resonator_spectroscopy_flux`,
+  `qubit_spectroscopy_flux_pulse` and this one each may propose `idle_flux`; each has its own
+  strengths (plan doc §4.0 table) and the first two feed this one's window and folding
+  prediction. Rewrite the "AUTHORITY for idle_flux" / "BRING-UP seed" wording in the two
+  existing descriptions into strengths and weaknesses when this lands.
+- Known cost of the pulse frame: I25 (excursions read 8-15 % large, exact at zero excursion),
+  so a large park move converges by re-running from the new point.
+- Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (q1 apex
+  within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
+  measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
+
+### F25 Flux window `start_flux_v` / `end_flux_v` with traversal-ORDER meaning (medium)
+- Decided 2026-09-26 by the user: rename `min_flux_v`/`max_flux_v` on `FluxSweepParameters`
+  (both frames) so the sweep ORDER is explicit - consecutive points are not always
+  independent, and the order has to be visible when debugging. No aliases.
+- The probe walks start -> end; the dataset's `flux_bias_v` coordinate KEEPS the realized
+  order (not re-sorted). Every flux estimator must be order-agnostic: `qubit_flux_arch`,
+  `resonator_spectroscopy_flux`, `qubit_echo_flux`, `qubit_relaxation_flux` each get a
+  descending-axis test first. Carriers: `qubit_spectroscopy_flux_pulse`,
+  `resonator_spectroscopy_flux`, `qubit_echo_flux_pulse`, `qubit_relaxation_flux_pulse`;
+  tests `tests/test_capabilities.py`, `scqo-qblox/tests/test_flux_limits.py`. Shared-core
+  mixin: full suite. `pair_zz_coupler`'s `min/max_coupler_v` follow (with I26).
+- OPEN: the detuning capability also says start/end but normalizes the axis ascending
+  (because `tools/peak_fit.py` misfits a descending axis silently). Same words, different
+  meaning - decide whether detuning moves to order semantics once peak_fit is fixed.
+- Done when: renamed across SCQO + both drivers + scqat tests, and the flux capability
+  docstring states the order semantics next to the detuning difference.
 
 ### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
 - Found/decided 2026-09-26 (plan doc §5-§7, hardware 5Q4C, `--tag coupler-scan`). A
