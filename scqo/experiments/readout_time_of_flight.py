@@ -42,6 +42,16 @@ into the noise. Both probes reset it per shot. If the figure shows a flat |IQ|
 with two quadratures that look like noise, that is the thing to check first —
 the fit reports ``arrival_unresolved`` rather than a number.
 
+Amplitude
+---------
+``readout_amp_factor`` scales the readout for this run only. It defaults to 1.0
+and 1.0 is usually too small: the stored amplitude is calibrated for a
+DEMODULATED readout, whose integration over the whole pulse buys roughly
+``sqrt(readout_duration / 1 ns)`` of SNR — about 28x for an 800 ns readout —
+that a per-sample raw trace does not get. Measured on 5Q4C q1 (2026-09-26): at
+factor 1.0 the trace is flat noise across all 1000 ns and the fit correctly
+refuses. The retired node hard-set -12 dBm for the same reason.
+
 The reading (scqat ``readout_time_of_flight``, bound here 1:1): a robust
 baseline and plateau, a threshold midway between them, and an interpolated
 first crossing, plus the 10-90 % rise time and a saturation check. The absolute
@@ -83,6 +93,15 @@ DEFAULT_GRID_NS = 4.0
 class ReadoutTimeOfFlightParameters(TargetSelection, AveragingParameters):
     """Inputs for a raw-trace time-of-flight measurement."""
 
+    num_averages: int = Field(
+        4000, gt=0,
+        description="Shots averaged into the trace. The mixin default of 100 is "
+                    "raised here because a RAW trace has no integration gain: "
+                    "measured on 5Q4C q1 (2026-09-26), 100 shots gave a plateau "
+                    "SNR of 1.2 and the edge finder tripped on noise, while 4000 "
+                    "gave 27 and a clean 4 ns edge. The run costs seconds either "
+                    "way - 4000 shots of a 1 us trace is a few seconds - so the "
+                    "cheap default is the wrong one for this measurement.")
     readout_len_ns: float = Field(
         1000.0, gt=0,
         description="Length of the digitized trace, ns. It must comfortably "
@@ -91,6 +110,19 @@ class ReadoutTimeOfFlightParameters(TargetSelection, AveragingParameters):
                     "end is reported as a bound (arrival_at_edge). 1 us covers "
                     "any normal fridge wiring; shorten it only to save time on "
                     "a setup whose delay is already known to be small.")
+    readout_amp_factor: float = Field(
+        1.0, gt=0, lt=4.0,
+        description="Scale the readout amplitude for THIS RUN only, as a factor "
+                    "of the channel's stored readout_amp. The default 1.0 is "
+                    "usually NOT enough: the stored amplitude is calibrated for "
+                    "a DEMODULATED readout, which integrates the whole pulse and "
+                    "so buys roughly sqrt(readout_duration / 1 ns) of SNR that a "
+                    "per-sample raw trace does not get. On 5Q4C at factor 1.0 the "
+                    "pulse is invisible in the noise. The retired node ran this "
+                    "measurement at -12 dBm for exactly this reason. Nothing is "
+                    "stored and no vendor state is touched — the factor is applied "
+                    "to the generated config. factor x readout_amp above the DAC "
+                    "rail is refused BY NAME by the driver.")
     window_start_ns: float = Field(
         0.0, ge=0,
         description="Where the acquisition window opens, ns, measured from the "

@@ -327,47 +327,61 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Follow-on: **F7** (lift the core push refusal) lost its QM-side half — that driver guard is
   already gone, so only `scqo/labconfig.py::make_session` remains.
 
-### F22 `readout_time_of_flight` — LANDED offline 2026-09-26, HARDWARE OWED
+### F22 `readout_time_of_flight` — QM VALIDATED ON HARDWARE 2026-09-26; QBLOX OWED
 - Built as decision (1) of F21: the retired qualibrate nodes 01a/01b were the only path
   that measured time of flight, and the Qblox side never had one. ONE experiment for both
   backends, as the operator asked - not a QM-only stopgap.
+- **QM DONE-WHEN MET, 5Q4C q1 (cd2/qm_5q), 2026-09-26.** `scqo run readout_time_of_flight
+  --target q1 --set readout_amp_factor=2.8` reports **392 ns against the stored 384** - 8 ns,
+  two grid steps - reproducibly across independent runs (arrival 364.7 / 365.1 ns), plateau
+  SNR 22-27, a 4 ns edge, no refusal flags, and the writeback hint renders
+  `q1: q.resonator.time_of_flight = 392 ns`. The stored 384 is the retired node's number on
+  this wiring, so the two agree. NOTHING on the instrument was mutated: all five qubits
+  unchanged afterwards and `setup_snapshot.drift` empty.
 - What it does: emits a readout pulse, opens the acquisition window at a DECLARED EARLY
-  ORIGIN, and records the RAW digitizer trace averaged over shots. The pulse edge in that
-  trace is the delay. Absolute answer = `window_start_ns + arrival`, rounded onto the 4 ns
-  grid the vendor fields take.
-- THE DESIGN POINT, because it is the one the obvious approach gets wrong: the window does
-  NOT open at the channel's current setting. If that setting is already right the pulse is
-  present at sample 0, there is no pre-arrival baseline, and the threshold has nothing to
-  sit between - the measurement would work only while it was not needed. The retired node
-  did the same thing (it pinned `time_of_flight` to 28 ns for the run and added the two
-  back together at writeback); here the frame is resolved neutrally, travels with the
-  dataset, and the estimator returns the absolute value, so a re-fit cannot silently use a
-  different origin than the one the data was taken in.
-- Proposes NOTHING. The field is VendorOnly on both backends and both fieldmaps already
-  said the TOF measurement's product is written there offline. `_tof_hint` prints it: the
-  backend names WHICH VendorOnly entry (`readout_delay_context`, the `power_context`
-  shape), and the path/unit/edit come from that inventory, so the neutral layer learns
-  neither vendor's spelling and the value is converted into the unit that field declares
-  (236 ns on QM, 2.36e-07 s on Qblox).
-- Where: `scqat/tools/pulse_arrival.py` + `scqat/estimators/readout_time_of_flight/`;
-  `SCQO/scqo/experiments/readout_time_of_flight.py` + `_tof_hint.py`; a probe and a
-  `readout_delay_context` hook in each driver.
-- **HARDWARE OWED, and this is the done-when: one `scqo run readout_time_of_flight` on each
-  backend, reporting a delay that matches the retired node's number on the same wiring.**
-  Two specific things to watch, neither provable offline:
-  (a) QBLOX: the SHAPE the cluster returns for a `Trace` acquisition has never been seen
-  here. The canonicalization assumes one complex array per `acq_channel` over the trace
-  samples, which is what every other protocol returns over its swept axis. If that is
-  wrong, `_to_canonical` is where it lands.
-  (b) BOTH: if the figure shows a flat |IQ| with two quadratures that look like noise, the
-  per-shot phase reset did not take (QM `reset_if_phase`, Qblox `ResetClockPhase`) and the
-  averaged step washed out - the fit reports `arrival_unresolved` rather than a number, so
-  it fails loudly, but the cause is the first thing to check.
-  (c) QM only: the probe temporarily writes `resonator.time_of_flight` and restores it in a
-  `finally`. Confirm the setup's value is unchanged after a run (`scqo state --fields`).
-- Qblox declares no `full_scale_v`, so its saturation flag reports NaN (unchecked) rather
-  than a verdict against a guessed input range. Fill it in once the QRM's real range with
-  its input attenuation is known.
+  ORIGIN, records the RAW digitizer trace averaged over shots. The pulse edge is the delay.
+  Absolute answer = `window_start_ns + arrival`, on the 4 ns grid the vendor fields take.
+- THE DESIGN POINT: the window does NOT open at the channel's current setting. If that
+  setting is already right the pulse sits at sample 0, there is no pre-arrival baseline, and
+  the threshold has nothing to sit between - the measurement would work only while it was not
+  needed. The frame travels with the dataset, so a re-fit cannot silently use a different
+  origin than the one the data was taken in.
+- Proposes NOTHING - the field is VendorOnly on both backends. `_tof_hint` prints it; the
+  backend names WHICH VendorOnly entry (`readout_delay_context`) and the path/unit/edit come
+  from that inventory, so the neutral layer learns neither vendor's spelling.
+- **THREE DEFECTS THE HARDWARE FOUND, all now fixed and regression-tested. Worth keeping,
+  because none of them was reachable offline:**
+  (a) The borrow never reached the instrument. `generate_config()` runs AFTER `probe()`
+  returns, so writing the QUAM tree in `probe()` and restoring in a `finally` released it
+  before it was ever read - the program would have opened its window at the very setting
+  under test, and the QUA assembles cleanly either way. Caught by `--preview` against the
+  real tree BEFORE any qubit was touched (the embedded config still read 384). Fixed by
+  amending the GENERATED CONFIG instead (`patch_preview_config` + a probe-supplied acquire
+  callable, the parametric-drive pattern), which also removes the risk class entirely: no
+  vendor state is written, so none can be left wrong by a crash.
+  (b) A raw trace needs its own readout amplitude. At the stored 0.313 the trace was flat
+  noise end to end (SNR 0.37) and the fit correctly refused. Integration over an 800 ns
+  readout buys ~28x SNR that a per-sample trace does not get - which is why the retired node
+  hard-set -12 dBm. Hence `readout_amp_factor`, applied in the same amendment, refused by
+  name past the DAC rail. 2.8 reproduces the node's amplitude on 5Q4C.
+  (c) `rise_time_ns` was measured from the wrong end: it reported 339 ns for an edge whose
+  true 10-90 % is 4 ns, because the 10 % level sits inside the noise band and the search
+  started at the trace head. Now anchored outward from the midpoint.
+  Also: the default `num_averages` is 4000 here, not the mixin's 100 - at 100 the SNR was 1.2
+  and the edge finder tripped on noise; the run costs seconds either way.
+- **STILL OWED: one `scqo run readout_time_of_flight` on QBLOX.** The schedule compiles, but
+  the SHAPE the cluster returns for a `Trace` acquisition has never been seen here; the
+  canonicalization assumes one complex array per `acq_channel` over the trace samples, which
+  is what every other protocol returns over its swept axis. If that is wrong, `_to_canonical`
+  is where it lands. Two more things to check there: the per-repetition `ResetClockPhase`
+  actually took (a flat |IQ| with noise-like quadratures means it did not, and the fit says
+  `arrival_unresolved` rather than guessing), and what `readout_amp_factor` needs to be -
+  Qblox declares no `full_scale_v`, so its saturation flag reports NaN until the QRM's real
+  input range with its attenuation is known.
+- Open, low: the hint prints the fieldmap's generic path (`q.resonator.time_of_flight`)
+  rather than `qubits.q1.resonator.time_of_flight`. The target is named on the same line, and
+  the path is shared verbatim with `scqo state --fields`, so this is cosmetic - but a
+  per-target path would be nicer if VENDOR_ONLY ever grows a formatter.
 
 ## Known issues / potential problems (found in passing)
 
