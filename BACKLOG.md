@@ -383,81 +383,6 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the path is shared verbatim with `scqo state --fields`, so this is cosmetic - but a
   per-target path would be nicer if VENDOR_ONLY ever grows a formatter.
 
-### F23 `qubit_ramsey_flux_pulse` — park a qubit by a Ramsey flux map (spec 2026-09-26) (high)
-- Spec: `docs/flux-parking-plan.md` §4 (untracked plan doc, Chinese), revised with the user's
-  three corrections. Automates the manual `scqo set idle_flux` + `qubit_ramsey` + periodogram
-  loop used on 5Q4C 2026-09-26, which re-parked all three qubits after a +6..+10 mV DC drift
-  (q3 T1 +48%).
-- PULSE frame, not DC (user, 2026-09-26): a DC move takes the x90s and the readout off the
-  idle point they were calibrated at. x90 at idle -> square z pulse (relative amplitude a,
-  length tau) -> x90 with the virtual ramp -> readout at idle; averages OUTER / flux
-  start->end / tau inner. `park_frequency_hz: float | None` (None = apex), `flux_side`; the
-  experiment picks the SIGN of the virtual detuning so the excursion pushes the fringe away
-  from zero, and refuses `folding_risk` / `undersampled` pre-probe from the arch facts. New
-  scqat estimator + `tools.fringe_frequency` (periodogram-seeded).
-- COMPLEMENTARY, not an authority (user, 2026-09-26): `resonator_spectroscopy_flux`,
-  `qubit_spectroscopy_flux_pulse` and this one each may propose `idle_flux`; each has its own
-  strengths (plan doc §4.0 table) and the first two feed this one's window and folding
-  prediction. Rewrite the "AUTHORITY for idle_flux" / "BRING-UP seed" wording in the two
-  existing descriptions into strengths and weaknesses when this lands.
-- Known cost of the pulse frame: I25 (excursions read 8-15 % large, exact at zero excursion),
-  so a large park move converges by re-running from the new point.
-- PROGRESS: scqat half LANDED 2026-09-26 as scqat `37a41ee` - `tools.fringe_frequency` and the
-  `qubit_ramsey_flux_pulse` estimator (full scqat suite green; offline on the 2026-09-26 5Q4C DC
-  scans it reproduces the manual apexes within 0.02 mV). The estimator's `ramp_detuning_hz` is
-  the SIGNED detuning in the qubit_ramsey convention; its result key is `question`
-  (apex|park), NOT `mode` (a netCDF3 global attr named `mode` breaks scipy's writer).
-  SCQO experiment + probes WAIT for F25: overriding the window defaults by the old names
-  after F25's rename would silently ADD a stray `min_flux_v` field, not fail.
-- CODE LANDED 2026-09-26: scqat `37a41ee` + `f352fae`, SCQO `7435f78`, scqo-qm `f454c7d`,
-  scqo-qblox `edc311e`; full suites green in all four (SCQO 1167, scqo-qm 746, scqo-qblox 370
-  in both venvs, scqat 878 before the order commit). Deviations from the spec, recorded in
-  the plan doc: missing arch facts DEFAULT the ramp sign (ramp_sign_from) instead of
-  refusing; flux_per_phi0_from_curvature dropped (the pulse frame's curvature carries g^2);
-  QM takes a foreign qubit z only (coupler refused), Qblox refuses flux_component and
-  active reset.
-- HARDWARE-VALIDATED 2026-09-26 on 5Q4C q1 (QM, runs tagged `f23-compare`; plan doc §4.13).
-  From a +8 mV DC offset: qubit_ramsey_flux_pulse landed 0.39 mV short after one run
-  (g = 0.956) and 0.016 mV from the same-hour DC reference after two; the pulse arch 0.26 mV;
-  resonator_spectroscopy_flux ~2 mV (16 s). The DC apex moved -0.31 mV across the 8 min,
-  most likely from the resonator map's 0-0.49 V DC sweep (hysteresis, not yet isolated).
-  STILL OWED: `procedures/qubit-frequency-park`, then the RELEASES.d fragment. Qblox
-  hardware stays owed.
-- HARDWARE PRE-TEST DONE 2026-09-26, 5Q4C q1, with a scratch QUA builder (prototype in
-  `scqat/temp/ramsey_flux_pulse_pretest/`, becomes the real probe after F25). The pulse-frame
-  Ramsey agrees with a same-hour DC reference after one gain factor g ~ 0.96 (apex shift
-  8.0 / 8.35 mV = 0.958; curvature ratio sqrt(0.0141/0.0153) = 0.960) and NO constant offset.
-  Phase is linear in tau (no us tail on a 4 us square pulse). Two lessons for the spec: the DC
-  apex drifts ~0.2 mV/h, so every comparison needs a same-hour DC reference; and the
-  estimator's `apex_flux_stderr` (0.001-0.003 mV) is ~30x smaller than the run-to-run scatter
-  (0.1 mV over 4 min).
-- Done when: landed in all four repos, QM hardware checklist §4.10 passed on 5Q4C (q1 apex
-  within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
-  measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
-
-### F26 Sweep windows that are not yet a traversal ORDER (low)
-- Found 2026-09-26 landing F25 (flux, detuning and amplitude windows are now start -> end in
-  the order given; scqat `sweep_order.ascending` + an `order_free` test per estimator; SCQO
-  `tests/test_sweep_order.py` checks every carrier). The rule in memory is that a NEW window
-  uses start/end; these older ones still do not:
-  - the parametric-drive pair (`qubit_parametric_drive_amp` / `_time`) already says
-    start/end but NORMALISES ascending through `_window.window_bounds` (its docstrings say
-    so); `time_axis_ns` would first have to accept a descending time window, and
-    scqo-qm's `test_a_reversed_window_still_plays_ascending_and_seeds_the_low_edge` pins
-    the current behaviour;
-  - min/max windows on non-capability axes: `pair_swap_angle` + `pair_swap_flux_map`
-    (`min/max_coupler_flux_v`, `min/max_qubit_flux_v`), `pair_swap_chevron` + `qc_n_swap_amp`
-    + `qc_swap_flux_stark` (`min/max_flux_amp_v`), `qc_n_stark_amp` + `qc_swap_flux_stark`
-    + `qubit_stark_phase_echo` (`min/max_stark_amp`), `qc_trotter_compensation` (`min/max_compensation_amp`), both DRAG
-    experiments (`min/max_beta`), both punchouts (`min/max_power_dbm`, validator min < max);
-    `pair_zz_coupler`'s `min/max_coupler_v` is I26's.
-  - Their estimators are not yet under `order_free` tests; F23's new scqat
-    `qubit_ramsey_flux_pulse` estimator (sorted internally) should get one too.
-- Time windows (`min/max_wait_ns`, `min/max_idle_time_ns`) are deliberately out: their grids
-  are built ascending on the 4 ns clock and are not a traversal choice.
-- Done when: each window above is start/end with a zero-width refusal only, its estimator
-  carries an `order_free` test, and both drivers' sweep-order tests cover it.
-
 ### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
 - Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`). Evidence + open decisions:
   `docs/coupler-readout-plan.md` (untracked); scripts/raw results in `scqat/temp/coupler_scan/`.
@@ -801,6 +726,12 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   `idle_flux = old_idle + fitted` — with a test pinning the frame.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
+- `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
+  QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run
+  exists. Check that the sticky `VoltageOffset` pair really holds idle + a for the whole
+  `IdlePulse(tau)`, and measure its pulse/DC ratio g against a same-hour DC reference as
+  `procedures/qubit-frequency-park` does. Active reset and `flux_component` stay refused
+  there until then.
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
   `qubit_tomography` interleaved noise; XY-Z delay (`qubit_xyz_delay`); readout average mode;
   broadband RESONATOR variant (offline-only on both
