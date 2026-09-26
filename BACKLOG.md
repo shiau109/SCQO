@@ -421,39 +421,28 @@ provenance or a trap a user can walk into, **low** = hygiene.
   within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
   measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
 
-### F25 Sweep windows `start`/`end` mean traversal ORDER - flux, detuning AND amplitude (medium)
-- Decided 2026-09-26 by the user. Consecutive points are not always independent, so the
-  sweep order must be explicit and visible when debugging. Three rules:
-  1. Flux: rename `min_flux_v`/`max_flux_v` -> `start_flux_v`/`end_flux_v` on
-     `FluxSweepParameters` (both frames). No aliases.
-  2. Detuning: its `start_*`/`end_*` stop being a window only. Drop the ascending
-     normalisation (`_capabilities/detuning.py::_window_sweep` / `window_bounds`) and rewrite
-     the module docstring that justified it.
-  3. The dataset keeps the REALIZED order (never re-sorted), and **the order must not affect
-     any estimator**: the same data swept in either direction gives the same result.
-- Prerequisite, in scqat FIRST (it is why detuning normalised): `tools/peak_fit.py:289`
-  `gamma_max = detuning[-1] - detuning[0]` goes negative on a descending axis, and a 4 MHz
-  line came back as 174 MHz with no flag. `tools/fit_notch_circle.py:155/162/185` has the same
-  form. Then audit every estimator/tool using `np.interp` (silently wrong for decreasing
-  xp), `searchsorted` or `np.gradient`: `_twin_axis.py`, `dip_fit.py`, `peak_fit.py`,
-  `pulse_arrival.py`, and the `qc_n_stark_amp`, `qc_swap_flux_stark`,
-  `resonator_spectroscopy`, `resonator_spectroscopy_power` estimators. Every estimator that
-  reads a flux or detuning axis gets a "descending == ascending" test.
-- Landing order: scqat -> SCQO (both capabilities, carriers
-  `qubit_spectroscopy_flux_pulse`, `resonator_spectroscopy_flux`, `qubit_echo_flux_pulse`,
-  `qubit_relaxation_flux_pulse` + every detuning carrier; `tests/test_capabilities.py`;
-  shared-core mixin = full suite) -> drivers (both already sweep a descending axis, per the
-  detuning docstring; `scqo-qblox/tests/test_flux_limits.py`). `pair_zz_coupler`'s
-  `min/max_coupler_v` follow with I26.
-- Amplitude too (user, 2026-09-26): `min_amp_factor`/`max_amp_factor` ->
-  `start_amp_factor`/`end_amp_factor` on `AmplitudeSweepParameters`. Its `_window_ordered`
-  validator (min < max) becomes a zero-width refusal, and the bounds (>= 0, < 2) apply to BOTH
-  edges. Carriers: `qubit_power_rabi`, `readout_power`, `qubit_resonator_stark`,
-  `qubit_pi_pulse_error`, `qubit_deterministic_benchmarking` (a carrier overriding
-  `amp_values()` must honour the order too). Both drivers' `_amp_limits.py` and many
-  scqo-qblox tests name the fields.
-- Done when: all three capabilities carry the order meaning, no estimator can tell the
-  direction, and the plan doc's F23 builds on it.
+### F26 Sweep windows that are not yet a traversal ORDER (low)
+- Found 2026-09-26 landing F25 (flux, detuning and amplitude windows are now start -> end in
+  the order given; scqat `sweep_order.ascending` + an `order_free` test per estimator; SCQO
+  `tests/test_sweep_order.py` checks every carrier). The rule in memory is that a NEW window
+  uses start/end; these older ones still do not:
+  - the parametric-drive pair (`qubit_parametric_drive_amp` / `_time`) already says
+    start/end but NORMALISES ascending through `_window.window_bounds` (its docstrings say
+    so); `time_axis_ns` would first have to accept a descending time window, and
+    scqo-qm's `test_a_reversed_window_still_plays_ascending_and_seeds_the_low_edge` pins
+    the current behaviour;
+  - min/max windows on non-capability axes: `pair_swap_angle` + `pair_swap_flux_map`
+    (`min/max_coupler_flux_v`, `min/max_qubit_flux_v`), `pair_swap_chevron` + `qc_n_swap_amp`
+    + `qc_swap_flux_stark` (`min/max_flux_amp_v`), `qc_n_stark_amp` + `qc_swap_flux_stark`
+    + `qubit_stark_phase_echo` (`min/max_stark_amp`), `qc_trotter_compensation` (`min/max_compensation_amp`), both DRAG
+    experiments (`min/max_beta`), both punchouts (`min/max_power_dbm`, validator min < max);
+    `pair_zz_coupler`'s `min/max_coupler_v` is I26's.
+  - Their estimators are not yet under `order_free` tests; F23's new scqat
+    `qubit_ramsey_flux_pulse` estimator (sorted internally) should get one too.
+- Time windows (`min/max_wait_ns`, `min/max_idle_time_ns`) are deliberately out: their grids
+  are built ascending on the 4 ns clock and are not a traversal choice.
+- Done when: each window above is start/end with a zero-width refusal only, its estimator
+  carries an `order_free` test, and both drivers' sweep-order tests cover it.
 
 ### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
 - Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`). Evidence + open decisions:
