@@ -406,7 +406,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   within 0.1 mV of the DC apex 0.261019 V at coupler 0.16 V; the +8 mV excursion ratio
   measured), Qblox structurally tested, and `procedures/qubit-frequency-park` written.
 
-### F25 Sweep windows `start`/`end` mean traversal ORDER - flux AND detuning (medium)
+### F25 Sweep windows `start`/`end` mean traversal ORDER - flux, detuning AND amplitude (medium)
 - Decided 2026-09-26 by the user. Consecutive points are not always independent, so the
   sweep order must be explicit and visible when debugging. Three rules:
   1. Flux: rename `min_flux_v`/`max_flux_v` -> `start_flux_v`/`end_flux_v` on
@@ -430,13 +430,20 @@ provenance or a trap a user can walk into, **low** = hygiene.
   shared-core mixin = full suite) -> drivers (both already sweep a descending axis, per the
   detuning docstring; `scqo-qblox/tests/test_flux_limits.py`). `pair_zz_coupler`'s
   `min/max_coupler_v` follow with I26.
-- Open, ask the user first: `AmplitudeSweepParameters` still has `min/max_amp_factor`.
-  Same principle, not yet decided.
-- Done when: both capabilities carry the order meaning, no estimator can tell the
+- Amplitude too (user, 2026-09-26): `min_amp_factor`/`max_amp_factor` ->
+  `start_amp_factor`/`end_amp_factor` on `AmplitudeSweepParameters`. Its `_window_ordered`
+  validator (min < max) becomes a zero-width refusal, and the bounds (>= 0, < 2) apply to BOTH
+  edges. Carriers: `qubit_power_rabi`, `readout_power`, `qubit_resonator_stark`,
+  `qubit_pi_pulse_error`, `qubit_deterministic_benchmarking` (a carrier overriding
+  `amp_values()` must honour the order too). Both drivers' `_amp_limits.py` and many
+  scqo-qblox tests name the fields.
+- Done when: all three capabilities carry the order meaning, no estimator can tell the
   direction, and the plan doc's F23 builds on it.
 
 ### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
-- Found/decided 2026-09-26 (plan doc §5-§7, hardware 5Q4C, `--tag coupler-scan`). A
+- Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`). Evidence + open decisions:
+  `docs/coupler-readout-plan.md` (untracked); scripts/raw results in `scqat/temp/coupler_scan/`.
+  The user deferred it: separate session, and only when the coupler is actually touched. A
   neighbour's raw frequency vs coupler DC MIXES two effects: coupler-line crosstalk into the
   probe's own SQUID (moves the probe's apex LOCATION: q1 -0.055, q3 -0.072 mV per coupler mV
   on the q1_q2_c line) and the coupler's Lamb shift (moves the apex HEIGHT: q1 +524 kHz for
@@ -445,7 +452,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Plan: a PAIR-targeted sibling of F23 (`measure: high|low`, as `pair_zz_coupler`) that nests
   the F23 apex reading inside a coupler-bias loop -> writes `<coupler>_z.flux_offset`
   (catalogued, no writer today) and moves the coupler `idle_flux` with its drift.
-- Blocked on the user's decisions (plan doc §7.4): J=0 vs ZZ=0 as the idle criterion;
+- Blocked on the user's decisions (coupler doc §4.4): J=0 vs ZZ=0 as the idle criterion;
   crosstalk matrix as facts + compensated (virtual-flux) moves, or measured only.
 - Also: note in `catalog.py` that a qubit's `flux_offset` / `f_q_max_hz` are measured AT THE
   CURRENT COUPLER BIASES on a coupler chip.
