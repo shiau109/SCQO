@@ -415,9 +415,14 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the plan doc: missing arch facts DEFAULT the ramp sign (ramp_sign_from) instead of
   refusing; flux_per_phi0_from_curvature dropped (the pulse frame's curvature carries g^2);
   QM takes a foreign qubit z only (coupler refused), Qblox refuses flux_component and
-  active reset. STILL OWED: the registered QM probe on hardware (the 4-method comparison
-  from a +8 mV DC offset on 5Q4C q1, with a same-hour DC reference), then
-  `procedures/qubit-frequency-park`, then the RELEASES.d fragment.
+  active reset.
+- HARDWARE-VALIDATED 2026-09-26 on 5Q4C q1 (QM, runs tagged `f23-compare`; plan doc §4.13).
+  From a +8 mV DC offset: qubit_ramsey_flux_pulse landed 0.39 mV short after one run
+  (g = 0.956) and 0.016 mV from the same-hour DC reference after two; the pulse arch 0.26 mV;
+  resonator_spectroscopy_flux ~2 mV (16 s). The DC apex moved -0.31 mV across the 8 min,
+  most likely from the resonator map's 0-0.49 V DC sweep (hysteresis, not yet isolated).
+  STILL OWED: `procedures/qubit-frequency-park`, then the RELEASES.d fragment. Qblox
+  hardware stays owed.
 - HARDWARE PRE-TEST DONE 2026-09-26, 5Q4C q1, with a scratch QUA builder (prototype in
   `scqat/temp/ramsey_flux_pulse_pretest/`, becomes the real probe after F25). The pulse-frame
   Ramsey agrees with a same-hour DC reference after one gain factor g ~ 0.96 (apex shift
