@@ -409,6 +409,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   (apex|park), NOT `mode` (a netCDF3 global attr named `mode` breaks scipy's writer).
   SCQO experiment + probes WAIT for F25: overriding the window defaults by the old names
   after F25's rename would silently ADD a stray `min_flux_v` field, not fail.
+- CODE LANDED 2026-09-26: scqat `37a41ee` + `f352fae`, SCQO `7435f78`, scqo-qm `f454c7d`,
+  scqo-qblox `edc311e`; full suites green in all four (SCQO 1167, scqo-qm 746, scqo-qblox 370
+  in both venvs, scqat 878 before the order commit). Deviations from the spec, recorded in
+  the plan doc: missing arch facts DEFAULT the ramp sign (ramp_sign_from) instead of
+  refusing; flux_per_phi0_from_curvature dropped (the pulse frame's curvature carries g^2);
+  QM takes a foreign qubit z only (coupler refused), Qblox refuses flux_component and
+  active reset. STILL OWED: the registered QM probe on hardware (the 4-method comparison
+  from a +8 mV DC offset on 5Q4C q1, with a same-hour DC reference), then
+  `procedures/qubit-frequency-park`, then the RELEASES.d fragment.
 - HARDWARE PRE-TEST DONE 2026-09-26, 5Q4C q1, with a scratch QUA builder (prototype in
   `scqat/temp/ramsey_flux_pulse_pretest/`, becomes the real probe after F25). The pulse-frame
   Ramsey agrees with a same-hour DC reference after one gain factor g ~ 0.96 (apex shift
