@@ -610,12 +610,23 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: a member whose marginal is identically 0 (or 1) over the whole map raises a
   named flag (e.g. `readout_suspect`) in `result.fit` and the figure title.
 
-### I22 the register/populate scripts' save target — LANDED 2026-09-25
-- Fixed by the `qualibrate-free-driver` fragment (scqo-qm 2344143): each script names the
-  state folder (an argument for `register_*`, a STATE_DIR constant for the cell-style
-  `populate_*`), loads and saves through `scqo_qm.quam_io`, and the AST scan in
-  `tests/test_quam_io_door.py` keeps a bare `Quam.load()` / `.save()` out. Drop this entry
-  once the fragment ships.
+### I23 `uv.lock`'s editable version strings drift, unchecked (hygiene)
+- Found 2026-09-26 while cutting v3.14.0, from a working tree that would not come clean:
+  `uv run` had regenerated `scqo-qblox/uv.lock` with the new versions after the pyproject bump.
+- Each repo's tracked `uv.lock` records a `version` for the editable path packages (`scqo`,
+  `scqat`, and the repo itself). It is refreshed only when something runs `uv` in that repo,
+  so it goes stale silently at every release, and the three disagree: at the v3.14.0 cut
+  `scqo-qblox/uv.lock` said scqo 3.14.0 (regenerated during the release test run and
+  committed), `SCQO/uv.lock` said 3.13.0, and `scqo-qm/uv.lock` said **3.0.0** — eleven minors
+  behind, because `uv run` is FORBIDDEN in that repo (ENVIRONMENTS.md), so nothing ever
+  regenerates it.
+- Harmless today: they are derived data, and the one env built from a lockfile
+  (`.venv-qm`) is built from `requirements-qm.lock.txt`, not from `uv.lock`. The cost is
+  that a reader cannot tell a stale entry from a real pin, and a release diff picks one up
+  at random depending on which suite happened to run through `uv`.
+- Done when: either the release checklist regenerates all three (and RELEASING.md step 2
+  says so), or the repos that cannot regenerate theirs stop tracking it — `scqo-qm` is the
+  clear case, since `uv run` is forbidden there and its lock has been wrong since v3.0.0.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
