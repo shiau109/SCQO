@@ -73,3 +73,4 @@ Rules:
 |---|---|---|---|
 | [pair-partial-swap](pair-partial-swap/PROCEDURE.md) | a square partial-swap operation of angle θ on one pair, at resonance | qm | hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (θ 0.30, 0.60) |
 | [chain-trotter-compensation](chain-trotter-compensation/PROCEDURE.md) | the chain's per-round phase compensation, then a `qc_unidirectional_trotter` run | qm | hardware 5Q4C q1-q2-q3, 2026-09-22 (four 030/060 combinations) |
+| [qubit-frequency-park](qubit-frequency-park/PROCEDURE.md) | a flux-tunable qubit parked at its apex (or at a chosen f01) to 0.2 mV, with its drive | qm | hardware 5Q4C q1, 2026-09-26 (apex, from a +8 mV offset) |
