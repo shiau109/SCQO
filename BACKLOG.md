@@ -318,11 +318,12 @@ provenance or a trap a user can walk into, **low** = hygiene.
   and removing `amp_mode` made three pair-swap guards unreachable, which went with it (I17's
   rule). The lock was regenerated CONSTRAINED to the old pins because a plain `uv pip compile`
   moved 73 packages including the whole `qm-qua`/`quam` stack.
-- **Left for a decision:** `qutip` leaves the lock with `qiskit-experiments`, its only source.
-  Nothing in these repos imports it, but `.venv-qm` is where the notebooks open run data
-  (`notebook-kernels-qutip-vs-data`). If it belongs there it needs to be an explicit
-  dependency; until then a rebuild of `.venv-qm` from the new lock drops it. The existing
-  `.venv-qm` is untouched.
+- **DECIDED (user, 2026-09-26): `qutip` does NOT become a dependency.** It left the lock with
+  `qiskit-experiments`, its only source. Nothing in these repos imports it, so it has no claim
+  on `scqo-qm/pyproject.toml`. CONSEQUENCE, so nobody rediscovers it as a bug: rebuilding
+  `.venv-qm` from the new lock leaves that environment WITHOUT qutip, and it is where the
+  notebooks open run data (`notebook-kernels-qutip-vs-data`) — whoever needs it there installs
+  it into the venv by hand, alongside the three editables. The existing `.venv-qm` still has it.
 - Follow-on: **F7** (lift the core push refusal) lost its QM-side half — that driver guard is
   already gone, so only `scqo/labconfig.py::make_session` remains.
 
