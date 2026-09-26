@@ -163,6 +163,13 @@ EXPECTED_CAPABILITIES = {
     "qubit_t1_bayesian": ["qubit_reset"],
     "readout_power": ["qubit_reset", "amplitude"],
     "readout_frequency": ["qubit_reset", "readout_detuning"],
+    # readout_time_of_flight: NONE, and deliberately. It prepares no qubit
+    # state (so no qubit_reset), discriminates nothing (so no
+    # state_readout - the variables are raw ADC samples), and sweeps no
+    # knob at all: its one axis is digitizer TIME, which is not a
+    # capability window. The decision is written down, which is what this
+    # map demands; zero capabilities stays legitimate.
+    "readout_time_of_flight": [],
     "qubit_spectroscopy": ["qubit_reset", "drive_detuning"],
     # the Stark tone's amplitude is a factor of readout_amp; the drive sweeps a
     # drive-detuning window, as in qubit_spectroscopy

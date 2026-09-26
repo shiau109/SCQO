@@ -206,6 +206,7 @@ from .qubit_tomography import QubitTomography  # noqa: E402
 from .qubit_xyz_delay import QubitXyzDelay  # noqa: E402
 from .readout_frequency import ReadoutFrequency  # noqa: E402
 from .readout_power import ReadoutPower  # noqa: E402
+from .readout_time_of_flight import ReadoutTimeOfFlight  # noqa: E402
 from .broadband_resonator_spectroscopy import (  # noqa: E402
     BroadbandResonatorSpectroscopy,
 )
@@ -241,7 +242,8 @@ __all__ = [
     "QubitStarkPhaseEcho",
     "QubitT1Ade", "QubitT1Bayesian",
     "QubitThermalPopulation", "QubitTomography", "QubitXyzDelay",
-    "ReadoutFrequency", "ReadoutPower", "ResonatorSpectroscopy",
+    "ReadoutFrequency", "ReadoutPower", "ReadoutTimeOfFlight",
+    "ResonatorSpectroscopy",
     "ResonatorSpectroscopyFlux", "ResonatorSpectroscopyPowerAmp",
     "ResonatorSpectroscopyPowerChain", "SingleShotReadout",
 ]

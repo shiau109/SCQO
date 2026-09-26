@@ -87,13 +87,13 @@ qubit_drag_equator                  qubit_tomography
 qubit_echo                          qubit_xyz_delay
 qubit_echo_flux_pulse               readout_frequency
 qubit_parametric_drive_amp          readout_power
-qubit_parametric_drive_time         resonator_spectroscopy
-qubit_parity_switch_continuous      resonator_spectroscopy_flux
-qubit_parity_switch_discrete        resonator_spectroscopy_power_amp
-qubit_pi_pulse_error                resonator_spectroscopy_power_chain
-qubit_power_rabi                    single_shot_readout
-qubit_ramsey
-# capabilities: state_readout(17) flux(4) qubit_reset(37) flux_pulse(3) amplitude(5) drive_detuning(4) readout_detuning(5) none(1)
+qubit_parametric_drive_time         readout_time_of_flight
+qubit_parity_switch_continuous      resonator_spectroscopy
+qubit_parity_switch_discrete        resonator_spectroscopy_flux
+qubit_pi_pulse_error                resonator_spectroscopy_power_amp
+qubit_power_rabi                    resonator_spectroscopy_power_chain
+qubit_ramsey                        single_shot_readout
+# capabilities: state_readout(17) flux(4) qubit_reset(37) flux_pulse(3) amplitude(5) drive_detuning(4) readout_detuning(5) none(2)
 # filter: scqo run --capability <name>    detail: scqo run <name> --help
 ```
 

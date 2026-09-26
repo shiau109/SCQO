@@ -1395,6 +1395,160 @@ def test_single_shot_populations_are_nan_when_the_blobs_degenerate(session, monk
     assert out["outcomes"]["q0"] == "failed"  # NaN fidelity fails the gate
 
 
+# ----------------------------------------------------- readout_time_of_flight
+
+def test_time_of_flight_proposes_nothing_because_the_field_is_vendor_only(session):
+    """The one experiment whose answer has no neutral home on EITHER backend.
+    Both fieldmaps say so (`time_of_flight` / `readout_acq_delay` are VendorOnly
+    and their docs name this measurement as what writes them), so proposing
+    anything would hand the loop a field it cannot push."""
+    assert _suggest(session, "readout_time_of_flight") == set()
+
+
+def test_time_of_flight_recovers_the_arrival_in_the_declared_frame(session):
+    """The answer is window origin + arrival, and the frame travels WITH the
+    data - the estimator must not re-derive it from a device whose delay this
+    very experiment asks the operator to change."""
+    out = session.run("readout_time_of_flight",
+                      {"targets": ["q0"], "readout_len_ns": 1000}, update="none")
+    fit = out["fit"]["q0"]
+
+    assert out["outcomes"]["q0"] == "successful"
+    assert math.isfinite(fit["arrival_ns"])
+    assert fit["time_of_flight_ns"] % fit["grid_ns"] == 0
+    # the simulated backend declares no readout_delay_context, so the origin is
+    # the neutral floor of 0 and the answer IS the arrival, rounded to the grid
+    assert fit["window_start_ns"] == 0.0
+    assert fit["time_of_flight_ns"] == pytest.approx(fit["arrival_ns"],
+                                                     abs=fit["grid_ns"])
+    assert fit["arrival_unresolved"] == 0.0 and fit["arrival_at_edge"] == 0.0
+
+
+def test_time_of_flight_takes_the_window_floor_from_the_backend(session, monkeypatch):
+    """window_start_ns=0 means 'as early as THIS instrument allows', so the
+    floor is the backend's to state - and it lands in the answer, not just in
+    the axis."""
+    monkeypatch.setattr(session.backend, "readout_delay_context",
+                        lambda target: {"field": "time_of_flight",
+                                        "floor_ns": 28.0, "grid_ns": 4.0,
+                                        "full_scale_v": 0.5,
+                                        "current_ns": 300.0},
+                        raising=False)
+    fit = session.run("readout_time_of_flight",
+                      {"targets": ["q0"], "readout_len_ns": 1000},
+                      update="none")["fit"]["q0"]
+
+    assert fit["window_start_ns"] == 28.0
+    assert fit["time_of_flight_ns"] == pytest.approx(28.0 + fit["arrival_ns"],
+                                                     abs=fit["grid_ns"])
+    assert fit["old_delay_ns"] == 300.0
+    assert fit["delta_ns"] == pytest.approx(fit["time_of_flight_ns"] - 300.0)
+    assert fit["adc_saturated"] == 0.0          # a declared full scale = checked
+
+
+def test_a_window_origin_below_the_floor_is_refused_in_define_sweep(session,
+                                                                    monkeypatch):
+    """A stated origin is a promise. Raising it silently would hand back a
+    number measured in a frame the operator did not ask for - and the usual
+    reason to state one is reproducing an old run.
+
+    Asserted on define_sweep, not through session.run: the refusal's value is
+    that it lands BEFORE any instrument time, and run() would in any case fold
+    the ValueError into a FAILED result rather than re-raising it."""
+    monkeypatch.setattr(session.backend, "readout_delay_context",
+                        lambda target: {"field": "time_of_flight",
+                                        "floor_ns": 28.0},
+                        raising=False)
+    with pytest.raises(ValueError, match="below this backend's acquisition floor"):
+        _sweep(session, "readout_time_of_flight", window_start_ns=8.0)
+
+    # ...and 0 is not "below the floor", it is "you pick"
+    axes = _sweep(session, "readout_time_of_flight", window_start_ns=0.0,
+                  readout_len_ns=200.0)
+    assert axes["readout_time_ns"].size == 200
+
+
+def test_time_of_flight_hint_reads_the_field_from_the_vendor_inventory():
+    """SCQO must not learn either vendor's spelling. The backend says WHICH
+    field; the path, the unit and the edit line come from the same VendorOnly
+    inventory `scqo state --fields` renders, and the value is converted into
+    that field's declared unit."""
+    from scqo.experiments._tof_hint import apply_hint_lines
+    from scqo.fieldmap import VendorOnly
+
+    qm_like = SimpleNamespace(
+        readout_delay_context=lambda t: {"field": "time_of_flight"},
+        vendor_only=lambda: {"time_of_flight": VendorOnly(
+            path="q.resonator.time_of_flight", unit="ns", kind="vendor",
+            doc="...", edit="edit state.json")})
+    text = "\n".join(apply_hint_lines("readout_time_of_flight", qm_like,
+                                      {"q0": 236.0}))
+    assert "q.resonator.time_of_flight = 236 ns" in text
+    assert "edit state.json" in text
+
+    qblox_like = SimpleNamespace(
+        readout_delay_context=lambda t: {"field": "readout_acq_delay"},
+        vendor_only=lambda: {"readout_acq_delay": VendorOnly(
+            path="element.measure.acq_delay", unit="s", kind="vendor",
+            doc="...")})
+    seconds = "\n".join(apply_hint_lines("readout_time_of_flight", qblox_like,
+                                         {"q0": 236.0}))
+    # the SAME measurement, in the unit that field declares
+    assert "element.measure.acq_delay = 2.36e-07 s" in seconds
+
+
+def test_time_of_flight_hint_degrades_without_taking_the_run_down():
+    """A hint may never break a measurement: no hook, an unknown unit and a
+    RAISING hook each become a line."""
+    from scqo.experiments._tof_hint import apply_hint_lines
+    from scqo.fieldmap import VendorOnly
+
+    bare = "\n".join(apply_hint_lines("readout_time_of_flight",
+                                      SimpleNamespace(), {"q0": 236.0}))
+    assert "declares no readout_delay_context" in bare
+    assert "236 ns by hand" in bare
+
+    def boom(target):
+        raise RuntimeError("no state loaded")
+
+    broken = apply_hint_lines("readout_time_of_flight",
+                              SimpleNamespace(readout_delay_context=boom),
+                              {"q0": 236.0})
+    assert any("RuntimeError: no state loaded" in line for line in broken)
+
+    odd = SimpleNamespace(
+        readout_delay_context=lambda t: {"field": "f"},
+        vendor_only=lambda: {"f": VendorOnly(path="p", unit="furlongs",
+                                             kind="vendor", doc="...")})
+    text = "\n".join(apply_hint_lines("readout_time_of_flight", odd,
+                                      {"q0": 236.0}))
+    assert "not convertible here" in text and "236 ns" in text
+
+    # nothing measured -> nothing printed
+    assert apply_hint_lines("readout_time_of_flight", SimpleNamespace(), {}) == []
+
+
+def test_time_of_flight_prints_the_hint_on_writeback(session, capsys, monkeypatch):
+    """On STDERR (stdout stays parseable JSON), only for targets that SUCCEEDED."""
+    from scqo.fieldmap import VendorOnly
+
+    monkeypatch.setattr(session.backend, "readout_delay_context",
+                        lambda target: {"field": "time_of_flight",
+                                        "floor_ns": 28.0, "current_ns": 300.0},
+                        raising=False)
+    monkeypatch.setattr(session.backend, "vendor_only",
+                        lambda: {"time_of_flight": VendorOnly(
+                            path="q.resonator.time_of_flight", unit="ns",
+                            kind="vendor", doc="...")},
+                        raising=False)
+    session.run("readout_time_of_flight", {"targets": ["q0"]})
+    captured = capsys.readouterr()
+
+    assert "the measured delay is VENDOR-ONLY" in captured.err
+    assert "q.resonator.time_of_flight = " in captured.err
+    assert captured.err.count("q0:") == 1
+
+
 def test_thermal_population_writes_the_mode_fact(session):
     """n_th is a chip FACT: the population the qubit sits at in the dark, with no
     instrument setting realizing it. Nothing else is proposed — the readout's own

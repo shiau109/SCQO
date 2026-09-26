@@ -327,20 +327,47 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Follow-on: **F7** (lift the core push refusal) lost its QM-side half — that driver guard is
   already gone, so only `scqo/labconfig.py::make_session` remains.
 
-### F22 `readout_time_of_flight`, on both backends (medium)
-- Added 2026-09-25 as decision (1) of F21: the qualibrate nodes 01a/01b are the only path that
-  measures time of flight today, and they go with the removal.
-- The user's call: do NOT build a QM-only stopgap first. It is ONE experiment for both backends
-  when it comes - QM's `resonator.time_of_flight` and Qblox's `acq_delay` are the same quantity,
-  and the Qblox side has no path either.
-- Problem meanwhile: after a re-cabling nothing measures the delay, so `time_of_flight` is a
-  hand edit from a known-good value (it is VendorOnly on both drivers - `scqo set` cannot reach
-  it). A wrong one shifts the ADC window and costs readout fidelity with nothing saying so.
-- Where: a new `scqo/experiments/readout_time_of_flight.py` + a probe per driver; the shape to
-  copy for the writeback is the cryoscope pair, which prints the vendor command rather than
-  proposing a neutral knob. Last real use: 01b_time_of_flight_mw_fem, 2026-06-05.
-- Done when: one `scqo run readout_time_of_flight` on each backend reports a delay that matches
-  the node's number on the same wiring, and the docs stop naming the retired nodes.
+### F22 `readout_time_of_flight` — LANDED offline 2026-09-26, HARDWARE OWED
+- Built as decision (1) of F21: the retired qualibrate nodes 01a/01b were the only path
+  that measured time of flight, and the Qblox side never had one. ONE experiment for both
+  backends, as the operator asked - not a QM-only stopgap.
+- What it does: emits a readout pulse, opens the acquisition window at a DECLARED EARLY
+  ORIGIN, and records the RAW digitizer trace averaged over shots. The pulse edge in that
+  trace is the delay. Absolute answer = `window_start_ns + arrival`, rounded onto the 4 ns
+  grid the vendor fields take.
+- THE DESIGN POINT, because it is the one the obvious approach gets wrong: the window does
+  NOT open at the channel's current setting. If that setting is already right the pulse is
+  present at sample 0, there is no pre-arrival baseline, and the threshold has nothing to
+  sit between - the measurement would work only while it was not needed. The retired node
+  did the same thing (it pinned `time_of_flight` to 28 ns for the run and added the two
+  back together at writeback); here the frame is resolved neutrally, travels with the
+  dataset, and the estimator returns the absolute value, so a re-fit cannot silently use a
+  different origin than the one the data was taken in.
+- Proposes NOTHING. The field is VendorOnly on both backends and both fieldmaps already
+  said the TOF measurement's product is written there offline. `_tof_hint` prints it: the
+  backend names WHICH VendorOnly entry (`readout_delay_context`, the `power_context`
+  shape), and the path/unit/edit come from that inventory, so the neutral layer learns
+  neither vendor's spelling and the value is converted into the unit that field declares
+  (236 ns on QM, 2.36e-07 s on Qblox).
+- Where: `scqat/tools/pulse_arrival.py` + `scqat/estimators/readout_time_of_flight/`;
+  `SCQO/scqo/experiments/readout_time_of_flight.py` + `_tof_hint.py`; a probe and a
+  `readout_delay_context` hook in each driver.
+- **HARDWARE OWED, and this is the done-when: one `scqo run readout_time_of_flight` on each
+  backend, reporting a delay that matches the retired node's number on the same wiring.**
+  Two specific things to watch, neither provable offline:
+  (a) QBLOX: the SHAPE the cluster returns for a `Trace` acquisition has never been seen
+  here. The canonicalization assumes one complex array per `acq_channel` over the trace
+  samples, which is what every other protocol returns over its swept axis. If that is
+  wrong, `_to_canonical` is where it lands.
+  (b) BOTH: if the figure shows a flat |IQ| with two quadratures that look like noise, the
+  per-shot phase reset did not take (QM `reset_if_phase`, Qblox `ResetClockPhase`) and the
+  averaged step washed out - the fit reports `arrival_unresolved` rather than a number, so
+  it fails loudly, but the cause is the first thing to check.
+  (c) QM only: the probe temporarily writes `resonator.time_of_flight` and restores it in a
+  `finally`. Confirm the setup's value is unchanged after a run (`scqo state --fields`).
+- Qblox declares no `full_scale_v`, so its saturation flag reports NaN (unchecked) rather
+  than a verdict against a guessed input range. Fill it in once the QRM's real range with
+  its input attenuation is known.
 
 ## Known issues / potential problems (found in passing)
 
