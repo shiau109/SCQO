@@ -256,7 +256,7 @@ class QubitSpectroscopyCryoscopeParameters(
 
     @model_validator(mode="after")
     def _windows_order(self) -> "QubitSpectroscopyCryoscopeParameters":
-        # the detuning-window ordering lives on the drive_detuning mixin
+        # the detuning window's zero-width refusal lives on the drive_detuning mixin
         if self.max_wait_ns <= self.min_wait_ns:
             raise ValueError(
                 f"max_wait_ns ({self.max_wait_ns}) must exceed min_wait_ns "
@@ -342,8 +342,8 @@ class QubitSpectroscopyCryoscope(Experiment):
         return float(quad * self.params.flux_pulse_amp_v ** 2)
 
     def define_sweep(self) -> dict[str, np.ndarray]:
-        # the mixin normalises the edges to an ascending axis, which peak_fit's
-        # (un-abs'd) gamma bound requires — see _capabilities/detuning.py.
+        # the detuning axis runs start -> end as given (either direction); the
+        # estimator canonicalizes it, so the order never reaches the taps
         wait = log_time_axis_ns(
             self.params.min_wait_ns, self.params.max_wait_ns, self.params.num_wait_points
         )
@@ -374,7 +374,7 @@ class QubitSpectroscopyCryoscope(Experiment):
 
         use_state = self.params.use_state_discrimination
         rng = np.random.default_rng(stable_seed("qubit_spectroscopy_cryoscope", *qubits))
-        fwhm = (detuning[-1] - detuning[0]) / 25.0
+        fwhm = float(np.ptp(detuning)) / 25.0  # by value: the sweep may run high -> low
         for k, q in enumerate(qubits):
             # the drive is parked here; the peak position is measured relative to it
             offset = self.resolved_center_offset_hz(q)

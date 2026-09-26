@@ -163,7 +163,7 @@ class QubitSpectroscopyFluxPulse(Experiment):
             quan = (flux - sweet) / period
             f01_ghz = np.sqrt(8.0 * ec * ej_sum * np.abs(np.cos(np.pi * quan))) - ec
             centers = f01_ghz * 1e9 - f01_now  # as detuning
-            fwhm = (detuning[-1] - detuning[0]) / 40
+            fwhm = float(np.ptp(detuning)) / 40  # by value: the sweep may run high -> low
             noise = 0.02
             for j in range(flux.size):
                 peak = 1.0 / (1.0 + ((detuning - centers[j]) / (fwhm / 2)) ** 2)

@@ -44,8 +44,8 @@ from ._capabilities.amplitude import (
     ABS_AMP_COORD,
     ABS_AMP_LABEL,
     AMP_AXIS,
-    MAX_AMP_FACTOR_DESC,
-    MIN_AMP_FACTOR_DESC,
+    END_AMP_FACTOR_DESC,
+    START_AMP_FACTOR_DESC,
     NUM_AMP_POINTS_DESC,
     AmplitudeSweepParameters,
     amp_anchor,
@@ -88,9 +88,10 @@ class QubitResonatorStarkParameters(
         "the drive because the Stark photons pull a transmon under its resonator "
         "down; flip it for a qubit above its resonator.")
     end_drive_detuning_hz: float = Field(10.0e6, description=END_DRIVE_DETUNING_DESC)
-    # from ZERO: the first row is the bare line, the anchor of the shift
-    min_amp_factor: float = Field(0.0, ge=0.0, description=MIN_AMP_FACTOR_DESC)
-    max_amp_factor: float = Field(1.5, gt=0.0, lt=2.0, description=MAX_AMP_FACTOR_DESC)
+    # from ZERO: the zero-amplitude row is the bare line, the anchor of the shift
+    # (scqat fits the shift against amp**2, so the sweep order does not matter)
+    start_amp_factor: float = Field(0.0, ge=0.0, lt=2.0, description=START_AMP_FACTOR_DESC)
+    end_amp_factor: float = Field(1.5, ge=0.0, lt=2.0, description=END_AMP_FACTOR_DESC)
     num_amp_points: int = Field(16, gt=1, description=NUM_AMP_POINTS_DESC)
     drive_power_dbm: float = Field(
         -25.0,

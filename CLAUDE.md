@@ -288,7 +288,7 @@ scqo/
                     #   census test is the authority; every other experiment refuses
                     #   by name,
                     #   amplitude.py = the swept amplitude window + the ABSOLUTE amplitude
-                    #   behind it. AmplitudeSweepParameters owns min/max_amp_factor +
+                    #   behind it. AmplitudeSweepParameters owns start/end_amp_factor +
                     #   num_amp_points on ONE axis, AMP_AXIS = `amp_prefactor` (scqat and
                     #   the QM probes already used that name, so nothing renames at the
                     #   boundary). The window is a FACTOR of the target's stored
@@ -303,7 +303,8 @@ scqo/
                     #   name, since catalog.py guarantees uniqueness across channel kinds,
                     #   so the kind would be a second unchecked source of truth — and
                     #   estimate() reads its `old_<knob>` through the same amp_anchor.
-                    #   The neutral bound is lt=2.0 (the widest ANY backend expresses);
+                    #   The neutral bounds are ge=0 and lt=2.0 on BOTH edges (2.0 = the
+                    #   widest ANY backend expresses);
                     #   the real limit is factor x stored <= 1 and each driver refuses it
                     #   BY NAME (scqo-qm + scqo-qblox, each experiments/_amp_limits),
                     #   detuning.py = the swept frequency window in TWO FRAMES
@@ -317,12 +318,15 @@ scqo/
                     #   resonator_spectroscopy* + readout_frequency). Explicit
                     #   [start, end] so an ASYMMETRIC window is expressible — on the
                     #   readout side that is the physics, since power and flux sweeps
-                    #   both walk the dip DOWN from f_dress0 toward f_bare. The edges
-                    #   take EITHER order (only zero width is refused) and the axis is
-                    #   normalised ASCENDING in _window_sweep — both drivers could sweep
-                    #   descending, but scqat's peak_fit inverts its width bound on a
-                    #   descending axis and mis-fits SILENTLY, so the one ordering point
-                    #   is window_bounds() (never a chained start <= x <= end).
+                    #   both walk the dip DOWN from f_dress0 toward f_bare.
+                    #   START/END IS A TRAVERSAL ORDER on all three windows (flux,
+                    #   detuning, amplitude; decided 2026-09-26): the probe walks start -> end
+                    #   either way, dataset.nc keeps that order, only zero width is
+                    #   refused (_window.py), and scqat's estimators are
+                    #   direction-blind (scqat tools.sweep_order), so the order never
+                    #   moves a fit (tests/test_sweep_order.py, every carrier). A range
+                    #   check goes through window_bounds(), never a chained
+                    #   start <= x <= end.
                     #   THE FRAME IS IN THE
                     #   FIELD NAME and the two mixins are independent SIBLINGS (unlike
                     #   the flux frames, where _pulse subclasses absolute): one

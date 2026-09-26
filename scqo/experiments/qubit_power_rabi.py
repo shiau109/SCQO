@@ -20,8 +20,8 @@ from ._capabilities.amplitude import (
     ABS_AMP_COORD,
     ABS_AMP_LABEL,
     AMP_AXIS,
-    MAX_AMP_FACTOR_DESC,
-    MIN_AMP_FACTOR_DESC,
+    END_AMP_FACTOR_DESC,
+    START_AMP_FACTOR_DESC,
     NUM_AMP_POINTS_DESC,
     AmplitudeSweepParameters,
     amp_anchor,
@@ -47,11 +47,12 @@ class QubitPowerRabiParameters(TargetSelection, AveragingParameters, StateReadou
                                QubitResetParameters, AmplitudeSweepParameters):
     """Inputs for power Rabi."""
 
-    # a full Rabi arch from zero, so the first extremum IS the pi pulse. The top
-    # stops below 2.0: QUA's dynamic amplitude_scale is fixed-point on (-2, 2),
-    # so a sweep that INCLUDES 2.0 emits an unrepresentable last point.
-    min_amp_factor: float = Field(0.0, ge=0.0, description=MIN_AMP_FACTOR_DESC)
-    max_amp_factor: float = Field(1.9, gt=0.0, lt=2.0, description=MAX_AMP_FACTOR_DESC)
+    # a full Rabi arch from zero, so the first extremum above zero IS the pi
+    # pulse (scqat measures from the LOWEST amplitude, whichever way the sweep
+    # ran). 1.9, not 2.0: QUA's dynamic amplitude_scale is fixed-point on
+    # (-2, 2), so a sweep that INCLUDES 2.0 emits an unrepresentable point.
+    start_amp_factor: float = Field(0.0, ge=0.0, lt=2.0, description=START_AMP_FACTOR_DESC)
+    end_amp_factor: float = Field(1.9, ge=0.0, lt=2.0, description=END_AMP_FACTOR_DESC)
     num_amp_points: int = Field(101, gt=1, description=NUM_AMP_POINTS_DESC)
 
 

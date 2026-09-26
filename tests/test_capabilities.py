@@ -25,30 +25,34 @@ from scqo.experiments._capabilities import (
     ACTIVE_RESET_ROUNDS_DESC,
     AMP_AXIS,
     DETUNING_AXIS,
+    END_AMP_FACTOR_DESC,
     END_DRIVE_DETUNING_DESC,
+    END_FLUX_DESC,
+    END_FLUX_PULSE_DESC,
     END_READOUT_DETUNING_DESC,
     FLUX_AXIS,
-    MAX_AMP_FACTOR_DESC,
-    MAX_FLUX_DESC,
-    MAX_FLUX_PULSE_DESC,
-    MIN_AMP_FACTOR_DESC,
-    MIN_FLUX_DESC,
-    MIN_FLUX_PULSE_DESC,
     NUM_AMP_POINTS_DESC,
     NUM_AMP_POINTS_OPTIONAL_DESC,
     NUM_FLUX_DESC,
     NUM_FREQ_POINTS_DESC,
     RESET_METHOD_DESC,
+    START_AMP_FACTOR_DESC,
     START_DRIVE_DETUNING_DESC,
+    START_FLUX_DESC,
+    START_FLUX_PULSE_DESC,
     START_READOUT_DETUNING_DESC,
     THERMALIZATION_TIME_DESC,
     AmplitudeSweepParameters,
     DriveDetuningSweepParameters,
     ReadoutDetuningSweepParameters,
     FluxComponentParameters,
+    FluxPulseSweepParameters,
+    FluxSweepParameters,
     QubitResetParameters,
     StateReadoutParameters,
+    amp_sweep,
     drive_detuning_sweep,
+    flux_sweep,
     foreign_flux_source,
     readout_detuning_sweep,
     reset_wait_ns,
@@ -269,16 +273,16 @@ def test_canonical_field_text_never_drifts():
             # the window text is per-FRAME; num_flux_points carries no frame
             # information and reuses the one constant in both
             pulse = "flux_pulse" in entry["capabilities"]
-            assert props["min_flux_v"]["description"] == (
-                MIN_FLUX_PULSE_DESC if pulse else MIN_FLUX_DESC), name
-            assert props["max_flux_v"]["description"] == (
-                MAX_FLUX_PULSE_DESC if pulse else MAX_FLUX_DESC), name
+            assert props["start_flux_v"]["description"] == (
+                START_FLUX_PULSE_DESC if pulse else START_FLUX_DESC), name
+            assert props["end_flux_v"]["description"] == (
+                END_FLUX_PULSE_DESC if pulse else END_FLUX_DESC), name
             assert props["num_flux_points"]["description"].startswith(NUM_FLUX_DESC), name
         if "amplitude" in entry["capabilities"]:
             # every carrier re-declares the window (each has its own defaults), so
             # the TEXT is the only thing stopping four descriptions drifting apart
-            assert props["min_amp_factor"]["description"] == MIN_AMP_FACTOR_DESC, name
-            assert props["max_amp_factor"]["description"] == MAX_AMP_FACTOR_DESC, name
+            assert props["start_amp_factor"]["description"] == START_AMP_FACTOR_DESC, name
+            assert props["end_amp_factor"]["description"] == END_AMP_FACTOR_DESC, name
             # deterministic_benchmarking allows a single point and says so
             assert props["num_amp_points"]["description"] in (
                 NUM_AMP_POINTS_DESC, NUM_AMP_POINTS_OPTIONAL_DESC), name
@@ -333,10 +337,10 @@ def test_the_two_flux_frames_say_different_things():
     copy-paste that made them identical would erase the distinction while every
     other test still passed.
     """
-    assert MIN_FLUX_DESC != MIN_FLUX_PULSE_DESC
-    assert MAX_FLUX_DESC != MAX_FLUX_PULSE_DESC
-    assert "idle_flux" in MIN_FLUX_PULSE_DESC
-    assert "idle_flux" not in MIN_FLUX_DESC
+    assert START_FLUX_DESC != START_FLUX_PULSE_DESC
+    assert END_FLUX_DESC != END_FLUX_PULSE_DESC
+    assert "idle_flux" in START_FLUX_PULSE_DESC
+    assert "idle_flux" not in START_FLUX_DESC
 
 
 def test_flux_pulse_names_carry_the_suffix():
@@ -644,29 +648,28 @@ def test_the_drive_detuning_capability_is_derived_from_the_mixin():
         assert issubclass(cls.Parameters, DriveDetuningSweepParameters), name
 
 
-def test_drive_detuning_edges_take_either_order():
-    """The pair DEFINES the window, it does not choose a traversal direction.
+def _assert_traversal_order(axis_up, axis_down, start, end):
+    """``axis_down`` is ``axis_up`` walked the other way: same points, start
+    first, NEVER re-sorted (the dataset keeps the order the probe walked)."""
+    assert axis_down[0] == pytest.approx(start)
+    assert axis_down[-1] == pytest.approx(end)
+    assert axis_down == pytest.approx(axis_up[::-1])
+    assert np.all(np.diff(axis_down) < 0)
 
-    A reversed pair is accepted and normalised to the SAME ascending axis --
-    the two orderings are the identical measurement. Normalising here is what
-    keeps scqat safe: `peak_fit` builds its width bound as
-    `detuning[-1] - detuning[0]` with no abs(), so a descending axis inverts it
-    and the fit degrades silently (a 4 MHz line measured back as 174 MHz).
-    """
+
+def test_drive_detuning_edges_are_a_traversal_order():
+    """start -> end IN THAT ORDER (decided 2026-09-26): a high -> low pair sweeps high
+    -> low. It used to be normalised ascending, only to keep a scqat fit that
+    misread a descending axis; scqat now canonicalizes on entry, so the order
+    is the caller's and changes no fitted number."""
     up = DriveDetuningSweepParameters(start_drive_detuning_hz=-80e6,
                                       end_drive_detuning_hz=20e6,
                                       num_drive_freq_points=101)
     down = DriveDetuningSweepParameters(start_drive_detuning_hz=20e6,
                                         end_drive_detuning_hz=-80e6,
                                         num_drive_freq_points=101)
-    axis_up = drive_detuning_sweep(up)[DETUNING_AXIS]
-    axis_down = drive_detuning_sweep(down)[DETUNING_AXIS]
-    assert axis_up == pytest.approx(axis_down)          # same measurement
-    assert np.all(np.diff(axis_down) > 0)               # ... and ascending
-    assert axis_down[0] == pytest.approx(-80e6)
-    assert axis_down[-1] == pytest.approx(20e6)
-    # the edges themselves are preserved verbatim -- only the AXIS is ordered
-    assert down.start_drive_detuning_hz == 20e6
+    _assert_traversal_order(drive_detuning_sweep(up)[DETUNING_AXIS],
+                            drive_detuning_sweep(down)[DETUNING_AXIS], 20e6, -80e6)
 
     # a zero-width window is a typo, not a measurement
     with pytest.raises(ValidationError, match="zero-width"):
@@ -705,30 +708,27 @@ def test_the_readout_detuning_capability_is_derived_from_the_mixin():
         assert issubclass(cls.Parameters, ReadoutDetuningSweepParameters), name
 
 
-def test_readout_detuning_edges_take_either_order():
-    """The readout frame's twin of the drive rule — and the frame where writing
-    the pair 'downward' is the natural one, since a punchout walks the dip DOWN
-    from f_dress0 toward f_bare."""
+def test_readout_detuning_edges_are_a_traversal_order():
+    """The readout frame's twin of the drive rule — and the frame where sweeping
+    DOWN is physics you may want to see: a resonator driven into bistability
+    answers differently swept up than down."""
     up = ReadoutDetuningSweepParameters(start_readout_detuning_hz=-15e6,
                                         end_readout_detuning_hz=10e6,
                                         num_readout_freq_points=51)
     down = ReadoutDetuningSweepParameters(start_readout_detuning_hz=10e6,
                                           end_readout_detuning_hz=-15e6,
                                           num_readout_freq_points=51)
-    axis_up = readout_detuning_sweep(up)[DETUNING_AXIS]
-    axis_down = readout_detuning_sweep(down)[DETUNING_AXIS]
-    assert axis_up == pytest.approx(axis_down)
-    assert np.all(np.diff(axis_down) > 0)
-    assert axis_down[0] == pytest.approx(-15e6)
+    _assert_traversal_order(readout_detuning_sweep(up)[DETUNING_AXIS],
+                            readout_detuning_sweep(down)[DETUNING_AXIS], 10e6, -15e6)
 
     with pytest.raises(ValidationError, match="zero-width"):
         ReadoutDetuningSweepParameters(start_readout_detuning_hz=0.0,
                                        end_readout_detuning_hz=0.0)
 
 
-def test_window_bounds_is_the_one_ordering_point():
+def test_window_bounds_is_the_range_check_by_value():
     """Every 'is x inside the window?' test must go through this helper: a
-    chained ``start <= x <= end`` is silently ALWAYS FALSE on a reversed pair,
+    chained ``start <= x <= end`` is silently ALWAYS FALSE on a descending pair,
     which would fail every good fit while looking like a physics problem."""
     assert window_bounds(-80e6, 20e6) == (-80e6, 20e6)
     assert window_bounds(20e6, -80e6) == (-80e6, 20e6)
@@ -752,3 +752,77 @@ def test_the_two_detuning_frames_are_independent_siblings():
 
     assert not (own(DriveDetuningSweepParameters)
                 & own(ReadoutDetuningSweepParameters))
+
+
+# --------------------------------------------------------------------------
+# flux + amplitude windows: a traversal ORDER too (2026-09-26)
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("mixin", [FluxSweepParameters, FluxPulseSweepParameters])
+def test_flux_edges_are_a_traversal_order(mixin):
+    """Both frames: start_flux_v -> end_flux_v as given, and the only refusal is
+    a zero-width window (a long flux tail or hysteresis is exactly why the
+    direction must be the caller's)."""
+    up = mixin(start_flux_v=-0.1, end_flux_v=0.2, num_flux_points=31)
+    down = mixin(start_flux_v=0.2, end_flux_v=-0.1, num_flux_points=31)
+    _assert_traversal_order(flux_sweep(up)[FLUX_AXIS], flux_sweep(down)[FLUX_AXIS],
+                            0.2, -0.1)
+    with pytest.raises(ValidationError, match="zero-width"):
+        mixin(start_flux_v=0.05, end_flux_v=0.05)
+
+
+def test_the_old_flux_names_are_refused():
+    """No aliases (no backward compatibility): extra="forbid" rejects the old
+    spelling loudly rather than silently sweeping the default window."""
+    with pytest.raises(ValidationError, match="min_flux_v"):
+        FluxSweepParameters(min_flux_v=-0.1)
+    with pytest.raises(ValidationError, match="max_amp_factor"):
+        AmplitudeSweepParameters(max_amp_factor=1.2)
+
+
+def test_amplitude_edges_are_a_traversal_order():
+    """The old ``min < max`` validator is gone: a high -> low amplitude sweep is
+    legal and played in that order; only zero width is refused."""
+    up = AmplitudeSweepParameters(start_amp_factor=0.2, end_amp_factor=1.4,
+                                  num_amp_points=13)
+    down = AmplitudeSweepParameters(start_amp_factor=1.4, end_amp_factor=0.2,
+                                    num_amp_points=13)
+    _assert_traversal_order(amp_sweep(up)[AMP_AXIS], amp_sweep(down)[AMP_AXIS],
+                            1.4, 0.2)
+    with pytest.raises(ValidationError, match="zero-width"):
+        AmplitudeSweepParameters(start_amp_factor=1.0, end_amp_factor=1.0)
+
+
+@pytest.mark.parametrize("edge", ["start_amp_factor", "end_amp_factor"])
+@pytest.mark.parametrize("value", [-0.1, 2.0])
+def test_amplitude_bounds_hold_on_both_edges(edge, value):
+    """Either edge may be the larger one now, so >= 0 and < 2 bind BOTH."""
+    other = "end_amp_factor" if edge == "start_amp_factor" else "start_amp_factor"
+    with pytest.raises(ValidationError, match=edge):
+        AmplitudeSweepParameters(**{edge: value, other: 1.0})
+
+
+def test_every_amplitude_carrier_bounds_both_edges():
+    """Every carrier re-declares the pair with its own defaults, so the schema is
+    where a one-sided bound would hide: each edge must keep a lower bound at or
+    above 0 and an upper bound at or below 2 (QUA's amplitude_scale range)."""
+    for name, entry in _catalog_by_name().items():
+        if "amplitude" not in entry["capabilities"]:
+            continue
+        props = entry["parameters_schema"]["properties"]
+        for edge in ("start_amp_factor", "end_amp_factor"):
+            spec = props[edge]
+            low = spec.get("minimum", spec.get("exclusiveMinimum"))
+            high = spec.get("exclusiveMaximum", spec.get("maximum"))
+            assert low is not None and low >= 0.0, (name, edge, spec)
+            assert high is not None and high <= 2.0, (name, edge, spec)
+
+
+def test_an_explicit_benchmarking_list_keeps_its_order():
+    """The one carrier overriding amp_values() must honour the order too: an
+    explicit list is played as given, never sorted."""
+    cls = get("qubit_deterministic_benchmarking")
+    listed = cls.Parameters(targets=["q0"], amp_prefactors=[1.05, 0.95, 1.0])
+    assert list(amp_sweep(listed)[AMP_AXIS]) == [1.05, 0.95, 1.0]
+    window = cls.Parameters(targets=["q0"], start_amp_factor=1.1,
+                            end_amp_factor=0.9, num_amp_points=5)
+    assert amp_sweep(window)[AMP_AXIS] == pytest.approx([1.1, 1.05, 1.0, 0.95, 0.9])

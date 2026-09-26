@@ -21,8 +21,8 @@ from pydantic import Field
 
 from ..contract import DatasetContract
 from ._capabilities.flux import (
-    MAX_FLUX_PULSE_DESC,
-    MIN_FLUX_PULSE_DESC,
+    END_FLUX_PULSE_DESC,
+    START_FLUX_PULSE_DESC,
     FluxPulseSweepParameters,
     flux_anchor_v,
     flux_sweep,
@@ -52,8 +52,8 @@ class QubitEchoFluxPulseParameters(
     max_wait_ns: float = Field(40000.0, gt=0.0, description="Maximum idle delay (total tau).")
     num_wait_points: int = Field(51, gt=1, description="Number of wait time points.")
     # capability defaults narrowed to the coherence window (canonical text constants)
-    min_flux_v: float = Field(-0.08, description=MIN_FLUX_PULSE_DESC)
-    max_flux_v: float = Field(0.08, description=MAX_FLUX_PULSE_DESC)
+    start_flux_v: float = Field(-0.08, description=START_FLUX_PULSE_DESC)
+    end_flux_v: float = Field(0.08, description=END_FLUX_PULSE_DESC)
 
 
 class QubitEchoFluxPulseResult(Result):

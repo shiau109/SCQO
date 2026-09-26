@@ -278,8 +278,10 @@ def test_resonator_stark_recovers_the_planted_shift(session):
     rng = np.random.default_rng(stable_seed("qubit_resonator_stark", "q0"))
     f0 = high - rng.uniform(0.2, 0.35) * width
     pull = rng.uniform(0.25, 0.45) * width
+    # the sim's a_max is the window's LARGEST |amplitude|, whichever edge it is
+    a_max = max(abs(p.start_amp_factor), abs(p.end_amp_factor))
     assert fit["stark_shift_at_readout_hz"] == pytest.approx(
-        -pull / p.max_amp_factor ** 2, rel=0.03)
+        -pull / a_max ** 2, rel=0.03)
     assert fit["zero_photon_detuning_hz"] == pytest.approx(f0, abs=0.3e6)
     assert fit["zero_photon_freq_hz"] == pytest.approx(
         fit["old_drive_freq_hz"] + fit["zero_photon_detuning_hz"])
@@ -1048,10 +1050,10 @@ def test_cryoscope_prints_the_apply_hint_on_writeback(session, capsys, monkeypat
 
 def test_spectroscopy_cryoscope_window_and_drive_len_validation():
     """The detuning window is the drive_detuning capability's explicit
-    [start, end] range (asymmetric allowed, edges in either order, axis always
-    emitted ascending), and the spectroscopy tone's shape parameters carry their
-    own bounds (drive_len_ns on the 4 ns grid at or above 16 ns). define_sweep
-    reads only params, so a stub backend exercises it."""
+    [start, end] traversal (asymmetric allowed, either direction, swept in the
+    order given), and the spectroscopy tone's shape parameters carry their own
+    bounds (drive_len_ns on the 4 ns grid at or above 16 ns). define_sweep reads
+    only params, so a stub backend exercises it."""
     cls = registry.get("qubit_spectroscopy_cryoscope")
 
     # the default window reproduces the old symmetric +/-100 MHz, 101 points
@@ -1060,21 +1062,21 @@ def test_spectroscopy_cryoscope_window_and_drive_len_validation():
     assert det[0] == pytest.approx(-100e6) and det[-1] == pytest.approx(100e6)
     assert det.size == 101
 
-    # an asymmetric, one-sided window flows through ascending
+    # an asymmetric, one-sided window flows through as given
     asym = cls(SimpleNamespace(device=None),
                cls.Parameters(targets=["q0"], start_drive_detuning_hz=-70e6,
                               end_drive_detuning_hz=0.0, num_drive_freq_points=71))
     det = asym.define_sweep()["detuning_hz"]
     assert det[0] == pytest.approx(-70e6) and det[-1] == pytest.approx(0.0)
     assert det.size == 71
-    assert np.all(np.diff(det) > 0)  # ascending — peak_fit's gamma bound needs it
+    assert np.all(np.diff(det) > 0)
 
-    # the SAME window written the other way round is the same measurement: the
-    # edges define the window, the axis is normalised ascending either way
+    # the same window written high -> low is swept high -> low (2026-09-26):
+    # the same points, walked the other way, never re-sorted
     rev = cls(SimpleNamespace(device=None),
               cls.Parameters(targets=["q0"], start_drive_detuning_hz=0.0,
                              end_drive_detuning_hz=-70e6, num_drive_freq_points=71))
-    assert rev.define_sweep()["detuning_hz"] == pytest.approx(det)
+    assert rev.define_sweep()["detuning_hz"] == pytest.approx(det[::-1])
 
     # only a zero-width window is refused
     with pytest.raises(ValueError, match="zero-width"):

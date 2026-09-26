@@ -35,6 +35,15 @@ re-references (``absolute = old_idle_flux + fitted``) before writing
 ``flux_offset``, because that field is a property of the chip's transfer
 function, not of where the run happened to be parked.
 
+THE WINDOW IS A TRAVERSAL ORDER: ``start_flux_v`` -> ``end_flux_v``, in either
+direction, and the dataset keeps the order the probe walked. Consecutive flux
+points are not always independent — a long pulse tail, heating, hysteresis in the
+SQUID loop — so which way the sweep went has to be the caller's choice and visible
+in the stored data (decided 2026-09-26). The analysis side cannot tell the
+direction (scqat canonicalizes on entry), so the order changes what the instrument
+did, never a fitted number. Only a zero-width window is refused; the mechanism and
+the rationale are shared with the detuning and amplitude windows in ``.._window``.
+
 ``pair_zz_coupler`` is deliberately NOT on this capability: it sweeps a pair's
 tunable coupler through the ``coupler_bias`` operation and keeps its coupler
 naming.
@@ -51,9 +60,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ...parameters import Parameters
+from .._window import refuse_zero_width
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...experiment import Experiment
@@ -72,14 +82,27 @@ FLUX_FRAME_RELATIVE = "relative_to_idle_flux"
 #: The ``_PULSE_`` pair is the RELATIVE frame's wording; the two pairs must stay
 #: different (a copy-paste that merged them would erase the frame distinction
 #: from the only surface an AI reads).
-MIN_FLUX_DESC = "Lowest flux bias (V) on the swept flux line."
-MAX_FLUX_DESC = "Highest flux bias (V)."
-NUM_FLUX_DESC = "Number of flux points."
-MIN_FLUX_PULSE_DESC = (
-    "Lowest flux-pulse amplitude (V) RELATIVE to the flux channel's idle_flux "
-    "(0 = stay parked at the standing bias)."
+START_FLUX_DESC = (
+    "First flux bias (V) of the sweep, on the swept flux line. The probe walks "
+    "start_flux_v -> end_flux_v IN THAT ORDER, either direction, and the data "
+    "keeps it: sweep high -> low when the order matters (a flux tail, "
+    "hysteresis). The fitted result does not depend on it."
 )
-MAX_FLUX_PULSE_DESC = "Highest flux-pulse amplitude (V) relative to idle_flux."
+END_FLUX_DESC = (
+    "Last flux bias (V) of the sweep. May be above or below start_flux_v; only "
+    "a zero-width window (both edges equal) is refused."
+)
+NUM_FLUX_DESC = "Number of flux points."
+START_FLUX_PULSE_DESC = (
+    "First flux-pulse amplitude (V) of the sweep, RELATIVE to the flux "
+    "channel's idle_flux (0 = stay parked at the standing bias). The probe walks "
+    "start_flux_v -> end_flux_v IN THAT ORDER, either direction, and the data "
+    "keeps it; the fitted result does not depend on it."
+)
+END_FLUX_PULSE_DESC = (
+    "Last flux-pulse amplitude (V) of the sweep, relative to idle_flux. May be "
+    "above or below start_flux_v; only a zero-width window is refused."
+)
 
 
 class FluxSweepParameters(Parameters):
@@ -101,11 +124,22 @@ class FluxSweepParameters(Parameters):
     The backend refuses what its port cannot emit, by name and with the remedy —
     the same shape as ``reset_method="active"``, which the neutral layer offers
     and a backend that cannot realize it refuses rather than downgrades.
+
+    The two edges are a traversal ORDER (module docstring); only a zero-width
+    window is refused.
     """
 
-    min_flux_v: float = Field(-0.3, description=MIN_FLUX_DESC)
-    max_flux_v: float = Field(0.3, description=MAX_FLUX_DESC)
+    start_flux_v: float = Field(-0.3, description=START_FLUX_DESC)
+    end_flux_v: float = Field(0.3, description=END_FLUX_DESC)
     num_flux_points: int = Field(21, gt=1, description=NUM_FLUX_DESC)
+
+    @model_validator(mode="after")
+    def _flux_window_spans(self) -> "FluxSweepParameters":
+        refuse_zero_width(
+            self.start_flux_v, self.end_flux_v,
+            start_name="start_flux_v", end_name="end_flux_v",
+            points_name="num_flux_points", quantity="flux bias")
+        return self
 
 
 class FluxPulseSweepParameters(FluxSweepParameters):
@@ -119,8 +153,8 @@ class FluxPulseSweepParameters(FluxSweepParameters):
     frame information and reuses ``NUM_FLUX_DESC``.
     """
 
-    min_flux_v: float = Field(-0.3, description=MIN_FLUX_PULSE_DESC)
-    max_flux_v: float = Field(0.3, description=MAX_FLUX_PULSE_DESC)
+    start_flux_v: float = Field(-0.3, description=START_FLUX_PULSE_DESC)
+    end_flux_v: float = Field(0.3, description=END_FLUX_PULSE_DESC)
 
 
 class FluxComponentParameters(Parameters):
@@ -140,10 +174,11 @@ class FluxComponentParameters(Parameters):
 
 
 def flux_sweep(params: FluxSweepParameters) -> dict[str, np.ndarray]:
-    """The define_sweep fragment: ``{FLUX_AXIS: linspace(min_flux_v, max_flux_v, n)}``."""
+    """The define_sweep fragment: ``{FLUX_AXIS: linspace(start_flux_v, end_flux_v, n)}``
+    — in THAT order, descending when ``start_flux_v > end_flux_v``."""
     return {
         FLUX_AXIS: np.linspace(
-            params.min_flux_v, params.max_flux_v, params.num_flux_points
+            params.start_flux_v, params.end_flux_v, params.num_flux_points
         )
     }
 

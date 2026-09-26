@@ -424,7 +424,7 @@ class ResonatorSpectroscopyFlux(Experiment):
         detuning = coords["detuning_hz"]
         targets = self.params.targets
         rng = np.random.default_rng(stable_seed("resonator_spectroscopy_flux", *targets))
-        kappa = (detuning[-1] - detuning[0]) / 40
+        kappa = float(np.ptp(detuning)) / 40  # by value: the sweep may run high -> low
         i_data = np.empty((len(targets), flux.size, detuning.size))
         q_data = np.empty_like(i_data)
         for k, q in enumerate(targets):
