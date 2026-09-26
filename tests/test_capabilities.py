@@ -120,6 +120,7 @@ EXPECTED_CAPABILITIES = {
     "qubit_stark_phase_echo": ["state_readout", "qubit_reset"],
     "qubit_relaxation_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
     "qubit_echo_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
+    "qubit_ramsey_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
     # parametric drive (both siblings): state_readout + qubit_reset, but NO flux
     # capability — the swept axes are the modulation TONE's own amplitude
     # (absolute volts of a new RF drive, not a z-bias window), its frequency
@@ -481,6 +482,7 @@ def test_foreign_flux_source_guard():
     ("qubit_sqrb", {"num_random_sequences": 5, "max_circuit_depth": 16}),
     ("qubit_relaxation_flux_pulse", {"num_flux_points": 5, "num_wait_points": 11}),
     ("qubit_echo_flux_pulse", {"num_flux_points": 5, "num_wait_points": 11}),
+    ("qubit_ramsey_flux_pulse", {"num_flux_points": 5, "num_idle_points": 11}),
 ])
 def test_population_contract_accepted_for_newly_wired(name, params):
     """The newly wired carriers emit `population` (no I/Q) in discriminated mode

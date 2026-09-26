@@ -99,7 +99,8 @@ def test_catalog_capability_filter(tmp_path):
     proc = _run_cli(tmp_path, "run", "--capability", "flux")
     assert proc.returncode == 0, proc.stderr
     body = [l for l in proc.stdout.splitlines() if l and not l.startswith("#")]
-    assert body == ["qubit_echo_flux_pulse", "qubit_relaxation_flux_pulse",
+    assert body == ["qubit_echo_flux_pulse", "qubit_ramsey_flux_pulse",
+                    "qubit_relaxation_flux_pulse",
                     "qubit_spectroscopy_flux_pulse", "resonator_spectroscopy_flux"]
 
 

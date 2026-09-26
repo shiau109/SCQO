@@ -93,6 +93,7 @@ def test_real_catalog_flux_filter_matches_the_pinned_carriers():
     lines = _catalog_listing_lines(_core_entries(), capabilities=["flux"])
     assert lines[1:] == [
         "qubit_echo_flux_pulse",
+        "qubit_ramsey_flux_pulse",
         "qubit_relaxation_flux_pulse",
         "qubit_spectroscopy_flux_pulse",
         "resonator_spectroscopy_flux",

@@ -177,6 +177,7 @@ from .qc_unidirectional_trotter import QcUnidirectionalTrotter  # noqa: E402
 from .qc_trotter_compensation import QcTrotterCompensation  # noqa: E402
 from .qubit_ramsey_cryoscope import QubitRamseyCryoscope  # noqa: E402
 from .qubit_ramsey_phasor import QubitRamseyPhasor  # noqa: E402
+from .qubit_ramsey_flux_pulse import QubitRamseyFluxPulse  # noqa: E402
 from .qubit_deterministic_benchmarking import QubitDeterministicBenchmarking  # noqa: E402
 from .qubit_drag_alternating import QubitDragAlternating  # noqa: E402
 from .qubit_drag_equator import QubitDragEquator  # noqa: E402
@@ -233,7 +234,7 @@ __all__ = [
     "PairSwapAngle", "PairSwapChevron", "PairSwapFluxMap",
     "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcSwapFluxStark",
     "QcTrotterCompensation", "QcUnidirectionalTrotter",
-    "QubitRamseyCryoscope", "QubitRamseyPhasor", "QubitDeterministicBenchmarking", "QubitDragAlternating", "QubitDragEquator", "QubitEcho",
+    "QubitRamseyCryoscope", "QubitRamseyFluxPulse", "QubitRamseyPhasor", "QubitDeterministicBenchmarking", "QubitDragAlternating", "QubitDragEquator", "QubitEcho",
     "QubitEchoFluxPulse", "QubitParametricDriveAmp", "QubitParametricDriveTime",
     "QubitParitySwitchContinuous", "QubitParitySwitchDiscrete",
     "QubitPiPulseError", "QubitPowerRabi", "QubitRamsey",
