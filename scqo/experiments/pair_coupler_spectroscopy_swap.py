@@ -65,17 +65,15 @@ from . import register
 from ._capabilities.coupler_flux import pair_coupler
 from ._capabilities.qubit_reset import QubitResetParameters
 from ._capabilities.state_readout import joint_state_labels
+from ._coupler_tone import TONE_AXIS, CouplerToneParameters, tone_lo_hz
 from ._drive_power import drive_power_boundary
 from ._sim import stable_seed
-from ._window import refuse_zero_width, window_bounds
+from ._window import window_bounds
 from .pair_coupler_crossing_pulse import one_coupled_pair_problems
 from .pair_swap_chevron import _role_names
 
-TONE_AXIS = "tone_freq_hz"
 ARM_AXIS = "ramp_played"
 
-#: the widest tone window one LO plays (+-250 MHz of IF around its center)
-MAX_TONE_SPAN_HZ = 500e6
 #: the ramp waveform is played on the 4 ns clock, 16 ns at least
 _CLOCK_NS = 4
 _MIN_RAMP_NS = 16
@@ -84,35 +82,12 @@ _FLAG_KEYS = ("no_line", "unexplained_lines", "peak_at_edge")
 
 
 class PairCouplerSpectroscopySwapParameters(
-    TargetSelection, AveragingParameters, QubitResetParameters,
+    TargetSelection, AveragingParameters, QubitResetParameters, CouplerToneParameters,
 ):
-    """Inputs for coupler spectroscopy by swap. ``targets`` is ONE pair component."""
+    """Inputs for coupler spectroscopy by swap. ``targets`` is ONE pair component.
+    The tone window, points, power and length are ``CouplerToneParameters``."""
 
-    start_tone_freq_hz: float = Field(
-        6.55e9, gt=0,
-        description="First tone frequency (Hz, ABSOLUTE) on the probe's drive line. "
-        "The probe walks start -> end in that order, either direction. Center the "
-        "window on pair_coupler_crossing_pulse's f_c_at_idle_hz.")
-    end_tone_freq_hz: float = Field(
-        7.05e9, gt=0,
-        description="Last tone frequency (Hz, absolute). The window is at most 500 MHz "
-        "wide: one LO at its center plays it as +-250 MHz of IF.")
-    num_tone_freq_points: int = Field(
-        501, gt=4,
-        description="Number of tone frequencies. The default steps 1 MHz over 500 MHz: "
-        "f01 is 4-7 MHz wide at -20 dBm, and a line under two steps wide is ignored. "
-        "Measure a narrower line (f02/2) with a narrower window or more points.")
     num_averages: int = Field(300, gt=0, description="Number of shots to average per sweep point.")
-    tone_power_dbm: float = Field(
-        -20.0, le=10.0,
-        description="Tone power in dBm at the instrument's drive port, set for the run "
-        "and restored exactly afterwards. The coupler is driven at about g/delta (a "
-        "few %) of the probe's Rabi rate, so this is ~30 dB above a qubit "
-        "saturation power.")
-    tone_len_ns: float = Field(
-        10000.0, ge=16, multiple_of=4,
-        description="Tone length (ns, multiple of 4). Longer than the coupler's T1 "
-        "saturates it; the swapped peak is then at most ~0.5.")
     probe: Literal["high", "low"] = Field(
         "high",
         description="The member whose drive line carries the tone (roster role). The "
@@ -144,16 +119,7 @@ class PairCouplerSpectroscopySwapParameters(
         "readout: 0, or a multiple of 4 ns from 16 ns up.")
 
     @model_validator(mode="after")
-    def _window_and_grid(self) -> "PairCouplerSpectroscopySwapParameters":
-        refuse_zero_width(self.start_tone_freq_hz, self.end_tone_freq_hz,
-                          start_name="start_tone_freq_hz", end_name="end_tone_freq_hz",
-                          points_name="num_tone_freq_points")
-        span = abs(self.end_tone_freq_hz - self.start_tone_freq_hz)
-        if span > MAX_TONE_SPAN_HZ:
-            raise ValueError(
-                f"the tone window spans {span / 1e6:.0f} MHz; one run plays at most "
-                f"{MAX_TONE_SPAN_HZ / 1e6:.0f} MHz (one LO, +-250 MHz of IF). Split it "
-                f"into runs.")
+    def _buffer_and_ramp(self) -> "PairCouplerSpectroscopySwapParameters":
         b = self.flux_buffer_ns
         if b != 0 and (b < 16 or b % 4):
             raise ValueError(f"flux_buffer_ns={b}: use 0, or a multiple of 4 ns from 16 ns up")
@@ -254,7 +220,7 @@ class PairCouplerSpectroscopySwap(Experiment):
 
     def lo_hz(self) -> float:
         """The one LO the window is played around: its center."""
-        return 0.5 * (self.params.start_tone_freq_hz + self.params.end_tone_freq_hz)
+        return tone_lo_hz(self.params)
 
     # ------------------------------------------------------------------ physics
     def define_sweep(self) -> dict[str, np.ndarray]:

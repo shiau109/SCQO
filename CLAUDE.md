@@ -381,16 +381,17 @@ tests/test_campaign.py          # the pure aggregator + run_campaign orchestrati
 ### The registered experiments
 
 <!-- BEGIN generated: experiments -->
-**49 registered experiments.** This list is GENERATED from the registry
+**50 registered experiments.** This list is GENERATED from the registry
 (`scqo.catalog()`) - refresh it with `python scripts/update_docs.py`. Descriptions are
 catalog-quality and live in the registry, never here: read one with
 `scqo run <name> --help`, or browse by capability with `scqo run --capability <name>`.
 
 ```
-broadband_qubit_spectroscopy        qubit_echo_flux_pulse               qubit_sqrb
-broadband_resonator_spectroscopy    qubit_parametric_drive_amp          qubit_stark_phase_echo
-pair_coupler_crossing_pulse         qubit_parametric_drive_time         qubit_t1_ade
-pair_coupler_spectroscopy_swap      qubit_parity_switch_continuous      qubit_t1_bayesian
+broadband_qubit_spectroscopy        qubit_echo                          qubit_spectroscopy_flux_pulse
+broadband_resonator_spectroscopy    qubit_echo_flux_pulse               qubit_sqrb
+pair_coupler_crossing_pulse         qubit_parametric_drive_amp          qubit_stark_phase_echo
+pair_coupler_spectroscopy_swap      qubit_parametric_drive_time         qubit_t1_ade
+pair_coupler_spectroscopy_zz        qubit_parity_switch_continuous      qubit_t1_bayesian
 pair_swap_angle                     qubit_parity_switch_discrete        qubit_thermal_population
 pair_swap_chevron                   qubit_pi_pulse_error                qubit_tomography
 pair_swap_flux_map                  qubit_power_rabi                    qubit_xyz_delay
@@ -403,7 +404,6 @@ qc_unidirectional_trotter           qubit_relaxation_flux_pulse         resonato
 qubit_deterministic_benchmarking    qubit_resonator_stark               resonator_spectroscopy_power_chain
 qubit_drag_alternating              qubit_spectroscopy                  single_shot_readout
 qubit_drag_equator                  qubit_spectroscopy_cryoscope
-qubit_echo                          qubit_spectroscopy_flux_pulse
 ```
 <!-- END generated: experiments -->
 
@@ -424,6 +424,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 | `broadband_resonator_spectroscopy` | broadband_resonator_spectroscopy |
 | `pair_coupler_crossing` | pair_coupler_crossing_pulse |
 | `pair_coupler_spectroscopy_swap` | pair_coupler_spectroscopy_swap |
+| `pair_coupler_spectroscopy_zz` | pair_coupler_spectroscopy_zz |
 | `pair_swap_angle` | pair_swap_angle |
 | `pair_swap_chevron` | pair_swap_chevron |
 | `pair_swap_flux_map` | pair_swap_flux_map |

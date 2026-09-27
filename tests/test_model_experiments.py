@@ -2667,6 +2667,63 @@ def test_coupler_swap_ramp_v_is_the_play_order(session):
     assert run.get("error") is None, run.get("error")
 
 
+def test_coupler_zz_spectroscopy_finds_the_planted_ladder(crossing_session):
+    """simulate -> estimate returns the planted f01 and alpha through the readout's
+    direct view of the coupler (in both arms), proposes the coupler's f_01_hz and
+    anharmonicity_hz only, and restores the TONE member's power."""
+    from scqo.experiments.pair_coupler_spectroscopy_zz import simulated_line
+
+    cls = registry.get("pair_coupler_spectroscopy_zz")
+    p = cls.Parameters(targets=["q0_q1"])
+    assert (p.tone_on, p.num_tone_freq_points) == ("low", 501)
+    truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz,
+                           p.num_tone_freq_points)
+    before = crossing_session.device_state()
+    out = crossing_session.run("pair_coupler_spectroscopy_zz", {"targets": ["q0_q1"]})
+    assert out.get("error") is None, out.get("error")
+    assert out["outcomes"]["q0_q1"] == "successful"
+    fit = out["fit"]["q0_q1"]
+    assert fit["f_c_hz"] == pytest.approx(truth["f01_hz"], abs=1e6)
+    assert fit["alpha_hz"] == pytest.approx(truth["alpha_hz"], abs=3e6)
+    assert (fit["n_lines"], fit["n_ladder_lines"]) == (2, 2)
+    assert fit["pi_contrast"] == pytest.approx(truth["pi_contrast"], abs=0.03)
+    assert fit["dip_depth"] == pytest.approx(0.88 * 0.9 * 0.45, rel=0.2)
+    assert fit["no_line"] == fit["unexplained_lines"] == fit["peak_at_edge"] == 0
+    assert fit["lo_hz"] == pytest.approx(6.80e9)
+    assert fit["old_coupler_idle_flux"] == pytest.approx(0.16)
+    proposals = _proposals(out)
+    assert set(proposals) == {("q0_q1_c", "f_01_hz"), ("q0_q1_c", "anharmonicity_hz")}
+    assert proposals[("q0_q1_c", "f_01_hz")] == pytest.approx(fit["f_c_hz"])
+    after = crossing_session.device_state()
+    for xy in ("q0_xy", "q1_xy"):
+        assert after[xy]["drive_power_dbm"] == before[xy]["drive_power_dbm"]
+
+
+def test_coupler_zz_pi_goes_to_the_member_the_tone_does_not_ride(crossing_session):
+    cls = registry.get("pair_coupler_spectroscopy_zz")
+    roles = crossing_session.device.roster.entities["q0_q1"].roles
+    for tone_on, pi_role in (("low", "high"), ("high", "low")):
+        exp = cls(crossing_session.backend, cls.Parameters(targets=["q0_q1"], tone_on=tone_on))
+        exp.device = crossing_session.device
+        assert exp.pi_role() == pi_role
+        assert (exp.tone_member("q0_q1"), exp.pi_member("q0_q1")) == (
+            roles[tone_on][0], roles[pi_role][0])
+    run = crossing_session.run("pair_coupler_spectroscopy_zz",
+                               {"targets": ["q0_q1"], "tone_on": "high"}, update="none")
+    assert run.get("error") is None, run.get("error")
+    assert run["outcomes"]["q0_q1"] == "successful"
+
+
+def test_coupler_zz_spectroscopy_refusals(session):
+    out = session.run("pair_coupler_spectroscopy_zz", {"targets": ["q0_q1", "q1_q2"]})
+    assert "one pair per run" in out["error"]
+    cls = registry.get("pair_coupler_spectroscopy_zz")
+    with pytest.raises(ValidationError, match="500 MHz"):
+        cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=6.5e9, end_tone_freq_hz=7.1e9)
+    with pytest.raises(ValidationError):
+        cls.Parameters(targets=["q0_q1"], tone_on="both")
+
+
 def test_coupler_crossing_buffer_sits_on_the_clock_grid():
     cls = registry.get("pair_coupler_crossing_pulse")
     for bad in (8, 18):

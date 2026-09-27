@@ -418,7 +418,9 @@ tone 已關，π 成員不會被 tone 的 AC Stark 推開；代價是 coupler �
 1. π 成員的邊際：π 組 P_π(f)、參考組 P_0(f)，D = P_π − P_0。`pi_contrast` = D 的中位數（π 的效率乘上讀取
    對比，正常約 0.85）。鄰居讀取直接看到 coupler 的效應在兩組都有，相減時抵消。
 2. **找線**：D 的 **dip**，規則同實驗 3 v2 的第 2 步（高度 ≥ `min_snr` × 雜訊、FWHM ≥ `min_fwhm_steps` 個步距
-   （預設 2）且 ≤ 視窗 1/4、merge 關、擬合視窗是線寬的 2 倍、正負固定為 dip）。
+   （預設 2）且 ≤ 視窗 1/4、merge 關、擬合視窗是線寬的 2 倍）。（實作：dip 是在 −D 上找峰。`fit_peaks` 自己的
+   dip 路徑把擬合起點放在反相後的最低點，也就是肩上的雜訊：一條乾淨、深 0.25 的 dip，40 次有 24 次擬合錯、
+   3 次找不到；另開任務修。）
 3. **每一條 dip 都算 coupler 的**：tone 在 π 之前就關了，能讓 π 打偏的只有 tone 留下來的激發（coupler，偶爾一個
    TLS），所以沒有實驗 3 第 3 步那種「ramp 有沒有改變它」的判斷。
 4. **f01 = 最高的那條**，其餘要落在它的階梯上（同實驗 3 v2 第 4 步）；對不上的設 `unexplained_lines`。
@@ -426,8 +428,8 @@ tone 已關，π 成員不會被 tone 的 AC Stark 推開；代價是 coupler �
 6. **SUCCESSFUL**：有 f01，而且沒有 `unexplained_lines`、`peak_at_edge`。`pi_contrast` 只報告不判斷：π 打得不準時
    dip 變淺，位置不變。
 
-**共用程式**：實驗 3 estimator 裡的找線與階梯（`_lines`、`_ladder`）搬到 `scqat/tools/coupler_ladder.py`（純數學，
-兩個 estimator 共用；實驗 3 的行為不變，它的測試照舊要過）。SCQO 的 tone 視窗欄位與驗證（跨距、零寬度、
+**共用程式**：實驗 3 estimator 裡的找線與階梯搬到 `scqat/tools/coupler_ladder.py`（`find_lines`、`lines_curve`、
+`read_ladder`，純數學，兩個 estimator 共用；實驗 3 的行為不變，它的測試與 16 筆實測的判讀都照舊）。SCQO 的 tone 視窗欄位與驗證（跨距、零寬度、
 `lo_hz`）搬到 `scqo/experiments/_coupler_tone.py` 的 mixin（不是 capability）；scqo-qm 的移 LO、換 band、還原
 QUAM tree 搬到 `scqo_qm/experiments/_coupler_tone.py`。三處都只是搬家，實驗 3 不改行為。
 
@@ -438,8 +440,9 @@ QUAM tree 搬到 `scqo_qm/experiments/_coupler_tone.py`。三處都只是搬家�
 **寫回**：單一 pair、SUCCESSFUL 才提議：coupler mode 的 `f_01_hz`，有 α 時再加 `anharmonicity_hz`（同實驗 3）。
 不動任何 knob。實驗 2 與 3 各自保留寫回，由操作程序依情況選。
 
-**simulate**：用 stable seed 放一組跟實驗 3 同樣的階梯（f01 高 0.35、寬 5 步；f02/2 高 0.2、寬 4 步），當成 coupler
-的佔據 p_c(f)。π 成員：π 組 P = 0.02 + 0.88 × (1 − 0.9 × p_c)，參考組 P = 0.02；兩組都再加 f01 的 20–40 %（鄰居
+**simulate**：用 stable seed 放一組階梯（f01 佔據 0.45、寬 5 步；f02/2 佔據 0.3、寬 4 步），當成 coupler 的佔據
+p_c(f)（比實驗 3 的 0.35 / 0.2 高，因為 π 成員停在 0.9 附近，D 的雜訊約 0.02，比實驗 3 大；這代表的是選擇性
+π 會看到的 dip，x180 在 5Q4C 上預期看不到）。π 成員：π 組 P = 0.02 + 0.88 × (1 − 0.9 × p_c)，參考組 P = 0.02；兩組都再加 f01 的 20–40 %（鄰居
 讀取看得到 coupler）。tone 成員兩組都是 0.02。
 
 **QM**
@@ -451,7 +454,8 @@ QUAM tree 搬到 `scqo_qm/experiments/_coupler_tone.py`。三處都只是搬家�
   I 分量加總 × 1 ns = 面積，方波振幅 = 面積 / L，以 `saturation` 播放、`amp(方波振幅 / saturation 振幅)`、
   `duration = L / 4` 個 clock。
 
-**事前拒絕**：多於一對；pair 沒有 coupler；成員缺 drive、readout 或 threshold；跨距超過 500 MHz；零寬度視窗；
+**事前拒絕**：多於一對；pair 沒有 coupler，或 coupler 沒有 flux channel（同實驗 1、3 的 gate，
+`old_coupler_idle_flux` 從它讀）；成員缺 drive、readout 或 threshold；跨距超過 500 MHz；零寬度視窗；
 active reset；π 成員缺 `x180`。
 
 **只做 QM 版**，理由同實驗 1。

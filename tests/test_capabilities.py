@@ -155,6 +155,7 @@ EXPECTED_CAPABILITIES = {
     # detuning origin - the coupler has no drive knob) and its ramp is a fixed
     # waveform, not a swept coupler-flux window; discrimination is hardcoded.
     "pair_coupler_spectroscopy_swap": ["qubit_reset"],
+    "pair_coupler_spectroscopy_zz": ["qubit_reset"],
     # the swap maps sweep FLUX but do not carry "flux": that capability is
     # the single-qubit z-bias sweep (FluxSweepParameters, contract axis
     # flux_bias_v), and these sweep a pair's pulse amplitudes instead. Their
