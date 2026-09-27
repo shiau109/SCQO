@@ -423,10 +423,16 @@ provenance or a trap a user can walk into, **low** = hygiene.
   (-0.0349 V), period 0.582 pulse-V, f_c_max 7.70 GHz, f_c at idle 7.17 GHz. Still owed: the
   same-hour DC reference for the coupler line's
   pulse/DC ratio g_c (plan doc §6.2) - the 0.074 V DC reconstruction implies g_c ~0.93.
-- 2026-09-27: experiment 3 `pair_coupler_spectroscopy_swap` LANDED, QM only, OFFLINE-validated
-  (scqat estimator `pair_coupler_spectroscopy_swap`; spec plan doc §4). Its 5Q4C hardware run is
-  OWED (plan doc §4 "上機驗證": q1_q2 6.55-7.05 GHz, -20 dBm, ramp 0.08 -> 0.14 V, then from idle,
-  then q2_q3).
+- 2026-09-27: experiment 3 `pair_coupler_spectroscopy_swap` LANDED, QM only (scqat estimator
+  `pair_coupler_spectroscopy_swap`; spec plan doc §4), and ran on 5Q4C q1_q2 the same day (all
+  `--no-update`): **q1_q2_c f01 = 7.058 GHz at idle 0.16 V, alpha ~ -135 MHz** (6.991 = f02/2,
+  6.921 = f03/3; the whole ladder moves +88..+96 MHz for idle 0.15 V). The swap works only with
+  `ramp_shape=fast_then_slow` (the readout resonators sit between the coupler and the qubits);
+  the neighbour's readout also sees the coupler state directly (reference arm, ~5 us decay).
+  Experiment 1's arch predicted 6.80 GHz, 0.26 GHz low. STILL OWED: the estimator redesign
+  (total excitation 1 - P00 instead of the probe's marginal - the swap lands mostly on q1 even
+  when the way back meets q2 first; resolve sub-resolution lines; no writeback when several
+  candidates), then q2_q3, then plan doc §4 rewritten with these facts.
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
   1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the
