@@ -163,6 +163,31 @@ def simulated_arch(pair: str, start_v: float, end_v: float) -> dict:
             "ec_hz": SIM_EC_HZ, "g_hz": float(rng.uniform(30e6, 60e6))}
 
 
+def one_coupled_pair_problems(roster, targets) -> list[str]:
+    """The pre-probe gate of the coupler tool experiments: ONE pair (the coupler
+    line crosstalks onto non-neighbours), whose coupler has a flux channel and whose
+    two members can be driven and read out."""
+    problems = []
+    if len(targets) > 1:
+        problems.append(
+            f"{list(targets)}: one pair per run - the coupler line crosstalks "
+            f"5-7 % onto non-neighbours, so pulsing two couplers together moves "
+            f"each other's members. Run the pairs one at a time.")
+    problems += _coupler_problems(roster, targets, "no coupler flux line to pulse")
+    for pair in targets:
+        roles = getattr(roster.entities.get(pair), "roles", {}) or {}
+        for role in ("high", "low"):
+            members = roles.get(role, ())
+            if not members:
+                problems.append(f"{pair}: declares no {role} member")
+                continue
+            for kind in ("drive", "readout"):
+                if (members[0], kind) not in roster.defaults:
+                    problems.append(f"{pair}: {role} member {members[0]!r} has no "
+                                    f"{kind} channel")
+    return problems
+
+
 def _coupler_frequency(b: np.ndarray, truth: dict) -> np.ndarray:
     """The planted arch ``(F + Ec) sqrt(|cos(pi (b - apex) / P)|) - Ec``."""
     phase = np.pi * (b - truth["apex_v"]) / truth["period_v"]
@@ -317,27 +342,8 @@ class PairCouplerCrossingPulse(Experiment):
 
     @classmethod
     def validate_targets(cls, roster, targets):
-        """ONE pair (the coupler line crosstalks onto non-neighbours), whose coupler
-        has a flux channel and whose two members can be driven and read out."""
-        problems = []
-        if len(targets) > 1:
-            problems.append(
-                f"{list(targets)}: one pair per run - the coupler line crosstalks "
-                f"5-7 % onto non-neighbours, so pulsing two couplers together moves "
-                f"each other's members. Run the pairs one at a time.")
-        problems += _coupler_problems(roster, targets, "no coupler flux line to pulse")
-        for pair in targets:
-            roles = getattr(roster.entities.get(pair), "roles", {}) or {}
-            for role in ("high", "low"):
-                members = roles.get(role, ())
-                if not members:
-                    problems.append(f"{pair}: declares no {role} member")
-                    continue
-                for kind in ("drive", "readout"):
-                    if (members[0], kind) not in roster.defaults:
-                        problems.append(f"{pair}: {role} member {members[0]!r} has no "
-                                        f"{kind} channel")
-        return problems
+        """See :func:`one_coupled_pair_problems`."""
+        return one_coupled_pair_problems(roster, targets)
 
     def probe(self):  # pragma: no cover - driver half
         raise NotImplementedError("a driver backend supplies probe()")

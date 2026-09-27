@@ -172,6 +172,7 @@ from ._capabilities import (  # noqa: E402
     states_to_joint_population,
 )
 from .pair_coupler_crossing_pulse import PairCouplerCrossingPulse  # noqa: E402
+from .pair_coupler_spectroscopy_swap import PairCouplerSpectroscopySwap  # noqa: E402
 from .pair_swap_chevron import PairSwapChevron  # noqa: E402
 from .pair_swap_flux_map import PairSwapFluxMap  # noqa: E402
 from .pair_swap_angle import PairSwapAngle  # noqa: E402
@@ -237,7 +238,7 @@ __all__ = [
     "states_to_joint_population",
     "BroadbandQubitSpectroscopy",
     "BroadbandResonatorSpectroscopy",
-    "PairCouplerCrossingPulse",
+    "PairCouplerCrossingPulse", "PairCouplerSpectroscopySwap",
     "PairSwapAngle", "PairSwapChevron", "PairSwapFluxMap",
     "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcSwapFluxStark",
     "QcTrotterCompensation", "QcUnidirectionalTrotter",

@@ -151,6 +151,10 @@ EXPECTED_CAPABILITIES = {
     # the coupler's idle_flux), not a target z-line window, so coupler_flux and not
     # flux; discrimination is hardcoded (joint populations), so no state_readout.
     "pair_coupler_crossing_pulse": ["qubit_reset", "coupler_flux"],
+    # the coupler swap spectroscopy: its tone window is ABSOLUTE Hz (no drive-
+    # detuning origin - the coupler has no drive knob) and its ramp is a fixed
+    # waveform, not a swept coupler-flux window; discrimination is hardcoded.
+    "pair_coupler_spectroscopy_swap": ["qubit_reset"],
     # the swap maps sweep FLUX but do not carry "flux": that capability is
     # the single-qubit z-bias sweep (FluxSweepParameters, contract axis
     # flux_bias_v), and these sweep a pair's pulse amplitudes instead. Their

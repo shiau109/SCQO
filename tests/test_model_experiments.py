@@ -86,9 +86,13 @@ TROTTER_DEFAULTS = {"qc_unidirectional_trotter": {
         "first_pair": FIRST_STEP, "second_pair": SECOND_STEP, "reset_qubit": "q1",
         "compensation_target": "q0", "compensation_amps": {"q2": 0.25}}}
 
+#: the swap spectroscopy has no default ramp end - it comes from the crossing scan
+#: (refused by name without one); +0.14 V is 5Q4C q1_q2's.
+COUPLER_SWAP_DEFAULTS = {"pair_coupler_spectroscopy_swap": {"ramp_end_v": 0.14}}
+
 #: what the module fixture runs on; _fresh_parity_session keeps the parity-only set.
 OFFLINE_DEFAULTS = {**PARITY_DEFAULTS, **PARAMETRIC_TIME_DEFAULTS,
-                    **TROTTER_DEFAULTS}
+                    **TROTTER_DEFAULTS, **COUPLER_SWAP_DEFAULTS}
 
 
 @pytest.fixture(scope="module")
@@ -2590,6 +2594,47 @@ def test_coupler_crossing_refused_on_a_coupler_less_pair(tmp_path):
                 setup_name="sim", cooldown_id="cd1")
     out = s.run("pair_coupler_crossing_pulse", {"targets": ["q0_q1"]})
     assert "declares no coupler role" in out["error"]
+
+
+def test_coupler_swap_spectroscopy_finds_the_planted_line(crossing_session):
+    """simulate -> estimate returns the planted f_c through the decoy both arms share,
+    proposes only the coupler's f_01_hz, and leaves the probe's tone power as it was."""
+    from scqo.experiments.pair_coupler_spectroscopy_swap import simulated_line
+
+    cls = registry.get("pair_coupler_spectroscopy_swap")
+    p = cls.Parameters(targets=["q0_q1"], ramp_end_v=0.14)
+    truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz)
+    power_before = crossing_session.device_state()["q1_xy"]["drive_power_dbm"]
+    out = crossing_session.run("pair_coupler_spectroscopy_swap",
+                               {"targets": ["q0_q1"], "ramp_end_v": 0.14})
+    assert out.get("error") is None, out.get("error")
+    assert out["outcomes"]["q0_q1"] == "successful"
+    fit = out["fit"]["q0_q1"]
+    assert fit["f_c_hz"] == pytest.approx(truth["f_c_hz"], abs=2e6)
+    assert fit["reference_feature"] == 0 and fit["no_peak"] == 0
+    assert fit["lo_hz"] == pytest.approx(6.80e9)
+    assert fit["ramp_duration_ns"] == 936.0          # 0.14 V at 0.15 V/us, up to 4 ns
+    assert fit["old_ramp_idle_flux"] == pytest.approx(0.16)
+    proposals = _proposals(out)
+    assert set(proposals) == {("q0_q1_c", "f_01_hz")}
+    assert proposals[("q0_q1_c", "f_01_hz")] == pytest.approx(fit["f_c_hz"])
+    assert crossing_session.device_state()["q1_xy"]["drive_power_dbm"] == power_before
+
+
+def test_coupler_swap_spectroscopy_refusals(session):
+    out = session.run("pair_coupler_spectroscopy_swap",
+                      {"targets": ["q0_q1"], "ramp_end_v": None})
+    assert "ramp_end_v is required" in out["error"]
+    out = session.run("pair_coupler_spectroscopy_swap", {"targets": ["q0_q1", "q1_q2"]})
+    assert "one pair per run" in out["error"]
+    cls = registry.get("pair_coupler_spectroscopy_swap")
+    with pytest.raises(ValidationError, match="500 MHz"):
+        cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=6.5e9, end_tone_freq_hz=7.1e9)
+    with pytest.raises(ValidationError, match="would not move"):
+        cls.Parameters(targets=["q0_q1"], ramp_start_v=0.1, ramp_end_v=0.1)
+    # a descending window is a window
+    assert cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=7.0e9,
+                          end_tone_freq_hz=6.6e9).end_tone_freq_hz == 6.6e9
 
 
 def test_coupler_crossing_buffer_sits_on_the_clock_grid():
