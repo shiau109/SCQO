@@ -429,10 +429,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   6.921 = f03/3; the whole ladder moves +88..+96 MHz for idle 0.15 V). The swap works only with
   `ramp_shape=fast_then_slow` (the readout resonators sit between the coupler and the qubits);
   the neighbour's readout also sees the coupler state directly (reference arm, ~5 us decay).
-  Experiment 1's arch predicted 6.80 GHz, 0.26 GHz low. STILL OWED: the estimator redesign
-  (total excitation 1 - P00 instead of the probe's marginal - the swap lands mostly on q1 even
-  when the way back meets q2 first; resolve sub-resolution lines; no writeback when several
-  candidates), then q2_q3, then plan doc §4 rewritten with these facts.
+  Experiment 1's arch predicted 6.80 GHz, 0.26 GHz low. The ramp is now ONE `ramp_v = (first,
+  last)` in play order (user's proposal). q2_q3 the same day: **q2_q3_c f01 = 7.156 GHz at idle
+  0.06 V, alpha ~ -148 MHz** (7.082 = f02/2, 7.014 = f03/3); arch predicted 7.17 (14 MHz off);
+  reference arm flat; the swap lands mostly on q2 (outer) here but on q1 (inner) for q1_q2.
+  STILL OWED - the estimator redesign, from this experience: total excitation 1 - P00; resolve
+  sub-resolution lines; identify f01 as the TOP of a multi-photon ladder (the strongest line is
+  f02/2 when the tone goes through the more strongly coupled line - it picked 7.082 for q2_q3
+  through q3's line); report alpha from the ladder; a reference-arm line is not disqualifying by
+  itself (q1's readout sees q1_q2_c); no writeback without a consistent ladder or a single line.
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
   1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the
