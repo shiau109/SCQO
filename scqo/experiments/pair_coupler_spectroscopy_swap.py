@@ -2,9 +2,10 @@
 
 Per shot: reset both members -> a tone of frequency ``f`` on the PROBE member's drive
 line (its ``saturation`` operation, ``tone_len_ns`` long, at ``tone_power_dbm``) ->
-``flux_buffer_ns`` -> in the RAMP arm, a flux waveform on the ramped line that starts
-at ``ramp_start_v`` and runs linearly to ``ramp_end_v`` at ``ramp_rate_v_per_us``,
-then drops back to idle at once; in the REFERENCE arm, a wait of the same length ->
+``flux_buffer_ns`` -> in the RAMP arm, a flux waveform on the ramped line: one slow
+linear segment between ``ramp_start_v`` and ``ramp_end_v`` at ``ramp_rate_v_per_us``,
+entered and left at once (``ramp_shape`` says which end comes first); in the
+REFERENCE arm, a wait of the same length ->
 ``flux_buffer_ns`` -> both members read out 2-level. Loops: averages (outer) -> ``f``
 (start -> end) -> the two arms back to back (inner), so drift cancels between them.
 
@@ -23,8 +24,14 @@ crossing is passed, so ``ramp_start_v = 0`` (the plain sawtooth from idle) and a
 start just before the crossing (jump there, then ramp) are equally adiabatic; the
 shorter one leaves the excitation in the coupler for less time. On 5Q4C q1_q2 the
 coupler slope at q1's crossing (b = +0.109 V) is 22 MHz/mV, so 0.15 V/us is 99 %
-adiabatic at g = 50 MHz. The ramp must pass the PROBE's crossing first: with the
-coupler above both members (5Q4C) that is the high member.
+adiabatic at g = 50 MHz. ``ramp_shape`` picks the direction of the slow segment:
+``slow_then_fast`` swaps on the way out, ``fast_then_slow`` jumps out and swaps on
+the way BACK - by then the coupler has passed whatever lies between idle and the
+crossing (5Q4C: the readout resonators, 5.87-6.08 GHz, between the coupler at
+6.99 GHz and the qubits) diabatically, and it crosses them again only after the
+excitation has left it. The slow segment must meet the PROBE's crossing first:
+with the coupler above both members that is the high member on the way out, and
+the low one on the way back from past both crossings.
 
 Every ramp voltage is a pulse amplitude relative to the ramped line's ``idle_flux``
 (recorded as ``old_ramp_idle_flux``); ``ramp_end_v`` has no default - it comes from
@@ -98,23 +105,33 @@ class PairCouplerSpectroscopySwapParameters(
         "saturates it; the swapped peak is then at most ~0.5.")
     probe: Literal["high", "low"] = Field(
         "high",
-        description="The member that receives the coupler excitation (roster role). "
-        "The ramp must cross it FIRST: 'high' when the coupler sits above both "
-        "members, 'low' when it sits below.")
+        description="The member that gets the tone and receives the coupler excitation "
+        "(roster role). The SLOW segment must cross it first: with the coupler above "
+        "both members that is 'high' for slow_then_fast, and 'low' for fast_then_slow "
+        "with ramp_end_v past both crossings (the way back meets the outer one first).")
     ramp_on: Literal["coupler", "probe"] = Field(
         "coupler",
         description="Which flux line plays the ramp: the coupler's, or the probe's own "
         "(for a coupler designed below the qubit, or a qubit that can move toward it).")
+    ramp_shape: Literal["slow_then_fast", "fast_then_slow"] = Field(
+        "slow_then_fast",
+        description="Which way the slow linear segment runs. 'slow_then_fast': from "
+        "ramp_start_v slowly to ramp_end_v, then back to idle at once - the swap "
+        "happens on the way OUT. 'fast_then_slow': straight to ramp_end_v at once, "
+        "then slowly back to ramp_start_v (and at once to idle if that is not 0) - "
+        "the swap happens on the way BACK, after the coupler has passed everything "
+        "between idle and the crossing (e.g. readout resonators) diabatically.")
     ramp_start_v: float = Field(
         0.0,
-        description="Where the linear ramp starts (V, pulse amplitude relative to the "
-        "ramped line's idle_flux). 0 = ramp from idle; a value just before the "
-        "crossing = jump there first, then ramp (the jump must not cross anything).")
+        description="The idle-side end of the slow segment (V, pulse amplitude "
+        "relative to the ramped line's idle_flux). 0 = the slow segment reaches idle; "
+        "a value just before the crossing keeps it short. Nothing may lie between it "
+        "and idle that the fast part must not cross diabatically.")
     ramp_end_v: float | None = Field(
         None,
-        description="Where the ramp ends (V, relative to idle_flux), past the probe's "
-        "crossing - pair_coupler_crossing_pulse's crossing plus ~30 mV. Required: "
-        "None is refused before any instrument time.")
+        description="The far end of the slow segment (V, relative to idle_flux), past "
+        "the probe's crossing - pair_coupler_crossing_pulse's crossing plus ~30 mV. "
+        "Required: None is refused before any instrument time.")
     ramp_rate_v_per_us: float = Field(
         0.15, gt=0,
         description="Slope of the linear ramp (V/us). Landau-Zener depends only on it, "
@@ -211,6 +228,14 @@ class PairCouplerSpectroscopySwap(Experiment):
         p = self.params
         ns = abs(p.ramp_end_v - p.ramp_start_v) / p.ramp_rate_v_per_us * 1e3
         return max(_MIN_RAMP_NS, int(math.ceil(ns / _CLOCK_NS - 1e-9)) * _CLOCK_NS)
+
+    def ramp_play_order(self) -> tuple[float, float]:
+        """(first, last) sample of the slow segment AS PLAYED: the output jumps to
+        ``first`` at once, runs linearly to ``last``, and drops to idle at once."""
+        p = self.params
+        if p.ramp_shape == "fast_then_slow":
+            return float(p.ramp_end_v), float(p.ramp_start_v)
+        return float(p.ramp_start_v), float(p.ramp_end_v)
 
     def lo_hz(self) -> float:
         """The one LO the window is played around: its center."""

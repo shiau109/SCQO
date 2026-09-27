@@ -2637,6 +2637,24 @@ def test_coupler_swap_spectroscopy_refusals(session):
                           end_tone_freq_hz=6.6e9).end_tone_freq_hz == 6.6e9
 
 
+def test_coupler_swap_ramp_shape_sets_the_play_order(session):
+    """slow_then_fast swaps on the way out (start -> end); fast_then_slow jumps to the
+    far end and swaps on the way back (end -> start). Same slope, same length."""
+    cls = registry.get("pair_coupler_spectroscopy_swap")
+    out = []
+    for shape in ("slow_then_fast", "fast_then_slow"):
+        exp = cls(session.backend, cls.Parameters(targets=["q0_q1"], ramp_start_v=0.0,
+                                                  ramp_end_v=0.14, ramp_shape=shape))
+        exp.device = session.device
+        out.append((exp.ramp_play_order(), exp.ramp_duration_ns()))
+    assert out[0] == ((0.0, 0.14), 936)
+    assert out[1] == ((0.14, 0.0), 936)
+    run = session.run("pair_coupler_spectroscopy_swap",
+                      {"targets": ["q0_q1"], "ramp_shape": "fast_then_slow",
+                       "probe": "low"}, update="none")
+    assert run.get("error") is None, run.get("error")
+
+
 def test_coupler_crossing_buffer_sits_on_the_clock_grid():
     cls = registry.get("pair_coupler_crossing_pulse")
     for bad in (8, 18):

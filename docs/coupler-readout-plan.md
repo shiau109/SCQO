@@ -202,6 +202,7 @@ coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過
 | `tone_len_ns` | 10000 | tone 長度；比 coupler 的 T1 長就是飽和，峰高最多約 0.5 |
 | `probe` | `Literal["high","low"]` = `"high"` | 接收激發的成員。ramp 必須**先**越過它：coupler 在兩者上方時（5Q4C）是 high，在下方時是 low |
 | `ramp_on` | `Literal["coupler","probe"]` = `"coupler"` | ramp 打在哪條 flux 線。5Q4C 的 q1 在 apex、coupler 在上方，只能動 coupler；coupler 設計在 qubit 下方時可以改動探針 |
+| `ramp_shape` | `Literal["slow_then_fast","fast_then_slow"]` = `"slow_then_fast"` | 慢段的方向。`slow_then_fast`：由 `ramp_start_v` 慢慢走到 `ramp_end_v`，再突然回 idle，swap 發生在去程。`fast_then_slow`（使用者 2026-09-27 提議）：先突然跳到 `ramp_end_v`，再慢慢走回 `ramp_start_v`，swap 發生在回程。5Q4C 的 coupler（6.99 GHz）在讀取共振腔（5.87–6.08 GHz）上方、共振腔又在 qubit 上方，回程慢段開始時激發還沒交出去，但要等交給 qubit 之後才會再經過共振腔。回程慢段第一個碰到的是外圈成員，所以 `ramp_end_v` 越過兩個交叉點時，探針要選 low |
 | `ramp_start_v` | 0.0 | 線性段的起點，相對於被 ramp 那條線的 `idle_flux`。0 = 從 idle 慢升（原本的鋸齒波）；設在交叉點前約 30 mV = 先跳過去再慢升（激發待在 coupler 的時間約短 4 倍）。跳的那一段不能越過任何交叉點 |
 | `ramp_end_v` | `float \| None` = None | 線性段的終點，要越過交叉點。None 時依名稱拒絕，並提示用實驗 1 的交叉點再加約 30 mV（q1_q2：+0.14） |
 | `ramp_rate_v_per_us` | 0.15 | 線性段的斜率。Landau–Zener 只看越過交叉點時的斜率，所以兩種形狀在同一個斜率下絕熱性相同，差別只剩 coupler 的 T1 衰減 |
