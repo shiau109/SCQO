@@ -466,8 +466,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   makes FALSE dips at the coupler's lines (1-2 points here, dropped). The same day (user):
   the pi became a 2 us SQUARE selective pi with the x180's rotation area (square beats cosine
   and Gaussian because the coupler decays during the pulse, T1 ~5 us - plan doc §5 table) and
-  the dips are read from the PI ARM alone, the reference arm's lines only reported. OWED: the
-  selective-pi hardware run on q1_q2 (expect a ~0.15 dip at 7.0575 GHz), then q2_q3.
+  the dips are read from the PI ARM alone, the reference arm's lines only reported. HARDWARE
+  (run 20260927-213623-198, q1_q2, tone on q2, 2 us pi on q1): SUCCESSFUL, q1_q2_c f01 =
+  7.05695 GHz +- 0.13 MHz, dip 0.40 deep, 6.9 MHz wide - 0.5 MHz from experiment 3's 7.0575
+  the same day; f02/2 a one-point dip (no alpha); pi_contrast 0.80. f_01_hz left pending on
+  the run. OWED: q2_q3 (tone on q2, pi on q3, expect 7.156 GHz).
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
