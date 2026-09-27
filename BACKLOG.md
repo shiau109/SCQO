@@ -183,7 +183,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - What landed: `peak_fit.fit_peaks` picks the stronger polarity per row and, when the dip
   wins, fits POSITIVE Lorentzians on the negated trace — so `peak_amplitude` is
   polarity-NORMALIZED and cannot by itself tell an absorption dip from an emission peak
-  (a NEGATIVE amplitude means a badly-conditioned fit, not a dip). `peak_inverted` (per
+  (since 2026-09-27 `fit_peaks` never reports a negative amplitude). `peak_inverted` (per
   peak) and `n_inverted` (per map) now carry that distinction through `track_peaks`'
   pooling and out through both estimators' plot_data/attrs; `reduced_map` is never negated.
 - What is NOT finished: the flag has NO consumer. Both visualizations only state that it
@@ -850,6 +850,26 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: the experiment takes one frame and says so in its name — either a DC probe
   (`set_dc_offset`, absolute, no suffix) or `_pulse` + re-referencing
   `idle_flux = old_idle + fitted` — with a test pinning the frame.
+
+### I27 `fit_peaks`: a broad line's fit is captured by a stronger narrow neighbour (medium)
+- Found 2026-09-27 building the coupler spectroscopy estimators; left open by the fix of three
+  other `fit_peaks` defects the same day (fragment `peak-fit-merge-polarity-dip`).
+- Problem: each detected line is fitted in a window of `fit_window_factor` (default 5)
+  estimated widths, SEEDED ON THE WINDOW'S HIGHEST POINT, with x0 bounded only by the window. A
+  broad line whose window holds a stronger narrow line fits that line instead, and the broad
+  one is lost (the merge only sorts out the duplicate). Synthetic: a 0.15 x 30 MHz line 74 MHz
+  from a 0.30 x 3 MHz one, 1 MHz steps, noise 0.01 - both found in 23 of 40 seeds at the
+  default window, 40 of 40 at `fit_window_factor=2`. `coupler_ladder.find_lines` works around
+  it with `fit_window_factor=2`.
+- The obvious fix is NOT free: seeding on the feature `find_peaks` detected gets 40 of 40, but
+  loses every line `find_peaks` only catches by a noise bump on its flank - a line at the sweep
+  EDGE, whose maximum `find_peaks` cannot detect (5Q4C `qubit_spectroscopy_cryoscope`
+  `20260907-232342`: 19 rows with a line fall to 2 with the other fixes in place, 6 without).
+  The window's-highest-point seed rescues those.
+- Where: `scqat/tools/peak_fit.py::fit_peaks` (the seed block before `fitter.fit()`).
+- Done when: both cases pass together - e.g. seed on the detected feature unless it sits within
+  a width of the window edge, or narrow the window to the neighbouring detections - pinned by a
+  synthetic test of each, and the saved 5Q4C cryoscope runs keep their line counts.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
