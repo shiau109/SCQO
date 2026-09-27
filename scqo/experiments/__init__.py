@@ -90,6 +90,7 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     the datastore's user-attached run tags (``run(..., tags=)`` / ``scqo tag``)."""
     from ._capabilities import (
         AmplitudeSweepParameters,
+        CouplerFluxPulseSweepParameters,
         DriveDetuningSweepParameters,
         FluxPulseSweepParameters,
         FluxSweepParameters,
@@ -101,7 +102,7 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     # Derivation order is fixed (tests pin the exact lists): the two original
     # capabilities first, then each later addition appended at the END so it
     # does not reshuffle every existing entry — qubit_reset, then flux_pulse,
-    # then amplitude, then drive_detuning, then readout_detuning.
+    # then amplitude, then drive_detuning, then readout_detuning, then coupler_flux.
     caps = []
     if issubclass(cls.Parameters, StateReadoutParameters):
         caps.append("state_readout")
@@ -126,6 +127,10 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
         caps.append("drive_detuning")
     if issubclass(cls.Parameters, ReadoutDetuningSweepParameters):
         caps.append("readout_detuning")
+    # a pair's COUPLER flux-pulse window, relative to the coupler's idle_flux; the
+    # only frame there is, so every carrier ends its name in "_pulse" (test-pinned)
+    if issubclass(cls.Parameters, CouplerFluxPulseSweepParameters):
+        caps.append("coupler_flux")
     return caps
 
 
@@ -166,6 +171,7 @@ from ._capabilities import (  # noqa: E402
     reset_wait_ns,
     states_to_joint_population,
 )
+from .pair_coupler_crossing_pulse import PairCouplerCrossingPulse  # noqa: E402
 from .pair_swap_chevron import PairSwapChevron  # noqa: E402
 from .pair_swap_flux_map import PairSwapFluxMap  # noqa: E402
 from .pair_swap_angle import PairSwapAngle  # noqa: E402
@@ -231,6 +237,7 @@ __all__ = [
     "states_to_joint_population",
     "BroadbandQubitSpectroscopy",
     "BroadbandResonatorSpectroscopy",
+    "PairCouplerCrossingPulse",
     "PairSwapAngle", "PairSwapChevron", "PairSwapFluxMap",
     "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcSwapFluxStark",
     "QcTrotterCompensation", "QcUnidirectionalTrotter",

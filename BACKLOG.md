@@ -413,8 +413,12 @@ provenance or a trap a user can walk into, **low** = hygiene.
 ### F24 Coupler state readout: three tool experiments, then the crosstalk matrix (medium)
 - Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`; scripts/raw results in
   `scqat/temp/coupler_scan/`). Design of the three experiments: `docs/coupler-readout-plan.md`
-  (§3 = experiment 1's full spec, AWAITING the user's approval; §6 = verification methods and
-  the 2026-09-26 evidence; §7 = analogous existing experiments).
+  (§3 = experiment 1's spec; §6 = verification methods and the 2026-09-26 evidence; §7 =
+  analogous existing experiments).
+- 2026-09-27: experiment 1 `pair_coupler_crossing_pulse` LANDED, QM only, OFFLINE-validated
+  (scqat estimator `pair_coupler_crossing`, SCQO capability `coupler_flux`). Its 5Q4C hardware
+  run is OWED (plan doc §3 "上機驗證": q1_q2, measure=both, b -0.498..+0.34 V, `--no-update`),
+  then experiment 3's open items (plan doc §4).
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
   1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the

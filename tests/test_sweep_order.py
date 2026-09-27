@@ -1,10 +1,10 @@
 """A sweep window's start/end is a TRAVERSAL ORDER, and the order is not a result.
 
-Decided 2026-09-26: on the flux, drive-detuning, readout-detuning
-and amplitude windows the probe walks ``start`` -> ``end`` in either direction,
-the dataset keeps the order it walked, and no estimator may be able to tell which
-way the sweep went. Three properties, checked on EVERY carrier of those four
-windows (the carrier list is derived from the Parameters mixins, so a new carrier
+Decided 2026-09-26: on the flux, drive-detuning, readout-detuning,
+amplitude and coupler-flux windows the probe walks ``start`` -> ``end`` in either
+direction, the dataset keeps the order it walked, and no estimator may be able to
+tell which way the sweep went. Three properties, checked on EVERY carrier of those
+five windows (the carrier list is derived from the Parameters mixins, so a new carrier
 is covered the day it lands):
 
 1. ``define_sweep`` emits the reversed window as the reversed axis — never
@@ -30,9 +30,11 @@ from scqo import experiments as registry
 from scqo.experiment import Experiment
 from scqo.experiments._capabilities import (
     AMP_AXIS,
+    COUPLER_FLUX_AXIS,
     DETUNING_AXIS,
     FLUX_AXIS,
     AmplitudeSweepParameters,
+    CouplerFluxPulseSweepParameters,
     DriveDetuningSweepParameters,
     FluxSweepParameters,
     ReadoutDetuningSweepParameters,
@@ -47,6 +49,8 @@ WINDOWS = {
     ReadoutDetuningSweepParameters: (
         "start_readout_detuning_hz", "end_readout_detuning_hz", DETUNING_AXIS),
     AmplitudeSweepParameters: ("start_amp_factor", "end_amp_factor", AMP_AXIS),
+    CouplerFluxPulseSweepParameters: (
+        "start_coupler_flux_v", "end_coupler_flux_v", COUPLER_FLUX_AXIS),
 }
 
 #: per-carrier params the window needs to be a window at all: benchmarking

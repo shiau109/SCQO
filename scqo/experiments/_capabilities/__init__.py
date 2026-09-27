@@ -23,6 +23,16 @@ from .amplitude import (
     amp_sweep,
     attach_absolute_amp,
 )
+from .coupler_flux import (
+    COUPLER_FLUX_AXIS,
+    END_COUPLER_FLUX_DESC,
+    NUM_COUPLER_FLUX_DESC,
+    START_COUPLER_FLUX_DESC,
+    CouplerFluxPulseSweepParameters,
+    coupler_anchor_v,
+    coupler_flux_sweep,
+    pair_coupler,
+)
 from .detuning import (
     DETUNING_AXIS,
     END_DRIVE_DETUNING_DESC,
@@ -89,6 +99,7 @@ CAPABILITY_SUMMARIES = {
     "amplitude": "sweeps amplitude as a factor of the standing amplitude",
     "drive_detuning": "sweeps the drive detuning relative to the current drive frequency",
     "readout_detuning": "sweeps the readout detuning relative to the current readout frequency",
+    "coupler_flux": "sweeps a pair's coupler flux pulse relative to the coupler's idle_flux",
 }
 
 __all__ = [
@@ -97,7 +108,15 @@ __all__ = [
     "ACTIVE_RESET_ROUNDS_DESC",
     "AMP_AXIS",
     "CAPABILITY_SUMMARIES",
+    "COUPLER_FLUX_AXIS",
     "DETUNING_AXIS",
+    "END_COUPLER_FLUX_DESC",
+    "NUM_COUPLER_FLUX_DESC",
+    "START_COUPLER_FLUX_DESC",
+    "CouplerFluxPulseSweepParameters",
+    "coupler_anchor_v",
+    "coupler_flux_sweep",
+    "pair_coupler",
     "END_DRIVE_DETUNING_DESC",
     "END_READOUT_DETUNING_DESC",
     "FLUX_AXIS",

@@ -2496,3 +2496,105 @@ def test_qc_swap_flux_stark_takes_the_stark_period_from_the_echo(session):
     assert fit["stark_amp_2pi_prior"] == pytest.approx(0.8)
     assert fit["wrap_consistent"] in (0.0, 1.0)
     assert math.isfinite(fit["compensating_stark_amp"])
+
+
+# ------------------------------------------------------------ coupler crossing
+
+@pytest.fixture
+def crossing_session(tmp_path):
+    """A fresh tunable session whose members sit where the crossing simulator puts
+    them (q1 high at 5.1 GHz, q0 low at 4.8 GHz) and whose coupler is parked at
+    5Q4C q1_q2_c's 0.16 V - so the frame re-reference is visible in every number."""
+    from scqo.experiments.pair_coupler_crossing_pulse import SIM_F_HIGH_HZ, SIM_F_LOW_HZ
+
+    roster = demo_components(CHAIN_QUBITS, tunable=True, chain=True)
+    design = demo_design(roster, CHAIN_QUBITS)
+    vendor = InMemoryDevice(roster, demo_vendor_state(roster, design))
+    s = Session(SimulatedBackend(vendor), roster, design=design,
+                scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
+                device_name="chipT", setup_name="sim", cooldown_id="cd1")
+    s.set_values({"q1_xy.drive_freq_hz": SIM_F_HIGH_HZ, "q0_xy.drive_freq_hz": SIM_F_LOW_HZ,
+                  "q0_q1_c_z.idle_flux": 0.16})
+    return s
+
+
+def _proposals(out):
+    return {(s["entity"], s["field"]): s["after"] for s in out["suggestions"]}
+
+
+def test_coupler_crossing_recovers_the_planted_arch(crossing_session):
+    """simulate -> estimate returns the hidden arch, re-referenced to ABSOLUTE, and
+    proposes the three coupler facts - never the coupler's idle_flux."""
+    from scqo.experiments.pair_coupler_crossing_pulse import simulated_arch
+
+    cls = registry.get("pair_coupler_crossing_pulse")
+    p = cls.Parameters(targets=["q0_q1"])
+    truth = simulated_arch("q0_q1", p.start_coupler_flux_v, p.end_coupler_flux_v)
+    out = crossing_session.run("pair_coupler_crossing_pulse", {"targets": ["q0_q1"]})
+    assert out.get("error") is None, out.get("error")
+    assert out["outcomes"]["q0_q1"] == "successful"
+    fit = out["fit"]["q0_q1"]
+    assert fit["center_kind"] == "apex"
+    assert fit["old_coupler_idle_flux"] == pytest.approx(0.16)
+    assert fit["center_from_idle_v"] == pytest.approx(truth["apex_v"], abs=3e-3)
+    # the frame invariant: flux_offset = old idle + the fitted pulse-frame apex
+    assert fit["flux_offset"] == pytest.approx(0.16 + fit["center_from_idle_v"])
+    assert fit["flux_per_phi0"] == pytest.approx(truth["period_v"], rel=0.08)
+    assert fit["f_q_max_hz"] == pytest.approx(truth["f_max_hz"], abs=0.5e9)
+    assert fit["ec_hz_used"] == pytest.approx(0.2e9)
+    for flag in ("crossings_not_bracketed_high", "crossings_not_bracketed_low",
+                 "center_mismatch", "side_conflict", "arch_unsolved"):
+        assert fit[flag] == 0, flag
+    proposals = _proposals(out)
+    assert set(proposals) == {("q0_q1_c_z", "flux_offset"), ("q0_q1_c_z", "flux_per_phi0"),
+                              ("q0_q1_c", "f_q_max_hz")}
+    assert proposals[("q0_q1_c_z", "flux_offset")] == pytest.approx(fit["flux_offset"])
+
+
+def test_coupler_crossing_with_one_member_proposes_only_a_known_apex(crossing_session):
+    """One member: the symmetry point only - no arch; its apex claim needs a side."""
+    out = crossing_session.run("pair_coupler_crossing_pulse",
+                               {"targets": ["q0_q1"], "measure": "high"})
+    assert out["outcomes"]["q0_q1"] == "successful"
+    assert out["fit"]["q0_q1"]["center_kind"] == "unknown"
+    assert _proposals(out) == {}
+
+    told = crossing_session.run("pair_coupler_crossing_pulse",
+                                {"targets": ["q0_q1"], "measure": "high",
+                                 "coupler_side": "above"})
+    assert told["fit"]["q0_q1"]["center_kind"] == "apex"
+    assert told["fit"]["q0_q1"]["arch_unsolved"] == 1
+    assert set(_proposals(told)) == {("q0_q1_c_z", "flux_offset")}
+
+
+def test_coupler_crossing_side_conflict_fails_and_proposes_nothing(crossing_session):
+    out = crossing_session.run("pair_coupler_crossing_pulse",
+                               {"targets": ["q0_q1"], "coupler_side": "below"})
+    assert out["outcomes"]["q0_q1"] == "failed"
+    assert out["fit"]["q0_q1"]["side_conflict"] == 1
+    assert out["suggestions"] == []
+
+
+def test_coupler_crossing_runs_one_pair_at_a_time(session):
+    out = session.run("pair_coupler_crossing_pulse", {"targets": ["q0_q1", "q1_q2"]})
+    assert "target validation refused" in out["error"]
+    assert "one pair per run" in out["error"]
+
+
+def test_coupler_crossing_refused_on_a_coupler_less_pair(tmp_path):
+    roster = demo_components(tunable=False)          # pair, NO coupler
+    design = demo_design(roster)
+    vendor = InMemoryDevice(roster, demo_vendor_state(roster, design))
+    s = Session(SimulatedBackend(vendor), roster, design=design,
+                scqo_dir=tmp_path / "scqo", device_name="chipT",
+                setup_name="sim", cooldown_id="cd1")
+    out = s.run("pair_coupler_crossing_pulse", {"targets": ["q0_q1"]})
+    assert "declares no coupler role" in out["error"]
+
+
+def test_coupler_crossing_buffer_sits_on_the_clock_grid():
+    cls = registry.get("pair_coupler_crossing_pulse")
+    for bad in (8, 18):
+        with pytest.raises(ValidationError):
+            cls.Parameters(targets=["q0_q1"], flux_buffer_ns=bad)
+    assert cls.Parameters(targets=["q0_q1"], flux_buffer_ns=0).flux_buffer_ns == 0

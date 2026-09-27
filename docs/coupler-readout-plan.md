@@ -1,7 +1,7 @@
 # coupler 狀態讀取：三個基礎工具實驗的設計
 
 > 計畫文件（2026-09-27）。內容只有三個直接讀 coupler 的實驗該怎麼設計；其餘相關工作記在 BACKLOG F24。
-> §3 實驗 1 的規格已於 2026-09-27 核可，實作中；§4、§5 仍待定。
+> §3 實驗 1 已於 2026-09-27 實作（只有 QM 版，離線驗證），上機驗證待做；§4、§5 仍待定。
 > 驗證用的腳本與原始結果在 `scqat/temp/coupler_scan/`（gitignored），run 標記為 `coupler-scan`。
 
 ## 1. 三個實驗
@@ -83,7 +83,7 @@ readout）。**一次只准一對**：coupler 線對非鄰居也有 5–7 % 的�
 
 **estimator（scqat，新的，1:1）：`pair_coupler_crossing`**
 
-1. 進入時 `ascending(dataset, "coupler_flux")`，並有 `order_free` 測試。
+1. 進入時 `ascending(dataset, "coupler_flux_v")`，並有 `order_free` 測試。
 2. 從 joint 分佈算邊際：P_high = P10 + P11，P_low = P01 + P11。
 3. 每個被量的成員：基準線取高分位數（例如第 90 百分位），正規化 s = P / 基準線，s < `dip_threshold`
    （預設 0.5）的連續區段算一個 dip。dip 中心取 (1 − s) 的加權質心，並報寬度與最低值。
@@ -100,7 +100,9 @@ readout）。**一次只准一對**：coupler 線對非鄰居也有 5–7 % 的�
 
 **精度**（以 5Q4C 的數字估：q1 半距 0.196 V，兩顆相差 300 MHz）：兩個半距只差 4–14 %，所以結果是「估計」。
 5 mV 的步距下 F 約 ±0.6 GHz、P 約 10–15 %；2 mV 時約 ±0.25 GHz、5 %。若 F ≥ 8 GHz，P ≈ 0.5 V，下一個週期的
-交叉點會落在可達範圍的邊緣，那時就能直接量到週期。
+交叉點會落在可達範圍的邊緣，那時就能直接量到週期。實作後用 5Q4C 的數字做離線合成資料（2 mV、300 次平均）：
+F 偏差 < 0.1 GHz、P < 1.5 %，報的 stderr 約 0.07 GHz。這個 stderr 只含取樣與雜訊，不含 g_c、LZ 基準線這類
+系統誤差，上機時要以 §6.2 的比對為準。
 
 **Result（`fit[pair]`）**
 
@@ -136,7 +138,8 @@ readout）。**一次只准一對**：coupler 線對非鄰居也有 5–7 % 的�
 - scqo-qm：用 live quam_state 建 q1_q2 的程式，確認 QUA 裡有 coupler 的 const 播放、兩個成員的 x180 與
   讀取；超出 rail 時依名稱拒絕；註冊 census；qm 全套。
 
-**上機驗證（5Q4C，要先問）**：q1_q2、`measure=both`、b 從 −0.5 到 +0.34（2 mV）、300 次平均、`--no-update`。
+**上機驗證（5Q4C，要先問）**：q1_q2、`measure=both`、b 從 −0.498 到 +0.34（2 mV，420 點；b = −0.5 需要
+`amplitude_scale` = 2，會被拒絕）、300 次平均、`--no-update`。
 預期 q1 的交叉點在線上電壓約 0.27 V（b ≈ +0.11）與 −0.12 V（b ≈ −0.28），q2 的在兩者外側；高頻成員在內圈，
 也就是中心是 apex。之後換 q2_q3（idle 0.06 V）。結果的比對方法見 §6.2。
 

@@ -332,6 +332,10 @@ scqo/
                     #   the flux frames, where _pulse subclasses absolute): one
                     #   experiment could carry both, and shared names would merge by
                     #   MRO into one number driving two sweeps);
+                    #   coupler_flux.py = a pair's COUPLER flux-pulse window
+                    #   (start/end_coupler_flux_v, axis coupler_flux_v), RELATIVE to
+                    #   the coupler's idle_flux - its only frame, so every carrier ends
+                    #   in `_pulse` and records old_coupler_idle_flux;
                     #   catalog
                     #   `capabilities` are DERIVED from mixin subclassing — never declared
                     #   strings, zero capabilities legitimate (new experiments may be
@@ -377,14 +381,15 @@ tests/test_campaign.py          # the pure aggregator + run_campaign orchestrati
 ### The registered experiments
 
 <!-- BEGIN generated: experiments -->
-**47 registered experiments.** This list is GENERATED from the registry
+**48 registered experiments.** This list is GENERATED from the registry
 (`scqo.catalog()`) - refresh it with `python scripts/update_docs.py`. Descriptions are
 catalog-quality and live in the registry, never here: read one with
 `scqo run <name> --help`, or browse by capability with `scqo run --capability <name>`.
 
 ```
-broadband_qubit_spectroscopy        qubit_parametric_drive_amp          qubit_sqrb
-broadband_resonator_spectroscopy    qubit_parametric_drive_time         qubit_stark_phase_echo
+broadband_qubit_spectroscopy        qubit_echo_flux_pulse               qubit_spectroscopy_flux_pulse
+broadband_resonator_spectroscopy    qubit_parametric_drive_amp          qubit_sqrb
+pair_coupler_crossing_pulse         qubit_parametric_drive_time         qubit_stark_phase_echo
 pair_swap_angle                     qubit_parity_switch_continuous      qubit_t1_ade
 pair_swap_chevron                   qubit_parity_switch_discrete        qubit_t1_bayesian
 pair_swap_flux_map                  qubit_pi_pulse_error                qubit_thermal_population
@@ -398,7 +403,6 @@ qubit_deterministic_benchmarking    qubit_relaxation_flux_pulse         resonato
 qubit_drag_alternating              qubit_resonator_stark               resonator_spectroscopy_power_amp
 qubit_drag_equator                  qubit_spectroscopy                  resonator_spectroscopy_power_chain
 qubit_echo                          qubit_spectroscopy_cryoscope        single_shot_readout
-qubit_echo_flux_pulse               qubit_spectroscopy_flux_pulse
 ```
 <!-- END generated: experiments -->
 
@@ -417,6 +421,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 | `ac_stark_shift` | qubit_resonator_stark |
 | `broadband_qubit_spectroscopy` | broadband_qubit_spectroscopy |
 | `broadband_resonator_spectroscopy` | broadband_resonator_spectroscopy |
+| `pair_coupler_crossing` | pair_coupler_crossing_pulse |
 | `pair_swap_angle` | pair_swap_angle |
 | `pair_swap_chevron` | pair_swap_chevron |
 | `pair_swap_flux_map` | pair_swap_flux_map |

@@ -24,8 +24,12 @@ from scqo.experiments._capabilities import (
     ABS_AMP_COORD,
     ACTIVE_RESET_ROUNDS_DESC,
     AMP_AXIS,
+    COUPLER_FLUX_AXIS,
     DETUNING_AXIS,
     END_AMP_FACTOR_DESC,
+    END_COUPLER_FLUX_DESC,
+    NUM_COUPLER_FLUX_DESC,
+    START_COUPLER_FLUX_DESC,
     END_DRIVE_DETUNING_DESC,
     END_FLUX_DESC,
     END_FLUX_PULSE_DESC,
@@ -143,6 +147,10 @@ EXPECTED_CAPABILITIES = {
     # trio works on raw per-shot IQ by construction).
     "qubit_pi_pulse_error": ["qubit_reset", "amplitude"],
     "pair_zz_coupler": ["qubit_reset"],
+    # the coupler-crossing scan: its window is the COUPLER's flux pulse (relative to
+    # the coupler's idle_flux), not a target z-line window, so coupler_flux and not
+    # flux; discrimination is hardcoded (joint populations), so no state_readout.
+    "pair_coupler_crossing_pulse": ["qubit_reset", "coupler_flux"],
     # the swap maps sweep FLUX but do not carry "flux": that capability is
     # the single-qubit z-bias sweep (FluxSweepParameters, contract axis
     # flux_bias_v), and these sweep a pair's pulse amplitudes instead. Their
@@ -237,7 +245,7 @@ def test_capability_summaries_track_the_derived_set():
 
     assert list(CAPABILITY_SUMMARIES) == [
         "state_readout", "flux", "qubit_reset", "flux_pulse", "amplitude",
-        "drive_detuning", "readout_detuning"]
+        "drive_detuning", "readout_detuning", "coupler_flux"]
     assert set(CAPABILITY_SUMMARIES) == {
         cap for caps in EXPECTED_CAPABILITIES.values() for cap in caps}
     # one short plain line each: no reST markup, no scraped "Mixin:" prefix
@@ -311,6 +319,11 @@ def test_canonical_field_text_never_drifts():
                 END_READOUT_DETUNING_DESC), name
             assert props["num_readout_freq_points"]["description"].startswith(
                 NUM_FREQ_POINTS_DESC), name
+        if "coupler_flux" in entry["capabilities"]:
+            assert props["start_coupler_flux_v"]["description"] == START_COUPLER_FLUX_DESC, name
+            assert props["end_coupler_flux_v"]["description"] == END_COUPLER_FLUX_DESC, name
+            assert props["num_coupler_flux_points"]["description"].startswith(
+                NUM_COUPLER_FLUX_DESC), name
 
 
 def test_flux_axis_is_the_contract_axis():
@@ -363,6 +376,19 @@ def test_flux_pulse_names_carry_the_suffix():
     for name, entry in entries.items():
         if "flux_pulse" in entry["capabilities"]:
             assert "flux" in entry["capabilities"], name
+
+
+def test_coupler_flux_carriers_carry_the_pulse_suffix():
+    """The coupler window has ONE frame - a pulse relative to the coupler's
+    idle_flux - so every carrier announces it in its name, sweeps
+    COUPLER_FLUX_AXIS, and the window text names its origin."""
+    entries = _catalog_by_name()
+    carriers = [n for n, e in entries.items() if "coupler_flux" in e["capabilities"]]
+    assert carriers  # the capability exists
+    for name in carriers:
+        assert name.endswith("_pulse"), name
+        assert COUPLER_FLUX_AXIS in get(name).Contract.sweeps, name
+    assert "idle_flux" in START_COUPLER_FLUX_DESC and "idle_flux" in END_COUPLER_FLUX_DESC
 
 
 def test_reset_wait_precedence():
