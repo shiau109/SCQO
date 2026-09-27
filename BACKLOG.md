@@ -440,9 +440,10 @@ provenance or a trap a user can walk into, **low** = hygiene.
   points. Re-analysis of the 16 runs: q2_q3 through q3's line now reads 7.1558 (v1 took f02/2).
   v2 on HARDWARE the same evening (run 20260927-203446-486, q1_q2, 1 MHz steps, tone on q2's
   line, -20 dBm): SUCCESSFUL, f01 = 7.0575 GHz +- 0.35 MHz, one coupler line only (f_01_hz
-  proposal left pending on the run). STILL OWED: (a) alpha from the fit - through q2's line
-  at -20 dBm f02/2 (6.991) does not show at 1 MHz steps (one-point spike, dropped); it needs
-  more power through q2's line or q1's line (which Stark-shifts f01); (b) a known blind spot - when f01 is not a line in the
+  proposal left pending on the run). OPTIONAL, not pursued (user 2026-09-27: alpha is not
+  the focus): (a) alpha from the fit - through q2's line at -20 dBm f02/2 (6.991) does not show
+  at 1 MHz steps (one-point spike, dropped); it needs more power through q2's line or q1's line
+  (which Stark-shifts f01). STILL OWED: (b) a known blind spot - when f01 is not a line in the
   ramp arm at all, the highest remaining coupler line is taken for f01: run 20260927-183300-636
   (slow-then-fast ramp, tone through q1's line, -10 dBm) reads f03/3 = 6.921 GHz as a SUCCESSFUL
   f01. That setting is known not to work; decide whether the estimator should catch it (e.g. a
@@ -453,8 +454,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the
   `coupler_flux` capability); (3) the coupler frequency by an adiabatic SAWTOOTH swap into the
   neighbour (`ramp_on: coupler | probe` - a coupler may be designed below the qubit);
-  (2) the coupler frequency by the qubit-coupler ZZ spoiling a selective pi (needs a port /
-  upconverter decision once (3) has found f_c).
+  (2) the coupler frequency by the qubit-coupler ZZ spoiling a selective pi - spec written
+  2026-09-27 as `pair_coupler_spectroscopy_zz` (plan doc §5) and approved, the pi FIRST as the
+  calibrated x180 (user: try the x gate, reshape the pulse only if there is no signal) - with
+  ZZ ~0.3-0.9 MHz on 5Q4C a 16 ns x180 is expected to show NO dip; the fallback is a 2 us square
+  selective pi. Tone on one member's line, pi on the other, no-pi reference arm.
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's

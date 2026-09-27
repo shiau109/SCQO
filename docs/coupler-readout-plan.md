@@ -1,8 +1,8 @@
 # coupler 狀態讀取：三個基礎工具實驗的設計
 
 > 計畫文件（2026-09-27）。內容只有三個直接讀 coupler 的實驗該怎麼設計；其餘相關工作記在 BACKLOG F24。
-> §3 實驗 1 已於 2026-09-27 實作並上機（5Q4C q1_q2、q2_q3，只有 QM 版）；§4 實驗 3 已於同日實作（只有 QM 版，
-> 離線驗證），上機驗證待做；§5 仍待定。
+> §3 實驗 1 已於 2026-09-27 實作並上機（5Q4C q1_q2、q2_q3，只有 QM 版）；§4 實驗 3 已於同日實作並上機（只有
+> QM 版，estimator v2 也上機驗證過）；§5 實驗 2 的規格已核可（π 先用 x180）。
 > 驗證用的腳本與原始結果在 `scqat/temp/coupler_scan/`（gitignored），run 標記為 `coupler-scan`。
 
 ## 1. 三個實驗
@@ -334,8 +334,9 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
    `ramp_v=(0.14, 0)`、−20 dBm。**SUCCESSFUL，f01 = 7.0575 GHz ± 0.35 MHz**（FWHM 8.7 MHz、SNR 28），只有
    一條 coupler 線，所以沒有 α：從 q2 的線打、−20 dBm 時 f02/2（6.991）在 1 MHz 步距下看不到，只有單點
    尖峰，照規則略掉。激發 q1 拿到 0.14、q2 拿到 0.10。提議的 `f_01_hz` 留在 run 上待決定（沒有用
-   `--no-update`），device 沒動；q2_xy 的功率還原到 −1 dBm。要 α 得讓 f02/2 變寬：從 q2 的線加功率，
-   或從 q1 的線打（但 f01 會被 AC Stark 推高）。
+   `--no-update`），device 沒動；q2_xy 的 `drive_power_dbm` run 前後都是 0 dBm，已還原。要 α 得讓 f02/2
+   變寬：從 q2 的線加功率，或從 q1 的線打（但 f01 會被 AC Stark 推高）。α 目前不是重點（使用者，2026-09-27），
+   不追。
 
 找不到峰時先移視窗（±250 MHz），再調功率（±10 dB）。辨認 f01 看多光子階梯（f02/2 = f01 + α/2、
 f03/3 ≈ f01 + α），並從耦合較弱的那條線打 tone；不要只看哪條線在低功率還在。
@@ -346,15 +347,160 @@ f03/3 ≈ f01 + α），並從耦合較弱的那條線打 tone；不要只看哪
 `pair_coupler_crossing_pulse.py`、`broadband_qubit_spectroscopy.py`（`_MW_FEM_BANDS`、`_partner_port_id`）、
 `qm_backend.acquire` 的 3-tuple acquire callable 路徑、`_lib.acquire(config=)`。
 
-## 5. 實驗 2：ZZ 讀 coupler 頻率（等實驗 3 之後再定）
+## 5. 實驗 2：`pair_coupler_spectroscopy_zz`（暫名，feature `pair-coupler-spectroscopy-zz`）
 
-- 序列：reset → coupler tone → 探針的 π → 讀取。f = f_c 時出現 dip。
-- **port 問題**：coupler tone 和 π 要從同一個 port 送出。q1 的 port LO 在 4.9 GHz，只靠 IF 最多到約 5.3 GHz；
-  f_c 更高的話要在這個 port 加第二個 upconverter，超過 5.5 GHz 還得換到 band 2，連帶拖著 q2。這些都是
-  vendor config 的修改，等實驗 3 找到 f_c 再決定。
-- **選擇性**：χ_qc 估計在 2–8 MHz（g 50–100 MHz、Δ ≈ 1 GHz），40 ns 的 x180 只會部分失效。把 `x180_Square`
-  用 `duration=` 拉長、振幅按比例縮小（例如 400 ns、頻寬約 1 MHz），不需要重新校正。
-- 跟實驗 3 互補：不需要越過交叉點。
+> 規格 2026-09-27 寫成並核可，**π 先用校正好的 x180**（使用者：「先用 x gate 參數試試看，沒訊號再改造
+> pulse shape」）；下方「選擇性 π」的數字是沒訊號時的下一步。α 不是這個實驗的重點（使用者，2026-09-27）：
+> 階梯只用來認出 f01，順便有 f02/2 時才報 α。
+
+**問題**：coupler 在目前 idle 下的 0→1 頻率 f_c，coupler 的 flux 完全不動。
+
+**原理**：tone 經由一個成員（**tone 成員**）的 xy 線激發 coupler，同實驗 3。tone 結束後，另一個成員（**π 成員**）
+打一個 π。π 的頻寬比 coupler 與 π 成員之間的 ZZ 窄時（**選擇性 π**），coupler 在基態時 π 打得上去；
+coupler 被激發時，ZZ 把 π 成員的頻率推開，π 打偏，P_e 下降。參考組同一發不打 π。所以 π 成員的「π 組 −
+參考組」會在 coupler 的線上出現 dip。跟實驗 3 互補：不需要 ramp、不需要越過交叉點，也不依賴讀取共振腔
+的位置。
+
+**5Q4C 的數字**
+
+- **ZZ**（兩個 Duffing 振子數值對角化）：q1 對 q1_q2_c（7.058 GHz、α −135 MHz）在 g = 40 / 50 / 60 / 70 MHz 時
+  是 −0.30 / −0.46 / −0.66 / −0.90 MHz；q3 對 q2_q3_c（7.156 GHz、α −148 MHz）幾乎一樣（−0.29 到 −0.89）；q2 對
+  q1_q2_c 小一些（−0.23 到 −0.70）。原本這裡估的 2–8 MHz 是用 Δ ≈ 1 GHz 算的，實測 Δ ≈ 1.9 GHz。
+- **先用 x180**（16 ns DragCosine，頻寬約 ±30 MHz）：ZZ 0.3–0.9 MHz 只讓 P_e 掉約 (ζ/Ω)² < 0.1 %，300 發看不出來。
+  所以預期**沒有 dip**；有 dip 就表示 ZZ 比這裡估的大得多。這次 run 至少驗證 tone、移 LO、換 band、讀取與
+  π 的對比（`pi_contrast`）整條鏈。
+- **沒訊號時的選擇性 π 的長度**：方波長 L、Rabi 1/(2L)。ZZ 在 0.3–0.9 MHz 之間時，打偏後殘留的激發最多是：L = 1 µs
+  0.69、1.5 µs 0.41、**2 µs 0.17**（平均 0.06）、3 µs 0.12。取 2 µs：q1 的 T2* 33 µs 損失約 6 %，q3 的 T2* 9.4 µs
+  損失約 19 %。
+- **選擇性 π 的振幅**：由 π 成員校正好的 x180 換算面積（q1：16 ns DragCosine、振幅 0.2141，面積 = 振幅 × 長度
+  / 2 = 1.71 ns），方波振幅 = 面積 / L，2 µs 時 8.6 × 10⁻⁴。`x180_Square` 從沒校正過（振幅還是預設的 0.1），
+  不能拿來拉長。
+- **訊號大小**：實驗 3 經由 q2 的線、−20 dBm 時 swap 後的總激發約 0.35；coupler 的 T1 約 5 µs（實驗 3 的延遲
+  測試），2 µs 的 π 期間約掉 20–30 %。預期 dip 深約 0.35 × 0.75 × 0.9 ≈ 0.25，300 發的雜訊約 0.03。
+- **port**：tone 走 q2 的線（實驗 3 的經驗：耦合較弱的線，f01 最乾淨），π 打在另一個成員（q1_q2 是 q1、q2_q3 是
+  q3，都是耦合較強、ZZ 較大的那顆）。q2 的 port（`6/3`）LO 移到視窗中心、換到 band 2；同一組 port pair 的 q1
+  （`6/2`）跟著換 band 2，LO 4.9 GHz 不動（band 2 涵蓋 4.5–7.5 GHz），IF 仍是 +244.6 MHz。q3 在 `6/4`（另一組
+  port pair），完全不動。**q1_q2 的 π 是在換過 band 的 port 上打的**：如果 MW-FEM 在 band 2 的輸出跟 band 1 不同，
+  π 的面積會偏，estimator 報的 `pi_contrast` 看得出來。
+- **一次 run**：501 點 × 2 組 × 300 發，每發約 0.31 ms（q1 的 thermalization 0.3 ms 主導），約 95 秒，同實驗 3。
+
+**target**：一個 `qubit_pair`，理由同實驗 1、3。
+
+**Parameters**
+
+| 欄位 | 型別 / 預設 | 意義 |
+|---|---|---|
+| `start_tone_freq_hz` / `end_tone_freq_hz` | 6.55e9 / 7.05e9 | 同實驗 3：絕對 Hz、依 start → end 的順序掃、跨距 ≤ 500 MHz |
+| `num_tone_freq_points` | 501 | 同實驗 3，預設 1 MHz 一步 |
+| `tone_power_dbm` | −20 | 同實驗 3，只套在 tone 成員的 drive channel，run 後精確還原 |
+| `tone_len_ns` | 10000 | 同實驗 3 |
+| `tone_on` | `Literal["high","low"]` = `"low"` | tone 走哪個成員的線；選擇性 π 打在**另一個**成員。5Q4C 兩個 coupler 都是 low（q2 的線） |
+| `num_averages` | 300 | |
+| `reset_method` 等 | `QubitResetParameters` | 只能 thermal，理由同實驗 3（tone 成員的 LO 被移走） |
+
+沒有任何 flux 欄位：coupler 停在 idle，`old_coupler_idle_flux` 只記錄來源。需要 state discrimination。
+
+**序列（每一發）**
+
+1. reset 兩個成員。
+2. tone 成員的 xy 播 `saturation`（`duration` = `tone_len_ns`），頻率由 `update_frequency` 設成 f − LO。
+3. `align` → π 組：π 成員的 xy 在自己的 `drive_freq_hz` 播 `x180`；參考組：同樣長度的 `wait`。
+4. `align` → 兩個成員都讀取（2-level）→ 存四個 joint indicator。
+
+迴圈順序：averages（外）→ f（依 start → end）→ π 組、參考組（內，同一個 f 背靠背）。tone 與 π 不重疊：π 期間
+tone 已關，π 成員不會被 tone 的 AC Stark 推開；代價是 coupler 在 π 期間衰減（x180 只有 16 ns，可以忽略）。
+
+**contract**：sweeps `("tone_freq_hz", "pi_played")`（`pi_played` 的座標是 [1, 0]），variables
+`("joint_population",)`，readout_dims `("joint_state",)`，`target_kinds = ("qubit_pair",)`。
+
+**estimator（scqat，新的，1:1）：`pair_coupler_spectroscopy_zz`**
+
+1. π 成員的邊際：π 組 P_π(f)、參考組 P_0(f)，D = P_π − P_0。`pi_contrast` = D 的中位數（π 的效率乘上讀取
+   對比，正常約 0.85）。鄰居讀取直接看到 coupler 的效應在兩組都有，相減時抵消。
+2. **找線**：D 的 **dip**，規則同實驗 3 v2 的第 2 步（高度 ≥ `min_snr` × 雜訊、FWHM ≥ `min_fwhm_steps` 個步距
+   （預設 2）且 ≤ 視窗 1/4、merge 關、擬合視窗是線寬的 2 倍、正負固定為 dip）。
+3. **每一條 dip 都算 coupler 的**：tone 在 π 之前就關了，能讓 π 打偏的只有 tone 留下來的激發（coupler，偶爾一個
+   TLS），所以沒有實驗 3 第 3 步那種「ramp 有沒有改變它」的判斷。
+4. **f01 = 最高的那條**，其餘要落在它的階梯上（同實驗 3 v2 第 4 步）；對不上的設 `unexplained_lines`。
+5. `peak_at_edge` 同實驗 3。
+6. **SUCCESSFUL**：有 f01，而且沒有 `unexplained_lines`、`peak_at_edge`。`pi_contrast` 只報告不判斷：π 打得不準時
+   dip 變淺，位置不變。
+
+**共用程式**：實驗 3 estimator 裡的找線與階梯（`_lines`、`_ladder`）搬到 `scqat/tools/coupler_ladder.py`（純數學，
+兩個 estimator 共用；實驗 3 的行為不變，它的測試照舊要過）。SCQO 的 tone 視窗欄位與驗證（跨距、零寬度、
+`lo_hz`）搬到 `scqo/experiments/_coupler_tone.py` 的 mixin（不是 capability）；scqo-qm 的移 LO、換 band、還原
+QUAM tree 搬到 `scqo_qm/experiments/_coupler_tone.py`。三處都只是搬家，實驗 3 不改行為。
+
+**Result（`fit[pair]`）**：`f_c_hz`（附 stderr）、`fwhm_hz`、`dip_depth`、`snr`、`alpha_hz`（附 stderr，沒有 f02/2 時
+為 NaN）、`n_lines`、`n_ladder_lines`、`pi_contrast`、`lo_hz`、
+`old_coupler_idle_flux`，旗標 `no_line`、`unexplained_lines`、`peak_at_edge`。線的清單在 estimator 的 metadata。
+
+**寫回**：單一 pair、SUCCESSFUL 才提議：coupler mode 的 `f_01_hz`，有 α 時再加 `anharmonicity_hz`（同實驗 3）。
+不動任何 knob。實驗 2 與 3 各自保留寫回，由操作程序依情況選。
+
+**simulate**：用 stable seed 放一組跟實驗 3 同樣的階梯（f01 高 0.35、寬 5 步；f02/2 高 0.2、寬 4 步），當成 coupler
+的佔據 p_c(f)。π 成員：π 組 P = 0.02 + 0.88 × (1 − 0.9 × p_c)，參考組 P = 0.02；兩組都再加 f01 的 20–40 %（鄰居
+讀取看得到 coupler）。tone 成員兩組都是 0.02。
+
+**QM**
+
+- LO 與 band：同實驗 3（tone 成員的 port LO 放在視窗中心，超出 band 時整組 port pair 換 band；partner 的 LO 在新
+  band 內就不動；產生 config 後立刻還原 QUAM tree）。π 成員若是 tone 成員的 port-pair partner（q1_q2 的 q1），
+  只跟著換 band。
+- π：π 成員的 `x180`，照它自己校正好的樣子播。沒訊號時改成選擇性 π：取 x180 的 `calculate_waveform()`，
+  I 分量加總 × 1 ns = 面積，方波振幅 = 面積 / L，以 `saturation` 播放、`amp(方波振幅 / saturation 振幅)`、
+  `duration = L / 4` 個 clock。
+
+**事前拒絕**：多於一對；pair 沒有 coupler；成員缺 drive、readout 或 threshold；跨距超過 500 MHz；零寬度視窗；
+active reset；π 成員缺 `x180`。
+
+**只做 QM 版**，理由同實驗 1。
+
+**測試**
+
+- scqat：`tests/test_pair_coupler_spectroscopy_zz_estimator.py`：
+  - dip 的 f01 還原；
+  - 兩條線的階梯（f01 取較高的那條、有 f02/2 時報 α）；
+  - 只有一條線時就是 f01、不報 α；
+  - 鄰居讀取看得到 coupler 的峰在兩組都有時被抵消；
+  - 對不上階梯的額外 dip 報 FAILED；
+  - 只有 1–2 個點的尖峰被略掉；
+  - π 打得不準（`pi_contrast` 約 0.4）時 f01 照樣對；
+  - 沒有 dip（x180 預期的結果）時報 `no_line`、`pi_contrast` 照報；
+  - `order_free`；
+  - 沒有線時報 FAILED，圖仍畫得出來。
+  - `tests/test_coupler_ladder.py`（tool）；實驗 3 的測試照舊要過。
+- SCQO：`test_model_experiments -k coupler`（simulate → estimate 還原 f01；提議 `f_01_hz`；多對被拒絕；跨距
+  > 500 MHz 被拒絕；實驗 3 照舊），`test_capabilities` 的 `EXPECTED_CAPABILITIES`（`qubit_reset`），跑
+  `update_docs.py`。
+- scqo-qm：用 live quam_state 建 q1_q2 的程式：tone 在 q2 的 xy 上 `update_frequency`、`saturation` 的長度；q1 的
+  `x180`；參考組同長度的 `wait`；兩個成員的讀取；config 裡 q2 的 port 在 band 2、LO 在視窗中心，
+  q1 同一 band、LO 4.9 GHz，QUAM tree 保持原狀；q2_q3 時 q3 的 port 不動；census；qm 全套。
+
+**上機驗證（5Q4C，要先問）**
+
+1. q1_q2：6.85–7.35 GHz、501 點、`tone_on=low`（q2 的線）、−20 dBm、x180 打在 q1。預期沒有 dip（見上），
+   `pi_contrast` 約 0.85。有 dip 的話應在 7.0575 GHz（實驗 3 同日的值）。
+2. 沒有 dip → 改成選擇性 π（2 µs 方波，選擇性的預期 dip 深約 0.25），再跑 q1_q2，然後 q2_q3（π 打在 q3，預期
+   7.156 GHz）。
+
+f01 要跟實驗 3 在一個 FWHM 內一致（§6.2）。選擇性 π 仍找不到 dip 時：先看 `pi_contrast`（π 本身打不上），再把
+π 拉長到 3–4 µs（ZZ 比預期小）。
+
+**已定（使用者 2026-09-27）**
+
+1. tone 與 π 分在兩個成員：tone 走耦合較弱的線，π 打在耦合較強、ZZ 較大的那顆。這樣不需要在同一個 port 開
+   第二個 upconverter。
+2. **π 先用校正好的 x180**；沒訊號再改成選擇性 π（方波、預設 2 µs、振幅由 x180 的面積換算）。
+3. 參考組不打 π（同長度的 wait），用來抵消鄰居讀取直接看到 coupler 的效應與漂移。
+4. tone 結束後才打 π，兩者不重疊。
+
+**實作參考點**：實驗 3 的三個檔（SCQO `pair_coupler_spectroscopy_swap.py`、scqat 同名 estimator、scqo-qm 同名
+probe）是最直接的範本；`_drive_power.drive_power_boundary(targets=)`；scqo-qm `_pair_roles.JointPopulationMixin`、
+QUAM pulse 的 `calculate_waveform()`。
+
+**施工**：一個 feature，落地順序 scqat → SCQO → scqo-qm，最後寫一個 `RELEASES.d` fragment，不切 release。
+上機遇到第一個硬體或 gateway 錯誤就停下來回報，動過的 knob 全部還原。
 
 ## 6. 驗證方法與參考數據
 
