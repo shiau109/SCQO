@@ -469,8 +469,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the dips are read from the PI ARM alone, the reference arm's lines only reported. HARDWARE
   (run 20260927-213623-198, q1_q2, tone on q2, 2 us pi on q1): SUCCESSFUL, q1_q2_c f01 =
   7.05695 GHz +- 0.13 MHz, dip 0.40 deep, 6.9 MHz wide - 0.5 MHz from experiment 3's 7.0575
-  the same day; f02/2 a one-point dip (no alpha); pi_contrast 0.80. f_01_hz left pending on
-  the run. OWED: q2_q3 (tone on q2, pi on q3, expect 7.156 GHz).
+  the same day; f02/2 a one-point dip (no alpha); pi_contrast 0.80. ACCEPTED (user: the two
+  experiments agree closely enough, either will do): q1_q2_c.f_01_hz = 7.05695 GHz. q2_q3 (run
+  20260927-214341-704, tone on q2, pi on q3): SUCCESSFUL, q2_q3_c f01 = 7.15550 GHz +- 0.23 MHz
+  (experiment 3: 7.1555-7.1560), dip 0.31; reference arm flat (q3's readout does not see
+  q2_q3_c); its f_01_hz proposal is pending on the run.
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
