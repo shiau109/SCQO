@@ -433,12 +433,18 @@ provenance or a trap a user can walk into, **low** = hygiene.
   last)` in play order (user's proposal). q2_q3 the same day: **q2_q3_c f01 = 7.156 GHz at idle
   0.06 V, alpha ~ -148 MHz** (7.082 = f02/2, 7.014 = f03/3); arch predicted 7.17 (14 MHz off);
   reference arm flat; the swap lands mostly on q2 (outer) here but on q1 (inner) for q1_q2.
-  STILL OWED - the estimator redesign (plan doc §4 "estimator v2", approved 2026-09-27, being
-  implemented), from this experience: total excitation 1 - P00; lines of 1-2 points are
-  IGNORED (a measurement problem - re-measure finer; user); identify f01 as the TOP of a multi-photon ladder (the strongest line is
-  f02/2 when the tone goes through the more strongly coupled line - it picked 7.082 for q2_q3
-  through q3's line); report alpha from the ladder; a reference-arm line is not disqualifying by
-  itself (q1's readout sees q1_q2_c); no writeback without a consistent ladder or a single line.
+  Estimator v2 LANDED the same day (plan doc §4 "estimator v2"): total excitation 1 - P00;
+  lines under two sweep steps IGNORED (a measurement problem - re-measure finer; user); coupler
+  lines = the ones the ramp changes (a reference-arm line no longer vetoes); f01 = the TOP of the
+  multi-photon ladder, alpha from f02/2; writeback f_01_hz + anharmonicity_hz; default 501
+  points. Re-analysis of the 16 runs: q2_q3 through q3's line now reads 7.1558 (v1 took f02/2).
+  STILL OWED: (a) HARDWARE with v2's 1 MHz default, to get alpha from the fit (at 2 MHz steps
+  every f02/2 was 1-2 points and dropped); (b) a known blind spot - when f01 is not a line in the
+  ramp arm at all, the highest remaining coupler line is taken for f01: run 20260927-183300-636
+  (slow-then-fast ramp, tone through q1's line, -10 dBm) reads f03/3 = 6.921 GHz as a SUCCESSFUL
+  f01. That setting is known not to work; decide whether the estimator should catch it (e.g. a
+  significant ramp-minus-reference change left unexplained by the coupler lines) or the
+  procedure should just forbid it.
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
   1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the

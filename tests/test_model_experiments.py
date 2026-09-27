@@ -2596,28 +2596,40 @@ def test_coupler_crossing_refused_on_a_coupler_less_pair(tmp_path):
     assert "declares no coupler role" in out["error"]
 
 
-def test_coupler_swap_spectroscopy_finds_the_planted_line(crossing_session):
-    """simulate -> estimate returns the planted f_c through the decoy both arms share,
-    proposes only the coupler's f_01_hz, and leaves the probe's tone power as it was."""
+def test_coupler_swap_spectroscopy_finds_the_planted_ladder(crossing_session):
+    """simulate -> estimate returns the planted f01 and alpha - the ladder split
+    between the members, part of f01 in the reference arm, the probe's own line above
+    f01 in both arms - proposes the coupler's f_01_hz and anharmonicity_hz only, and
+    leaves the probe's tone power as it was."""
     from scqo.experiments.pair_coupler_spectroscopy_swap import simulated_line
 
     cls = registry.get("pair_coupler_spectroscopy_swap")
     p = cls.Parameters(targets=["q0_q1"], ramp_v=(0.0, 0.14))
-    truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz)
+    assert p.num_tone_freq_points == 501                 # 1 MHz over 500 MHz
+    truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz,
+                           p.num_tone_freq_points)
+    assert truth["member_line_hz"] > truth["f01_hz"]
     power_before = crossing_session.device_state()["q1_xy"]["drive_power_dbm"]
     out = crossing_session.run("pair_coupler_spectroscopy_swap",
                                {"targets": ["q0_q1"], "ramp_v": [0.0, 0.14]})
     assert out.get("error") is None, out.get("error")
     assert out["outcomes"]["q0_q1"] == "successful"
     fit = out["fit"]["q0_q1"]
-    assert fit["f_c_hz"] == pytest.approx(truth["f_c_hz"], abs=2e6)
-    assert fit["reference_feature"] == 0 and fit["no_peak"] == 0
+    assert fit["f_c_hz"] == pytest.approx(truth["f01_hz"], abs=1e6)
+    assert fit["alpha_hz"] == pytest.approx(truth["alpha_hz"], abs=3e6)
+    assert (fit["n_coupler_lines"], fit["n_ladder_lines"]) == (2, 2)
+    # what the ramp ADDED on each member: the reference share of f01 sits on high
+    assert fit["landing_high"] == pytest.approx(
+        (truth["to_high"] - truth["reference_share"]) * 0.35, abs=0.05)
+    assert fit["landing_low"] == pytest.approx((1 - truth["to_high"]) * 0.35, abs=0.05)
+    assert fit["no_line"] == fit["unexplained_lines"] == fit["peak_at_edge"] == 0
     assert fit["lo_hz"] == pytest.approx(6.80e9)
     assert fit["ramp_duration_ns"] == 936.0          # 0.14 V at 0.15 V/us, up to 4 ns
     assert fit["old_ramp_idle_flux"] == pytest.approx(0.16)
     proposals = _proposals(out)
-    assert set(proposals) == {("q0_q1_c", "f_01_hz")}
+    assert set(proposals) == {("q0_q1_c", "f_01_hz"), ("q0_q1_c", "anharmonicity_hz")}
     assert proposals[("q0_q1_c", "f_01_hz")] == pytest.approx(fit["f_c_hz"])
+    assert proposals[("q0_q1_c", "anharmonicity_hz")] == pytest.approx(fit["alpha_hz"])
     assert crossing_session.device_state()["q1_xy"]["drive_power_dbm"] == power_before
 
 

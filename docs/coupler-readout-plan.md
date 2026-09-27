@@ -167,7 +167,7 @@ F 偏差 < 0.1 GHz、P < 1.5 %，報的 stderr 約 0.07 GHz。這個 stderr 只�
 > 規格 2026-09-27 寫成並核可，已實作並在 5Q4C q1_q2、q2_q3 上機。已定的四點（使用者，2026-09-27）：ramp
 > 兩種形狀都可選（後來改成一個 `ramp_v`）；一次 run 只用一個 LO、跨距 ≤ 500 MHz；每個頻率點穿插不做 ramp 的
 > 參考組；SUCCESSFUL 時提議 coupler 的 `f_01_hz`。
-> **estimator 修訂 v2（下方「estimator v2」一段）依上機經驗寫成，2026-09-27 核可。**
+> **estimator 修訂 v2（下方「estimator v2」一段）依上機經驗寫成，2026-09-27 核可並實作。**
 
 **問題**：coupler 在目前 idle 下的 0→1 頻率 f_c。
 
@@ -235,19 +235,28 @@ q1_q2 下 251 點一次 run 約 50 秒，v2 預設的 501 點約 90 秒。ramp �
 漏掉；鄰居的讀取可能直接看到 coupler（q1 看得到 q1_q2_c），參考組有峰不代表不是 coupler；從耦合較強的線打時，
 最強的線是 f02/2 而不是 f01（q2_q3 經由 q3 的線時挑中 7.082 而不是 7.156）。
 
-**estimator v2（2026-09-27 核可）**：依使用者 2026-09-27 同意的六點。
+**estimator v2（2026-09-27 核可並實作）**：依使用者 2026-09-27 同意的六點；括號內是實作時定下的細節。
 
 1. **訊號用總激發**：ramp 組 T_r(f) = 1 − P00、參考組 T_0(f) = 1 − P00，差值 D = T_r − T_0。
    另外記下 f01 處兩個成員各自拿到多少（`landing_high`、`landing_low`，只是診斷，不參與判斷）。
 2. **找線**：對 T_r 用 `tools.peak_fit.fit_peaks`（merge 關掉，同 v1），每條線都要自己的高度 ≥ `min_snr` × 雜訊，
    **FWHM ≥ `min_fwhm_steps` 個步距（預設 2）**。只有 1–2 個點的訊號一律略掉：那是量測參數的問題，要用更細的
-   步距重量，estimator 不去遷就它。
+   步距重量，estimator 不去遷就它。（實作：沿用 v1 的 FWHM ≤ 視窗 1/4 與由強到弱去重複；`polarity="peak"`，
+   因為 `fit_peaks` 自動判斷正負時，兩條差不多高的線會讓反相訊號裡兩線之間的雜訊點 prominence 跟線一樣大，
+   整條被當成 dip、一條線都不剩；每條線的擬合視窗是估計線寬的 2 倍而不是 5 倍，否則 30 MHz 寬的 f01 會
+   擬合到 74 MHz 外、更強的 f02/2 上。1 點寬的尖峰從不通過；2 點寬的偶爾剛好過 2 步距，過了也對不上階梯，
+   run 判 FAILED，不會被當成 f01。）
 3. **哪些線屬於 coupler**：線中心處的 |D| ≥ `min_snr` × D 的雜訊（正負都算），代表 ramp 改變了它、涉及 coupler
    的狀態。|D| 不顯著的線是探針自己的特徵（列在 `probe_lines_hz`），不參與判斷。**參考組有線不再自動否決**。
+   （實作：「線中心處的 D」是 D 減去中位數後、在中心 ±3 FWHM 內投影到該線自己的單位 Lorentzian 上的高度，
+   雜訊是 D 的點對點雜訊除以 √ΣL²，整條線的點都算進去，而不是只看最靠近中心的一點。）
 4. **用階梯辨認 f01**：coupler 的線中**最高**的那條當 f01。其餘每一條都要落在它的階梯上：f02/2 = f01 + α/2、
    f03/3 ≈ f01 + α，α 在 −50 到 −400 MHz 之間，容許誤差取 15 MHz 與兩條線 FWHM 較大者的較大值（實測 f03/3
    比 f01 + α 偏 3–11 MHz）。有 f02/2 時由 α = 2(f02/2 − f01) 報 α（附 stderr）；有 f03/3 時一併檢查。
-   對不上階梯的 coupler 線設 `unexplained_lines`。
+   對不上階梯的 coupler 線設 `unexplained_lines`。（實作：每條其他線各提出兩個 α（當 f02/2、當 f03/3），
+   範圍內的都試，放上階梯最多條的勝出；平手時先取有 f02/2 的（只有兩條線時兩種讀法分不開，f02/2 較強、
+   較可能），再取放上去的線面積（高 × FWHM）較大的。只有 f01 與一條線、且那條其實是 f03/3 時，會被讀成
+   α 兩倍大的 f02/2，這是兩條線本身分不開的情況。）
 5. **邊緣**：f01 離視窗邊緣不到一個 FWHM 時設 `peak_at_edge`。
 6. **SUCCESSFUL**：有 f01，而且沒有 `unexplained_lines`、`peak_at_edge`。只有一條 coupler 線時就是 f01、不報 α。
 
@@ -259,9 +268,10 @@ q1_q2 下 251 點一次 run 約 50 秒，v2 預設的 501 點約 90 秒。ramp �
 **寫回（v2）**：單一 pair、SUCCESSFUL 才提議。coupler mode 的 `f_01_hz`（目前 idle 下的 f01）；有 α 時再加
 `anharmonicity_hz`。不動任何 knob。
 
-**simulate（v2）**：用 stable seed 放一組階梯：f01（高約 0.35、寬約 5 步）與 f02/2（高約 0.2、寬約 3 步，
-α 在 −120 到 −160 MHz），激發按隨機比例分給兩個成員；參考組放 f01 高度的一部分（模擬鄰居讀取看得到
-coupler）；另外在兩組都有、高度相同的位置放一條探針自己的線（D 不顯著，應被略掉）。
+**simulate（v2）**：用 stable seed 放一組階梯：f01（高 0.35、寬 5 步）與 f02/2（高 0.2、寬 4 步，α 在 −120 到
+−160 MHz；3 步寬的線在 300 發下約 5 % 會擬合成不到 2 步而被略掉，所以用 4 步），激發按隨機比例（0.2–0.8）
+分給兩個成員；參考組在 high 成員上放 f01 的 20–40 %（模擬鄰居讀取看得到 coupler）；另外在 f01 **上方**放一條
+探針自己的線（高 0.3、寬 6 步，兩組相同）：誤判成 coupler 線的話它就會變成 f01。
 
 **QM 的 band / LO**：LO 放在視窗中心。這個 LO 超出 port 目前 band 的範圍時，把整組 port pair 換到涵蓋它的
 band；partner 的 LO 若仍在新 band 內就不動，不在的話比照 broadband 停到 band 下限。probe 直接產生**一份
@@ -277,7 +287,7 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
 
 **測試**
 
-- scqat（v2 要改寫）：`tests/test_pair_coupler_spectroscopy_swap_estimator.py`：
+- scqat（v2 已改寫）：`tests/test_pair_coupler_spectroscopy_swap_estimator.py`：
   - 兩條線的階梯：f01 取較高的那條、α 正確；
   - f01 被推寬、f02/2 比較強時（5Q4C q2_q3 經由 q3 的線）仍選出 f01；
   - 只有一條線時就是 f01、不報 α；
@@ -285,9 +295,12 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
   - 參考組也有 coupler 線時（鄰居讀取看得到）不否決；
   - 兩組相同的探針線被略掉；
   - 對不上階梯的額外 coupler 線報 FAILED；
-  - 只有 1–2 個點的尖峰被略掉；
+  - f03/3 放在同一個階梯上；
+  - 只有 1–2 個點的尖峰被略掉（2 點寬的偶爾留下時 run 判 FAILED）；
   - `order_free`；
   - 沒有線時報 FAILED，圖仍畫得出來。
+  - `tests/test_peak_fit.py`：`polarity` 固定為 peak 時，auto 會判成 dip 的兩條等高線照樣找到。
+  - 另外以 40 個種子逐一檢查每個情境（不進測試）。
 - SCQO：`test_model_experiments -k spectroscopy_swap`（simulate → estimate 還原放進去的 f01 與 α；提議
   `<coupler>.f_01_hz` 與 `anharmonicity_hz`；多對被拒絕；`ramp_v=None` 被拒絕；跨距 > 500 MHz 被拒絕），
   `test_capabilities` 的 `EXPECTED_CAPABILITIES`（`qubit_reset`；頻率是絕對 Hz，不是 detuning capability），跑
@@ -307,6 +320,16 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
    f01 被推寬到約 30 MHz，最強的變成 f02/2（estimator 因此挑錯）。激發主要落在 q2（外圈，符合回程先碰到
    外圈的圖像；q1_q2 卻主要落在內圈的 q1）。參考組是平的：q2、q3 的讀取都看不到 q2_q3_c。arch 預測
    7.17 GHz，只差 14 MHz（q1_q2 差 0.26 GHz）。
+
+3. v2 重新分析這 16 筆（2026-09-27，離線）：先快後慢的 q1_q2 三筆經由 q2 的線都是 SUCCESSFUL，f01 =
+   7.0577–7.0589 GHz；q2_q3 經由 q3 的線（v1 挑錯的那筆）現在選到 7.1558 GHz（FWHM 27 MHz）；經由 q2 的線
+   7.1556–7.1560，視窗從 7.15 開始的那筆判 `peak_at_edge`；q1_q2 idle 0.15 V 經由 q2 的那筆 f01 貼在視窗邊緣、
+   只剩 1–2 點，判 `no_line`。2 MHz 步距下 f02/2 都只有 1–2 點寬，所以都
+   沒有報 α：要 α 就用 v2 預設的 1 MHz 步距，或在 f02/2 附近用窄視窗重量。經由 q1 的線時 f01 被 AC Stark
+   推高、推寬（7.071–7.077，FWHM 13–34 MHz），α 報成 −161 到 −172 MHz：量測條件的問題，從耦合較弱的線打。
+   **一筆誤判**：183300（先慢後快、經由 q1 的線、−10 dBm）ramp 組裡 f01 根本不成線（參考組有一大片被推寬的
+   coupler 訊號），只剩 f03/3 的 6.921，於是被當成 f01 判 SUCCESSFUL。這是已知不可用的量測設定；v2 的規則
+   在 f01 缺席時分辨不出來。
 
 找不到峰時先移視窗（±250 MHz），再調功率（±10 dB）。辨認 f01 看多光子階梯（f02/2 = f01 + α/2、
 f03/3 ≈ f01 + α），並從耦合較弱的那條線打 tone；不要只看哪條線在低功率還在。

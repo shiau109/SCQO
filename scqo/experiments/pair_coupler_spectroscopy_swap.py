@@ -11,13 +11,19 @@ of the same length ->
 
 The coupler has no drive line; the tone reaches it through its hybridization with
 the probe (a coupler Rabi of about ``g / delta`` of the probe's). At ``f = f_c`` the
-coupler is excited. The slow ramp then carries the coupler across the probe
-ADIABATICALLY - the excitation moves into the probe - and the sudden return is
-diabatic, so it stays there; the probe's excited population peaks at ``f_c``. The
-reference arm keeps the excitation in the coupler, so it shows only what the tone
-does to the probe directly (its own transitions, the readout, a TLS). The scqat
-estimator (``pair_coupler_spectroscopy_swap``) fits the ramp-minus-reference
-difference and refuses a line the reference arm shares.
+coupler is excited. The slow ramp then carries the coupler across a member
+ADIABATICALLY - the excitation moves into it - and the sudden return is diabatic, so
+it stays there. Which member receives it differs from pair to pair (5Q4C: q1 of
+q1_q2, q2 of q2_q3), so the signal is the TOTAL excitation 1 - P00. The reference
+arm keeps the excitation in the coupler; a neighbour's readout may still see it
+there (5Q4C q1 sees q1_q2_c), so a reference line does not rule a line out. The
+scqat estimator (``pair_coupler_spectroscopy_swap``) takes the ramp arm's lines,
+keeps those the ramp CHANGES (ramp minus reference), and reads f01 as the HIGHEST of
+them: driven hard the coupler shows its multi-photon ladder below it (f02/2 = f01 +
+alpha/2, f03/3 ~ f01 + alpha), and every other coupler line must sit on that ladder.
+Through the more strongly coupled member's line f01 broadens and f02/2 becomes the
+strongest line, so drive through the weaker one. A line one or two sweep steps wide
+is ignored - re-measure it with a finer step.
 
 THE RAMP is ``ramp_v = (first, last)`` in PLAY order, and only its slow segment
 (first -> last) is adiabatic: every crossing inside a jump (idle -> first, last ->
@@ -38,7 +44,8 @@ from ``pair_coupler_crossing_pulse``'s crossing plus about 30 mV.
 
 ONE LO PER RUN: the tone window is ABSOLUTE and at most 500 MHz wide, played as
 +-250 MHz of IF around one LO at its center. Proposes the coupler's ``f_01_hz`` (its
-frequency at the CURRENT idle); no knob is written. One pair per run, as for
+frequency at the CURRENT idle) and, when the ladder shows f02/2, its
+``anharmonicity_hz``; no knob is written. One pair per run, as for
 ``pair_coupler_crossing_pulse``.
 """
 
@@ -73,7 +80,7 @@ MAX_TONE_SPAN_HZ = 500e6
 _CLOCK_NS = 4
 _MIN_RAMP_NS = 16
 
-_FLAG_KEYS = ("no_peak", "multiple_peaks", "reference_feature", "peak_at_edge")
+_FLAG_KEYS = ("no_line", "unexplained_lines", "peak_at_edge")
 
 
 class PairCouplerSpectroscopySwapParameters(
@@ -90,7 +97,11 @@ class PairCouplerSpectroscopySwapParameters(
         7.05e9, gt=0,
         description="Last tone frequency (Hz, absolute). The window is at most 500 MHz "
         "wide: one LO at its center plays it as +-250 MHz of IF.")
-    num_tone_freq_points: int = Field(251, gt=4, description="Number of tone frequencies.")
+    num_tone_freq_points: int = Field(
+        501, gt=4,
+        description="Number of tone frequencies. The default steps 1 MHz over 500 MHz: "
+        "f01 is 4-7 MHz wide at -20 dBm, and a line under two steps wide is ignored. "
+        "Measure a narrower line (f02/2) with a narrower window or more points.")
     num_averages: int = Field(300, gt=0, description="Number of shots to average per sweep point.")
     tone_power_dbm: float = Field(
         -20.0, le=10.0,
@@ -104,10 +115,11 @@ class PairCouplerSpectroscopySwapParameters(
         "saturates it; the swapped peak is then at most ~0.5.")
     probe: Literal["high", "low"] = Field(
         "high",
-        description="The member that gets the tone and receives the coupler excitation "
-        "(roster role). The SLOW segment of ramp_v must cross it first: with the "
-        "coupler above both members that is 'high' for (0, far) and 'low' for "
-        "(far, 0) with 'far' past both crossings.")
+        description="The member whose drive line carries the tone (roster role). The "
+        "excitation is counted on BOTH members, so this only picks the line: use the "
+        "more weakly coupled member's - through the strongly coupled one f01 broadens "
+        "and f02/2 becomes the strongest line (5Q4C: 'low' for both couplers, q2's "
+        "line).")
     ramp_on: Literal["coupler", "probe"] = Field(
         "coupler",
         description="Which flux line plays the ramp: the coupler's, or the probe's own "
@@ -152,24 +164,36 @@ class PairCouplerSpectroscopySwapParameters(
 
 
 class PairCouplerSpectroscopySwapResult(Result):
-    """``fit[pair]``: ``f_c_hz`` (with ``f_c_stderr_hz``), ``fwhm_hz``, ``peak_height``
-    and ``snr`` of the strongest ramp-only line, ``n_peaks``, the flags ``no_peak``,
-    ``multiple_peaks``, ``reference_feature``, ``peak_at_edge``, and the provenance
-    ``lo_hz``, ``ramp_duration_ns``, ``old_ramp_idle_flux``. SUCCESSFUL = a line
-    that is neither shared with the reference arm nor at the window edge. The other
-    lines (a two-photon 0-2 transition, reference-arm features) are in the
-    estimator's metadata JSON."""
+    """``fit[pair]``: ``f_c_hz`` (the coupler's f01, with ``f_c_stderr_hz``),
+    ``fwhm_hz``, ``peak_height`` and ``snr`` of that line; ``alpha_hz`` (with
+    ``alpha_stderr_hz``) from its f02/2 line, NaN without one; ``n_coupler_lines``
+    (lines the ramp changes) and ``n_ladder_lines`` (those on f01's ladder, f01
+    included); ``landing_high`` / ``landing_low`` (how much of f01 each member
+    received - diagnostic); the flags ``no_line``, ``unexplained_lines`` (a coupler
+    line off the ladder), ``peak_at_edge``; and the provenance ``lo_hz``,
+    ``ramp_duration_ns``, ``old_ramp_idle_flux``. SUCCESSFUL = an f01 with every
+    coupler line on its ladder, away from the window edge. The line lists (coupler,
+    member-only, off-ladder) are in the estimator's metadata JSON."""
 
 
-def simulated_line(pair: str, start_hz: float, end_hz: float) -> dict:
-    """The hidden coupler line (and a decoy both arms share) the simulator plants
-    for ``pair`` over a tone window. Module-level so a test can compare."""
+def simulated_line(pair: str, start_hz: float, end_hz: float, num_points: int) -> dict:
+    """The hidden coupler ladder the simulator plants for ``pair`` over a tone
+    window: f01 and f02/2 = f01 + alpha/2, split between the members at random, a
+    share of f01 in the reference arm (a neighbour's readout seeing the coupler),
+    and a line of the probe member's own ABOVE f01, identical in both arms. Widths
+    are in sweep steps. Module-level so a test can compare."""
     lo, hi = window_bounds(start_hz, end_hz)
     span = hi - lo
+    step = span / max(num_points - 1, 1)
     rng = np.random.default_rng(stable_seed("pair_coupler_spectroscopy_swap", pair))
-    f_c = lo + float(rng.uniform(0.55, 0.75)) * span
-    return {"f_c_hz": f_c, "fwhm_hz": span / 80, "height": 0.35,
-            "decoy_hz": lo + float(rng.uniform(0.2, 0.35)) * span, "decoy_height": 0.25}
+    f01 = lo + float(rng.uniform(0.55, 0.75)) * span
+    alpha = -float(rng.uniform(120e6, 160e6))
+    return {"f01_hz": f01, "fwhm_01_hz": 5 * step, "height_01": 0.35,
+            "alpha_hz": alpha, "f02_half_hz": f01 + alpha / 2, "fwhm_02_hz": 4 * step,
+            "height_02": 0.2, "to_high": float(rng.uniform(0.2, 0.8)),
+            "reference_share": float(rng.uniform(0.2, 0.4)),
+            "member_line_hz": lo + float(rng.uniform(0.85, 0.93)) * span,
+            "member_line_fwhm_hz": 6 * step, "member_line_height": 0.3}
 
 
 def _line(f: np.ndarray, center: float, height: float, fwhm: float) -> np.ndarray:
@@ -183,13 +207,15 @@ class PairCouplerSpectroscopySwap(Experiment):
     name: ClassVar[str] = "pair_coupler_spectroscopy_swap"
     description: ClassVar[str] = (
         "Coupler frequency at its idle point: a tone on one pair member's drive line "
-        "excites the coupler when it hits f_c, then a slow flux ramp carries the "
-        "coupler across that member so the excitation swaps into it (a sudden return "
-        "leaves it there), and the member's population peaks at f_c. Every frequency "
-        "also runs a reference shot without the ramp, which rejects lines that excite "
-        "the member directly. The window is absolute, at most 500 MHz (one LO); the "
-        "ramp end comes from pair_coupler_crossing_pulse. Proposes the coupler's "
-        "f_01_hz. One pair per run; needs state discrimination."
+        "excites the coupler when it hits a coupler transition, then a slow flux ramp "
+        "carries the coupler across a member so the excitation swaps into it (a sudden "
+        "return leaves it there), and the pair's total excitation 1 - P00 peaks. Every "
+        "frequency also runs a reference shot without the ramp; the lines the ramp "
+        "changes are the coupler's, the highest is f01 and the rest must sit on its "
+        "multi-photon ladder (f02/2 gives alpha). The window is absolute, at most 500 "
+        "MHz (one LO); the ramp end comes from pair_coupler_crossing_pulse. Proposes "
+        "the coupler's f_01_hz and anharmonicity_hz. One pair per run; needs state "
+        "discrimination."
     )
     Parameters: ClassVar[type] = PairCouplerSpectroscopySwapParameters
     Result: ClassVar[type] = PairCouplerSpectroscopySwapResult
@@ -266,22 +292,33 @@ class PairCouplerSpectroscopySwap(Experiment):
         return self.run_estimate()
 
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """The planted line on the probe in the ramp arm only, a decoy on the probe in
-        BOTH arms, members independent, sampled with ``num_averages`` shots."""
+        """The planted ladder (``simulated_line``): split between the members in the
+        ramp arm, a share of f01 on the high member in the reference arm, the probe's
+        own line in both; members independent, sampled with ``num_averages`` shots."""
         f = coords[TONE_AXIS]
         arms = coords[ARM_AXIS]
         p = self.params
         joint = np.empty((len(p.targets), 4, f.size, arms.size))
         for k, pair in enumerate(p.targets):
-            truth = simulated_line(pair, p.start_tone_freq_hz, p.end_tone_freq_hz)
+            t = simulated_line(pair, p.start_tone_freq_hz, p.end_tone_freq_hz,
+                               p.num_tone_freq_points)
             rng = np.random.default_rng(stable_seed("pair_coupler_spectroscopy_swap", pair,
                                                     "noise"))
-            decoy = _line(f, truth["decoy_hz"], truth["decoy_height"], truth["fwhm_hz"])
+            f01 = _line(f, t["f01_hz"], t["height_01"], t["fwhm_01_hz"])
+            ladder = f01 + _line(f, t["f02_half_hz"], t["height_02"], t["fwhm_02_hz"])
+            own = _line(f, t["member_line_hz"], t["member_line_height"],
+                        t["member_line_fwhm_hz"])
             for a, arm in enumerate(arms):
-                probe = 0.02 + decoy + (_line(f, truth["f_c_hz"], truth["height"],
-                                              truth["fwhm_hz"]) if arm else 0.0)
-                other = np.full(f.size, 0.02)
-                ph, pl = (probe, other) if p.probe == "high" else (other, probe)
+                ph, pl = np.full(f.size, 0.02), np.full(f.size, 0.02)
+                if arm:
+                    ph, pl = ph + t["to_high"] * ladder, pl + (1 - t["to_high"]) * ladder
+                else:
+                    ph = ph + t["reference_share"] * f01
+                if p.probe == "high":
+                    ph = ph + own
+                else:
+                    pl = pl + own
+                ph, pl = np.clip(ph, 0, 1), np.clip(pl, 0, 1)
                 probs = np.stack([(1 - ph) * (1 - pl), (1 - ph) * pl, ph * (1 - pl), ph * pl])
                 for j in range(f.size):
                     joint[k, :, j, a] = (rng.multinomial(p.num_averages, probs[:, j])
@@ -311,7 +348,10 @@ class PairCouplerSpectroscopySwap(Experiment):
             fit: dict = {
                 "f_c_hz": r["f_c_hz"], "f_c_stderr_hz": r["f_c_stderr_hz"],
                 "fwhm_hz": r["fwhm_hz"], "peak_height": r["peak_height"], "snr": r["snr"],
-                "n_peaks": int(r["n_peaks"]),
+                "alpha_hz": r["alpha_hz"], "alpha_stderr_hz": r["alpha_stderr_hz"],
+                "n_coupler_lines": int(r["n_coupler_lines"]),
+                "n_ladder_lines": int(r["n_ladder_lines"]),
+                "landing_high": r["landing_high"], "landing_low": r["landing_low"],
                 "lo_hz": self.lo_hz(), "ramp_duration_ns": float(played),
                 "old_ramp_idle_flux": idle[pair],
             }
@@ -322,13 +362,17 @@ class PairCouplerSpectroscopySwap(Experiment):
 
     def update(self) -> None:
         """One SUCCESSFUL pair: the coupler's ``f_01_hz`` (its frequency at the current
-        idle). No knob moves."""
+        idle) and, when the ladder showed f02/2, its ``anharmonicity_hz``. No knob
+        moves."""
         if self.result is None or len(self.result.fit) != 1:
             return
         for pair, fit in self.result.fit.items():
             if self.result.outcomes[pair] is not Outcome.SUCCESSFUL:
                 continue
-            self.device.component(pair_coupler(self.device.roster, pair)).f_01_hz = fit["f_c_hz"]
+            coupler = self.device.component(pair_coupler(self.device.roster, pair))
+            coupler.f_01_hz = fit["f_c_hz"]
+            if math.isfinite(fit["alpha_hz"]):
+                coupler.anharmonicity_hz = fit["alpha_hz"]
 
     @classmethod
     def validate_targets(cls, roster, targets):
