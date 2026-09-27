@@ -2,8 +2,9 @@
 
 Per shot: reset both members -> a tone of frequency ``f`` on the TONE member's drive
 line (its ``saturation`` operation, ``tone_len_ns`` long, at ``tone_power_dbm``) ->
-in the PI arm the other member (the PI member) plays its ``x180``; in the REFERENCE
-arm, a wait of the same length -> both members read out 2-level. Loops: averages
+in the PI arm the other member (the PI member) plays a SELECTIVE pi,
+``selective_pi_len_ns`` long; in the REFERENCE arm, a wait of the same length -> both
+members read out 2-level. Loops: averages
 (outer) -> ``f`` (start -> end) -> the two arms back to back (inner), so drift
 cancels between them.
 
@@ -12,18 +13,23 @@ tone member (a coupler Rabi of about ``g / delta`` of the member's). At a couple
 transition the coupler is excited, and while it is, the qubit-coupler ZZ pulls the pi
 member off its drive frequency: a pi NARROWER than the ZZ then misses, and the pi
 member's excited population DIPS. The tone is off before the pi, so only what it left
-behind can spoil it. The reference arm (no pi) cancels what the pi member's readout
-sees of the coupler directly (5Q4C q1 sees q1_q2_c) and slow drift. The scqat estimator
-(``pair_coupler_spectroscopy_zz``) finds the dips of pi minus reference and reads f01
-as the HIGHEST, every other dip on its multi-photon ladder (as
-``pair_coupler_spectroscopy_swap``). Unlike that experiment the coupler never moves:
+behind can spoil it. The scqat estimator (``pair_coupler_spectroscopy_zz``) finds the
+dips of the PI ARM alone and reads f01 as the HIGHEST, every other dip on its
+multi-photon ladder (as ``pair_coupler_spectroscopy_swap``). The reference arm (no pi)
+is not subtracted: the pi member's readout sees the coupler directly only while the
+member is in 0 (5Q4C q1 sees q1_q2_c's f01 and f02/2 as 0.1 bumps; in 1 it does not),
+so pi minus reference would dig false dips at the coupler's lines. Its own lines are
+reported as a diagnostic. Unlike that experiment the coupler never moves:
 no ramp, no crossing, no dependence on where the readout resonators sit.
 
-THE PI is the pi member's calibrated ``x180`` for now (user, 2026-09-27: try the gate
-first, reshape the pulse only if there is no signal). On 5Q4C the ZZ is ~0.3-0.9 MHz
-(two Duffing oscillators, g = 40-70 MHz) against a 16 ns x180 about +-30 MHz wide, so a
-dip is NOT expected; the next step is a ~2 us square selective pi (plan doc §5). The
-simulator plants the dip a selective pi would give, so the fit path is exercised.
+THE PI is SELECTIVE: a square pulse ``selective_pi_len_ns`` long whose area is the pi
+member's calibrated x180's, so no new calibration. On 5Q4C the ZZ is ~0.3-0.9 MHz (two
+Duffing oscillators, g = 40-70 MHz): the 16 ns x180 (about +-30 MHz wide) showed no
+dip on hardware, as predicted. Square, not a smooth envelope, because the coupler
+decays during the pulse (T1 ~5 us on 5Q4C q1_q2_c): a smooth envelope needs about
+twice the length for the same selectivity. With that decay a 2 us square leaves
+0.67-0.83 of the coupler occupation as dip over the ZZ range, a 4 us cosine 0.62-0.69,
+a 4 us Gaussian 0.56-0.69.
 
 THE LINES: the tone rides on ``tone_on``'s line (default the low member - on 5Q4C q2,
 the more weakly coupled line for both couplers, where f01 is cleanest) and the pi on
@@ -70,6 +76,13 @@ class PairCouplerSpectroscopyZZParameters(
     tone window, points, power and length are ``CouplerToneParameters``."""
 
     num_averages: int = Field(300, gt=0, description="Number of shots to average per sweep point.")
+    selective_pi_len_ns: int = Field(
+        2000, ge=16, multiple_of=4,
+        description="Length of the pi member's SELECTIVE pi (ns, multiple of 4): a square "
+        "pulse with the calibrated x180's area, so its bandwidth is ~1/length. It has to "
+        "be narrower than the qubit-coupler ZZ (5Q4C: 0.3-0.9 MHz) yet short against the "
+        "coupler's T1 (5Q4C: ~5 us), which decays during it; 2 us leaves 0.67-0.83 of "
+        "the coupler occupation as dip. Longer for a smaller ZZ.")
     tone_on: Literal["high", "low"] = Field(
         "low",
         description="The member whose drive line carries the tone (roster role); the "
@@ -83,19 +96,19 @@ class PairCouplerSpectroscopyZZResult(Result):
     """``fit[pair]``: ``f_c_hz`` (the coupler's f01, with ``f_c_stderr_hz``),
     ``fwhm_hz``, ``dip_depth`` and ``snr`` of that dip; ``alpha_hz`` (with
     ``alpha_stderr_hz``) from its f02/2 dip, NaN without one; ``n_lines`` and
-    ``n_ladder_lines`` (those on f01's ladder, f01 included); ``pi_contrast`` (the
-    median pi-minus-reference population: the pi's efficiency times the readout
-    contrast); the flags ``no_line``, ``unexplained_lines`` (a dip off the ladder),
+    ``n_ladder_lines`` (those on f01's ladder, f01 included); ``pi_contrast`` (median
+    pi arm minus median reference: the pi's efficiency times the readout contrast); the flags ``no_line``, ``unexplained_lines`` (a dip off the ladder),
     ``peak_at_edge``; and the provenance ``lo_hz``, ``old_coupler_idle_flux``.
     SUCCESSFUL = an f01 with every dip on its ladder, away from the window edge. The
-    line lists are in the estimator's metadata JSON."""
+    line lists - including the reference arm's own lines, where the pi member's
+    readout sees the coupler - are in the estimator's metadata JSON."""
 
 
 def simulated_line(pair: str, start_hz: float, end_hz: float, num_points: int) -> dict:
     """The hidden coupler ladder the simulator plants for ``pair`` over a tone
     window: the coupler's occupation at f01 and f02/2 = f01 + alpha/2, the pi's
-    contrast and how much of it the ZZ spoils (a selective pi's), and the share of
-    the occupation the pi member's readout sees directly in both arms. Widths are in
+    contrast and how much of it the ZZ spoils, and the share of the occupation the pi
+    member's readout sees directly while the member is in 0. Widths are in
     sweep steps. Module-level so a test can compare."""
     lo, hi = window_bounds(start_hz, end_hz)
     span = hi - lo
@@ -124,10 +137,10 @@ class PairCouplerSpectroscopyZZ(Experiment):
         "transition, then the other member gets a pi; while the coupler is excited the "
         "qubit-coupler ZZ detunes that member and a pi narrower than the ZZ misses, so "
         "its population dips. Every frequency also runs a reference shot without the "
-        "pi. The highest dip is f01 and the rest must sit on its multi-photon ladder "
-        "(f02/2 gives alpha). The pi is the calibrated x180 for now (a sub-MHz ZZ "
-        "needs a selective pi to show). The window is absolute, at most 500 MHz (one "
-        "LO). Proposes the coupler's f_01_hz and anharmonicity_hz. One pair per run; "
+        "pi. The highest dip of the pi arm is f01 and the rest must sit on its "
+        "multi-photon ladder (f02/2 gives alpha). The pi is a square selective pi with "
+        "the x180's area, narrower than the ZZ (sub-MHz on 5Q4C). The window is "
+        "absolute, at most 500 MHz (one LO). Proposes the coupler's f_01_hz and anharmonicity_hz. One pair per run; "
         "needs state discrimination."
     )
     Parameters: ClassVar[type] = PairCouplerSpectroscopyZZParameters
@@ -182,8 +195,9 @@ class PairCouplerSpectroscopyZZ(Experiment):
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """The planted ladder (``simulated_line``) as the coupler's occupation: the pi
         member loses ``spoil`` of its pi contrast where the coupler is excited, and
-        its readout sees ``readout_share`` of the occupation in both arms; the tone
-        member stays near ground. Members independent, sampled with
+        its readout sees ``readout_share`` of the occupation while it is in 0 - all
+        of the reference arm, the spoiled part of the pi arm; the tone member stays
+        near ground. Members independent, sampled with
         ``num_averages`` shots."""
         f = coords[TONE_AXIS]
         arms = coords[ARM_AXIS]
@@ -197,9 +211,12 @@ class PairCouplerSpectroscopyZZ(Experiment):
             occupation = (_line(f, t["f01_hz"], t["occupation_01"], t["fwhm_01_hz"])
                           + _line(f, t["f02_half_hz"], t["occupation_02"], t["fwhm_02_hz"]))
             for a, arm in enumerate(arms):
-                mine = 0.02 + t["readout_share"] * occupation
+                seen = t["readout_share"] * occupation
                 if arm:
-                    mine = mine + t["pi_contrast"] * (1 - t["spoil"] * occupation)
+                    spoiled = t["spoil"] * occupation
+                    mine = 0.02 + t["pi_contrast"] * (1 - spoiled) + seen * t["spoil"]
+                else:
+                    mine = 0.02 + seen
                 other = np.full(f.size, 0.02)
                 ph, pl = (mine, other) if self.pi_role() == "high" else (other, mine)
                 ph, pl = np.clip(ph, 0, 1), np.clip(pl, 0, 1)

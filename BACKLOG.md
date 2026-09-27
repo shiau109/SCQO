@@ -463,9 +463,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   no ZZ dip, as expected (pi_contrast 0.89 - the x180 on q1 survives the band switch). FOUND:
   the no-pi reference arm shows q1's readout seeing the coupler (0.1 bumps at f01 7.057 and
   f02/2 6.991) while the pi arm (q1 in |1>) does not - state-dependent, so pi-minus-reference
-  makes FALSE dips at the coupler's lines (1-2 points here, dropped). OWED before the selective
-  pi: decide how the reference arm is used (e.g. read the dips of the pi arm alone and report
-  the reference arm's bumps separately).
+  makes FALSE dips at the coupler's lines (1-2 points here, dropped). The same day (user):
+  the pi became a 2 us SQUARE selective pi with the x180's rotation area (square beats cosine
+  and Gaussian because the coupler decays during the pulse, T1 ~5 us - plan doc §5 table) and
+  the dips are read from the PI ARM alone, the reference arm's lines only reported. OWED: the
+  selective-pi hardware run on q1_q2 (expect a ~0.15 dip at 7.0575 GHz), then q2_q3.
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's

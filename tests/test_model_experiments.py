@@ -2668,14 +2668,15 @@ def test_coupler_swap_ramp_v_is_the_play_order(session):
 
 
 def test_coupler_zz_spectroscopy_finds_the_planted_ladder(crossing_session):
-    """simulate -> estimate returns the planted f01 and alpha through the readout's
-    direct view of the coupler (in both arms), proposes the coupler's f_01_hz and
-    anharmonicity_hz only, and restores the TONE member's power."""
+    """simulate -> estimate returns the planted f01 and alpha from the pi arm's dips
+    (shallower where the readout sees the coupler in the spoiled part), proposes the
+    coupler's f_01_hz and anharmonicity_hz only, and restores the TONE member's
+    power."""
     from scqo.experiments.pair_coupler_spectroscopy_zz import simulated_line
 
     cls = registry.get("pair_coupler_spectroscopy_zz")
     p = cls.Parameters(targets=["q0_q1"])
-    assert (p.tone_on, p.num_tone_freq_points) == ("low", 501)
+    assert (p.tone_on, p.num_tone_freq_points, p.selective_pi_len_ns) == ("low", 501, 2000)
     truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz,
                            p.num_tone_freq_points)
     before = crossing_session.device_state()
@@ -2687,7 +2688,8 @@ def test_coupler_zz_spectroscopy_finds_the_planted_ladder(crossing_session):
     assert fit["alpha_hz"] == pytest.approx(truth["alpha_hz"], abs=3e6)
     assert (fit["n_lines"], fit["n_ladder_lines"]) == (2, 2)
     assert fit["pi_contrast"] == pytest.approx(truth["pi_contrast"], abs=0.03)
-    assert fit["dip_depth"] == pytest.approx(0.88 * 0.9 * 0.45, rel=0.2)
+    assert fit["dip_depth"] == pytest.approx(
+        (0.88 - truth["readout_share"]) * 0.9 * 0.45, rel=0.2)
     assert fit["no_line"] == fit["unexplained_lines"] == fit["peak_at_edge"] == 0
     assert fit["lo_hz"] == pytest.approx(6.80e9)
     assert fit["old_coupler_idle_flux"] == pytest.approx(0.16)
@@ -2722,6 +2724,9 @@ def test_coupler_zz_spectroscopy_refusals(session):
         cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=6.5e9, end_tone_freq_hz=7.1e9)
     with pytest.raises(ValidationError):
         cls.Parameters(targets=["q0_q1"], tone_on="both")
+    for bad in (2002, 8):                                  # the 4 ns grid, 16 ns up
+        with pytest.raises(ValidationError):
+            cls.Parameters(targets=["q0_q1"], selective_pi_len_ns=bad)
 
 
 def test_coupler_crossing_buffer_sits_on_the_clock_grid():
