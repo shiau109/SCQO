@@ -415,10 +415,13 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `scqat/temp/coupler_scan/`). Design of the three experiments: `docs/coupler-readout-plan.md`
   (§3 = experiment 1's spec; §6 = verification methods and the 2026-09-26 evidence; §7 =
   analogous existing experiments).
-- 2026-09-27: experiment 1 `pair_coupler_crossing_pulse` LANDED, QM only, OFFLINE-validated
-  (scqat estimator `pair_coupler_crossing`, SCQO capability `coupler_flux`). Its 5Q4C hardware
-  run is OWED (plan doc §3 "上機驗證": q1_q2, measure=both, b -0.498..+0.34 V, `--no-update`),
-  then experiment 3's open items (plan doc §4).
+- 2026-09-27: experiment 1 `pair_coupler_crossing_pulse` LANDED, QM only (scqat estimator
+  `pair_coupler_crossing`, SCQO capability `coupler_flux`). HARDWARE 5Q4C q1_q2 the same day
+  (run 20260927-162801-951, `--no-update`): SUCCESSFUL, center = apex at b -0.0929 V
+  (flux_offset 0.0671 V in the pulse frame), period 0.620 pulse-V, f_c_max 7.21 GHz, f_c at
+  idle 6.80 GHz. Still owed: q2_q3, and the same-hour DC reference for the coupler line's
+  pulse/DC ratio g_c (plan doc §6.2) - the 0.074 V DC reconstruction implies g_c ~0.93. Then
+  experiment 3's open items (plan doc §4).
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
   1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
   neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the
