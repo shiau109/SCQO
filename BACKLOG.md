@@ -419,7 +419,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `pair_coupler_crossing`, SCQO capability `coupler_flux`). HARDWARE 5Q4C q1_q2 the same day
   (run 20260927-162801-951, `--no-update`): SUCCESSFUL, center = apex at b -0.0929 V
   (flux_offset 0.0671 V in the pulse frame), period 0.620 pulse-V, f_c_max 7.21 GHz, f_c at
-  idle 6.80 GHz. Still owed: q2_q3, and the same-hour DC reference for the coupler line's
+  idle 6.80 GHz. q2_q3 (run 20260927-163758-216): SUCCESSFUL, apex at b -0.0949 V
+  (-0.0349 V), period 0.582 pulse-V, f_c_max 7.70 GHz, f_c at idle 7.17 GHz. Still owed: the
+  same-hour DC reference for the coupler line's
   pulse/DC ratio g_c (plan doc §6.2) - the 0.074 V DC reconstruction implies g_c ~0.93. Then
   experiment 3's open items (plan doc §4).
 - The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
