@@ -202,9 +202,7 @@ coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過
 | `tone_len_ns` | 10000 | tone 長度；比 coupler 的 T1 長就是飽和，峰高最多約 0.5 |
 | `probe` | `Literal["high","low"]` = `"high"` | 接收激發的成員。ramp 必須**先**越過它：coupler 在兩者上方時（5Q4C）是 high，在下方時是 low |
 | `ramp_on` | `Literal["coupler","probe"]` = `"coupler"` | ramp 打在哪條 flux 線。5Q4C 的 q1 在 apex、coupler 在上方，只能動 coupler；coupler 設計在 qubit 下方時可以改動探針 |
-| `ramp_shape` | `Literal["slow_then_fast","fast_then_slow"]` = `"slow_then_fast"` | 慢段的方向。`slow_then_fast`：由 `ramp_start_v` 慢慢走到 `ramp_end_v`，再突然回 idle，swap 發生在去程。`fast_then_slow`（使用者 2026-09-27 提議）：先突然跳到 `ramp_end_v`，再慢慢走回 `ramp_start_v`，swap 發生在回程。5Q4C 的 coupler（6.99 GHz）在讀取共振腔（5.87–6.08 GHz）上方、共振腔又在 qubit 上方，回程慢段開始時激發還沒交出去，但要等交給 qubit 之後才會再經過共振腔。回程慢段第一個碰到的是外圈成員，所以 `ramp_end_v` 越過兩個交叉點時，探針要選 low |
-| `ramp_start_v` | 0.0 | 線性段的起點，相對於被 ramp 那條線的 `idle_flux`。0 = 從 idle 慢升（原本的鋸齒波）；設在交叉點前約 30 mV = 先跳過去再慢升（激發待在 coupler 的時間約短 4 倍）。跳的那一段不能越過任何交叉點 |
-| `ramp_end_v` | `float \| None` = None | 線性段的終點，要越過交叉點。None 時依名稱拒絕，並提示用實驗 1 的交叉點再加約 30 mV（q1_q2：+0.14） |
+| `ramp_v` | `tuple[float, float] \| None` = None | **播放順序**的（第一點, 最後一點），相對於被 ramp 那條線的 `idle_flux`（使用者 2026-09-27 提議的表述）：輸出先突然跳到第一點，以 `ramp_rate_v_per_us` 線性走到最後一點，再突然回 idle。只有中間的慢段是絕熱的：慢段先越過哪個成員，激發就給誰；兩次跳躍裡經過的交叉點一律非絕熱穿過。`(0, 0.14)` = 先慢後快，swap 在去程；`(0.14, 0)` = 先快後慢，swap 在回程。5Q4C 上只有後者有效：coupler（7.06 GHz）在讀取共振腔（5.87–6.08 GHz）上方、共振腔又在 qubit 上方，回程 swap 時激發先交給 qubit，coupler 之後才經過共振腔。coupler 在兩者上方時，回程先碰到外圈成員（low）。遠端取實驗 1 的交叉點再加約 30 mV（q1_q2：0.14）。None 時依名稱拒絕 |
 | `ramp_rate_v_per_us` | 0.15 | 線性段的斜率。Landau–Zener 只看越過交叉點時的斜率，所以兩種形狀在同一個斜率下絕熱性相同，差別只剩 coupler 的 T1 衰減 |
 | `flux_buffer_ns` | 100（0，或 ≥16 且為 4 的倍數） | tone 結束到 ramp 開始、以及 ramp 回到 idle 到讀取之間的等待 |
 | `num_averages` | 300 | |
@@ -217,8 +215,8 @@ coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過
 1. reset 兩個成員。
 2. 探針的 xy 播 `saturation`（`duration` = `tone_len_ns`），頻率由 `update_frequency` 設成 f − LO。
 3. 等 `flux_buffer_ns`。
-4. ramp 組：被 ramp 的線播一段 arbitrary waveform：第一個取樣就在 `ramp_start_v`，以 `ramp_rate_v_per_us`
-   線性走到 `ramp_end_v`，結束時輸出回到 idle（突然）。參考組：同樣長度的 `wait`。
+4. ramp 組：被 ramp 的線播一段 arbitrary waveform：第一個取樣就在 `ramp_v` 的第一點，以
+   `ramp_rate_v_per_us` 線性走到第二點，結束時輸出回到 idle（突然）。參考組：同樣長度的 `wait`。
 5. 等 `flux_buffer_ns` → `align` → 兩個成員都讀取（2-level）→ 存四個 joint indicator。
 
 迴圈順序：averages（外）→ f（依 start → end）→ ramp 組、參考組（內，同一個 f 背靠背，漂移互相抵消）。
@@ -252,8 +250,8 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
 用的是 LO 沒移動的 config（它不經過 acquire callable）。
 
 **事前拒絕**：多於一對；coupler 沒有 flux channel；探針缺 drive、readout 或 threshold；`ramp_on=probe` 而
-探針沒有 flux channel；`ramp_end_v` 是 None；`ramp_start_v == ramp_end_v`；跨距超過 500 MHz；零寬度頻率
-視窗；rail 與取樣範圍（被 ramp 的線上 idle + max(|start|, |end|)，沿用 `_flux_limits`）；active reset。
+探針沒有 flux channel；`ramp_v` 是 None 或兩端相等；跨距超過 500 MHz；零寬度頻率
+視窗；rail 與取樣範圍（被 ramp 的線上 idle + `ramp_v` 兩端的最大絕對值，沿用 `_flux_limits`）；active reset。
 
 **只做 QM 版**，理由同實驗 1。
 
@@ -262,7 +260,7 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
 - scqat：`tests/test_pair_coupler_spectroscopy_swap_estimator.py`：合成的真峰被找到；兩組都有的假峰被拒絕
   （`reference_feature`）；`order_free`；貼邊的峰；沒有峰時報 FAILED 且圖仍畫得出來。
 - SCQO：`test_model_experiments -k spectroscopy_swap`（simulate → estimate 還原放進去的 f_c；只提議
-  `<coupler>.f_01_hz`；多對被拒絕；`ramp_end_v=None` 被拒絕；跨距 > 500 MHz 被拒絕），`test_capabilities`
+  `<coupler>.f_01_hz`；多對被拒絕；`ramp_v=None` 被拒絕；跨距 > 500 MHz 被拒絕），`test_capabilities`
   的 `EXPECTED_CAPABILITIES` 加一列（`qubit_reset`；頻率是絕對 Hz，不是 detuning capability），跑
   `update_docs.py`。沒動到 capability mixin，只跑相關的測試檔。
 - scqo-qm：用 live quam_state 建 q1_q2 的程式：`update_frequency` 在迴圈內、`saturation` 的長度、ramp
@@ -271,12 +269,15 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
 
 **上機驗證（5Q4C，要先問）**
 
-1. q1_q2、probe=high、ramp_on=coupler、6.55–7.05 GHz（251 點）、−20 dBm、10 µs、`ramp_start_v=0.08`、
-   `ramp_end_v=0.14`、0.15 V/µs、`--no-update`。
-2. 同樣設定改 `ramp_start_v=0`（從 idle 慢升）：兩次的 f_c 應該一致，峰高差距反映 coupler 的 T1。
-3. q2_q3、probe=high（q3）、6.92–7.42 GHz、`ramp_end_v=0.136`（交叉點 +0.106 加 30 mV）。
+1. q1_q2（2026-09-27 已做，細節見 BACKLOG F24）：先慢後快 `(0.08, 0.14)` 找不到 swap 峰；改成先快後慢
+   `(0.14, 0)`、probe=low 後成功。**q1_q2_c 在 idle 0.16 V 的 f01 = 7.058 GHz，α ≈ −135 MHz**
+   （6.991 = f02/2、6.921 = f03/3；idle 改 0.15 V 時整組上移約 90 MHz）。鄰居的讀取也直接看得到 coupler
+   的狀態（參考組，約 5 µs 衰減）。
+2. q2_q3：probe=low（q2 的線）、`ramp_v=(0.14, 0)`（q3 交叉點 +0.106、q2 +0.118）、7.15–7.65 GHz、
+   −20 dBm；arch 預測 7.17 GHz，但在 q1_q2 低估了 0.26 GHz。
 
-找不到峰時先移視窗（±250 MHz），再調功率（±10 dB）。
+找不到峰時先移視窗（±250 MHz），再調功率（±10 dB）。辨認 f01 看多光子階梯（f02/2 = f01 + α/2、
+f03/3 ≈ f01 + α），並從耦合較弱的那條線打 tone；不要只看哪條線在低功率還在。
 
 **實作參考點**：scqat `tools/peak_fit.fit_peaks`、實驗 1 的 estimator（subpackage、`render_figures`、
 `order_free`）；SCQO `pair_coupler_crossing_pulse.py`（validate_targets、`_role_names`、joint readout）、

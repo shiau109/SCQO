@@ -86,9 +86,9 @@ TROTTER_DEFAULTS = {"qc_unidirectional_trotter": {
         "first_pair": FIRST_STEP, "second_pair": SECOND_STEP, "reset_qubit": "q1",
         "compensation_target": "q0", "compensation_amps": {"q2": 0.25}}}
 
-#: the swap spectroscopy has no default ramp end - it comes from the crossing scan
-#: (refused by name without one); +0.14 V is 5Q4C q1_q2's.
-COUPLER_SWAP_DEFAULTS = {"pair_coupler_spectroscopy_swap": {"ramp_end_v": 0.14}}
+#: the swap spectroscopy has no default ramp - its far end comes from the crossing
+#: scan (refused by name without one); 0.14 V is 5Q4C q1_q2's.
+COUPLER_SWAP_DEFAULTS = {"pair_coupler_spectroscopy_swap": {"ramp_v": [0.0, 0.14]}}
 
 #: what the module fixture runs on; _fresh_parity_session keeps the parity-only set.
 OFFLINE_DEFAULTS = {**PARITY_DEFAULTS, **PARAMETRIC_TIME_DEFAULTS,
@@ -2602,11 +2602,11 @@ def test_coupler_swap_spectroscopy_finds_the_planted_line(crossing_session):
     from scqo.experiments.pair_coupler_spectroscopy_swap import simulated_line
 
     cls = registry.get("pair_coupler_spectroscopy_swap")
-    p = cls.Parameters(targets=["q0_q1"], ramp_end_v=0.14)
+    p = cls.Parameters(targets=["q0_q1"], ramp_v=(0.0, 0.14))
     truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz)
     power_before = crossing_session.device_state()["q1_xy"]["drive_power_dbm"]
     out = crossing_session.run("pair_coupler_spectroscopy_swap",
-                               {"targets": ["q0_q1"], "ramp_end_v": 0.14})
+                               {"targets": ["q0_q1"], "ramp_v": [0.0, 0.14]})
     assert out.get("error") is None, out.get("error")
     assert out["outcomes"]["q0_q1"] == "successful"
     fit = out["fit"]["q0_q1"]
@@ -2623,35 +2623,35 @@ def test_coupler_swap_spectroscopy_finds_the_planted_line(crossing_session):
 
 def test_coupler_swap_spectroscopy_refusals(session):
     out = session.run("pair_coupler_spectroscopy_swap",
-                      {"targets": ["q0_q1"], "ramp_end_v": None})
-    assert "ramp_end_v is required" in out["error"]
+                      {"targets": ["q0_q1"], "ramp_v": None})
+    assert "ramp_v is required" in out["error"]
     out = session.run("pair_coupler_spectroscopy_swap", {"targets": ["q0_q1", "q1_q2"]})
     assert "one pair per run" in out["error"]
     cls = registry.get("pair_coupler_spectroscopy_swap")
     with pytest.raises(ValidationError, match="500 MHz"):
         cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=6.5e9, end_tone_freq_hz=7.1e9)
     with pytest.raises(ValidationError, match="would not move"):
-        cls.Parameters(targets=["q0_q1"], ramp_start_v=0.1, ramp_end_v=0.1)
+        cls.Parameters(targets=["q0_q1"], ramp_v=(0.1, 0.1))
+    with pytest.raises(ValidationError):                   # a pair, nothing else
+        cls.Parameters(targets=["q0_q1"], ramp_v=(0.0, 0.1, 0.2))
     # a descending window is a window
     assert cls.Parameters(targets=["q0_q1"], start_tone_freq_hz=7.0e9,
                           end_tone_freq_hz=6.6e9).end_tone_freq_hz == 6.6e9
 
 
-def test_coupler_swap_ramp_shape_sets_the_play_order(session):
-    """slow_then_fast swaps on the way out (start -> end); fast_then_slow jumps to the
-    far end and swaps on the way back (end -> start). Same slope, same length."""
+def test_coupler_swap_ramp_v_is_the_play_order(session):
+    """ramp_v = (first, last) AS PLAYED: (0, 0.14) swaps on the way out, (0.14, 0)
+    jumps out and swaps on the way back; same slope, same length either way."""
     cls = registry.get("pair_coupler_spectroscopy_swap")
     out = []
-    for shape in ("slow_then_fast", "fast_then_slow"):
-        exp = cls(session.backend, cls.Parameters(targets=["q0_q1"], ramp_start_v=0.0,
-                                                  ramp_end_v=0.14, ramp_shape=shape))
+    for ramp in ((0.0, 0.14), (0.14, 0.0), (0.14, 0.08)):
+        exp = cls(session.backend, cls.Parameters(targets=["q0_q1"], ramp_v=ramp))
         exp.device = session.device
         out.append((exp.ramp_play_order(), exp.ramp_duration_ns()))
-    assert out[0] == ((0.0, 0.14), 936)
-    assert out[1] == ((0.14, 0.0), 936)
+    assert out == [((0.0, 0.14), 936), ((0.14, 0.0), 936), ((0.14, 0.08), 400)]
     run = session.run("pair_coupler_spectroscopy_swap",
-                      {"targets": ["q0_q1"], "ramp_shape": "fast_then_slow",
-                       "probe": "low"}, update="none")
+                      {"targets": ["q0_q1"], "ramp_v": [0.14, 0.0], "probe": "low"},
+                      update="none")
     assert run.get("error") is None, run.get("error")
 
 
