@@ -473,7 +473,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   experiments agree closely enough, either will do): q1_q2_c.f_01_hz = 7.05695 GHz. q2_q3 (run
   20260927-214341-704, tone on q2, pi on q3): SUCCESSFUL, q2_q3_c f01 = 7.15550 GHz +- 0.23 MHz
   (experiment 3: 7.1555-7.1560), dip 0.31; reference arm flat (q3's readout does not see
-  q2_q3_c); its f_01_hz ACCEPTED (q2_q3_c.f_01_hz = 7.15550 GHz).
+  q2_q3_c); its f_01_hz ACCEPTED (q2_q3_c.f_01_hz = 7.15550 GHz). Experiment 3's pending
+  q1_q2 proposal (run 20260927-203446-486) was REJECTED as superseded. Experiment 3's `probe`
+  field is now `tone_on` (and `ramp_on="tone_member"`), one name with experiment 2.
+- DEFERRED by the user (2026-09-27, after experiment 2 landed): (1) the same-hour DC reference
+  for the coupler line's g_c (above); (2) why experiment 1's arch predicted q1_q2_c 0.26 GHz low
+  (q2_q3_c only 14 MHz); (3) the swap estimator's blind spot (b) above - with experiment 2 in
+  hand a procedure could simply cross-check; (4) q3_q4_c and q4_q5_c - all three experiments
+  ran on q1_q2 and q2_q3 only. The crosstalk-matrix fact home (the "Done when" below, with the
+  catalog note and `coupler-park`) was handed to a separate session.
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's

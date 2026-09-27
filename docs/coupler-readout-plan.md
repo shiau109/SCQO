@@ -194,7 +194,7 @@ coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過
   pair（`6/2` + `6/3`）換到 band 2。band 2 的 LO 範圍 4.5–7.5 GHz 也包含 q2 的 4.9 GHz，所以 q2 的 LO
   不用動，只換 band。q3（`6/4`）換 band 會帶著 q4（`6/5`）。
 
-**target**：一個 `qubit_pair`，理由同實驗 1（coupler 線對非鄰居也有 5–7 % 串擾）。`probe` 選哪個成員接收激發。
+**target**：一個 `qubit_pair`，理由同實驗 1（coupler 線對非鄰居也有 5–7 % 串擾）。`tone_on` 選 tone 走哪個成員的線。
 
 **Parameters**
 
@@ -204,8 +204,8 @@ coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過
 | `num_tone_freq_points` | 501（v2，原本 251） | 預設 1 MHz 一步：f01 在 −20 dBm 寬 4–7 MHz，2 MHz 一步每個線寬只有 2–3 點。一次 run 約 90 秒。更窄的線（例如 f02/2）另外用窄視窗、細步距量 |
 | `tone_power_dbm` | −20 | 探針 xy 的 tone 功率（儀器端 dBm），沿用 `drive_power_boundary`：run 前寫入、run 後精確還原 |
 | `tone_len_ns` | 10000 | tone 長度；比 coupler 的 T1 長就是飽和，峰高最多約 0.5 |
-| `probe` | `Literal["high","low"]` = `"high"` | 打 tone 的成員。v2 起兩個成員的激發都算（1 − P00），所以它只決定 tone 走哪條線：從耦合較弱的那條線打，f01 最乾淨（5Q4C 兩個 coupler 都是 q2 的線，也就是 q1_q2 的 low、q2_q3 的 low） |
-| `ramp_on` | `Literal["coupler","probe"]` = `"coupler"` | ramp 打在哪條 flux 線。5Q4C 的 q1 在 apex、coupler 在上方，只能動 coupler；coupler 設計在 qubit 下方時可以改動探針 |
+| `tone_on`（2026-09-27 由 `probe` 改名，與實驗 2 一致） | `Literal["high","low"]` = `"high"` | 打 tone 的成員。v2 起兩個成員的激發都算（1 − P00），所以它只決定 tone 走哪條線：從耦合較弱的那條線打，f01 最乾淨（5Q4C 兩個 coupler 都是 q2 的線，也就是 q1_q2 的 low、q2_q3 的 low） |
+| `ramp_on` | `Literal["coupler","tone_member"]` = `"coupler"` | ramp 打在哪條 flux 線。5Q4C 的 q1 在 apex、coupler 在上方，只能動 coupler；coupler 設計在 qubit 下方時可以改動探針 |
 | `ramp_v` | `tuple[float, float] \| None` = None | **播放順序**的（第一點, 最後一點），相對於被 ramp 那條線的 `idle_flux`（使用者 2026-09-27 提議的表述）：輸出先突然跳到第一點，以 `ramp_rate_v_per_us` 線性走到最後一點，再突然回 idle。只有中間的慢段是絕熱的：慢段先越過哪個成員，激發就給誰；兩次跳躍裡經過的交叉點一律非絕熱穿過。`(0, 0.14)` = 先慢後快，swap 在去程；`(0.14, 0)` = 先快後慢，swap 在回程。5Q4C 上只有後者有效：coupler（7.06 GHz）在讀取共振腔（5.87–6.08 GHz）上方、共振腔又在 qubit 上方，回程 swap 時激發先交給 qubit，coupler 之後才經過共振腔。coupler 在兩者上方時，回程先碰到外圈成員（low）。遠端取實驗 1 的交叉點再加約 30 mV（q1_q2：0.14）。None 時依名稱拒絕 |
 | `ramp_rate_v_per_us` | 0.15 | 線性段的斜率。Landau–Zener 只看越過交叉點時的斜率，所以兩種形狀在同一個斜率下絕熱性相同，差別只剩 coupler 的 T1 衰減 |
 | `flux_buffer_ns` | 100（0，或 ≥16 且為 4 的倍數） | tone 結束到 ramp 開始、以及 ramp 回到 idle 到讀取之間的等待 |
@@ -247,7 +247,7 @@ q1_q2 下 251 點一次 run 約 50 秒，v2 預設的 501 點約 90 秒。ramp �
    擬合到 74 MHz 外、更強的 f02/2 上。1 點寬的尖峰從不通過；2 點寬的偶爾剛好過 2 步距，過了也對不上階梯，
    run 判 FAILED，不會被當成 f01。）
 3. **哪些線屬於 coupler**：線中心處的 |D| ≥ `min_snr` × D 的雜訊（正負都算），代表 ramp 改變了它、涉及 coupler
-   的狀態。|D| 不顯著的線是探針自己的特徵（列在 `probe_lines_hz`），不參與判斷。**參考組有線不再自動否決**。
+   的狀態。|D| 不顯著的線是探針自己的特徵（列在 `member_lines_hz`），不參與判斷。**參考組有線不再自動否決**。
    （實作：「線中心處的 D」是 D 減去中位數後、在中心 ±3 FWHM 內投影到該線自己的單位 Lorentzian 上的高度，
    雜訊是 D 的點對點雜訊除以 √ΣL²，整條線的點都算進去，而不是只看最靠近中心的一點。）
 4. **用階梯辨認 f01**：coupler 的線中**最高**的那條當 f01。其餘每一條都要落在它的階梯上：f02/2 = f01 + α/2、
@@ -279,7 +279,7 @@ config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以
 `_lib.acquire` 當成 3-tuple 的 acquire callable 交給 backend。`--preview` 可用，QUA 內容正確，但 preview
 用的是 LO 沒移動的 config（它不經過 acquire callable）。
 
-**事前拒絕**：多於一對；coupler 沒有 flux channel；探針缺 drive、readout 或 threshold；`ramp_on=probe` 而
+**事前拒絕**：多於一對；coupler 沒有 flux channel；探針缺 drive、readout 或 threshold；`ramp_on=tone_member` 而
 探針沒有 flux channel；`ramp_v` 是 None 或兩端相等；跨距超過 500 MHz；零寬度頻率
 視窗；rail 與取樣範圍（被 ramp 的線上 idle + `ramp_v` 兩端的最大絕對值，沿用 `_flux_limits`）；active reset。
 

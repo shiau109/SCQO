@@ -2662,7 +2662,7 @@ def test_coupler_swap_ramp_v_is_the_play_order(session):
         out.append((exp.ramp_play_order(), exp.ramp_duration_ns()))
     assert out == [((0.0, 0.14), 936), ((0.14, 0.0), 936), ((0.14, 0.08), 400)]
     run = session.run("pair_coupler_spectroscopy_swap",
-                      {"targets": ["q0_q1"], "ramp_v": [0.14, 0.0], "probe": "low"},
+                      {"targets": ["q0_q1"], "ramp_v": [0.14, 0.0], "tone_on": "low"},
                       update="none")
     assert run.get("error") is None, run.get("error")
 

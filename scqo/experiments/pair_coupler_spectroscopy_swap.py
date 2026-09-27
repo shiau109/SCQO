@@ -1,6 +1,6 @@
 """The coupler's 0-1 frequency at its idle point, by swapping its excitation into a neighbour.
 
-Per shot: reset both members -> a tone of frequency ``f`` on the PROBE member's drive
+Per shot: reset both members -> a tone of frequency ``f`` on the TONE member's drive
 line (its ``saturation`` operation, ``tone_len_ns`` long, at ``tone_power_dbm``) ->
 ``flux_buffer_ns`` -> in the RAMP arm, a flux waveform on the ramped line: with
 ``ramp_v = (first, last)`` it jumps to ``first`` at once, runs linearly to ``last`` at
@@ -10,7 +10,7 @@ of the same length ->
 (start -> end) -> the two arms back to back (inner), so drift cancels between them.
 
 The coupler has no drive line; the tone reaches it through its hybridization with
-the probe (a coupler Rabi of about ``g / delta`` of the probe's). At ``f = f_c`` the
+the tone member (a coupler Rabi of about ``g / delta`` of the member's). At ``f = f_c`` the
 coupler is excited. The slow ramp then carries the coupler across a member
 ADIABATICALLY - the excitation moves into it - and the sudden return is diabatic, so
 it stays there. Which member receives it differs from pair to pair (5Q4C: q1 of
@@ -88,16 +88,16 @@ class PairCouplerSpectroscopySwapParameters(
     The tone window, points, power and length are ``CouplerToneParameters``."""
 
     num_averages: int = Field(300, gt=0, description="Number of shots to average per sweep point.")
-    probe: Literal["high", "low"] = Field(
+    tone_on: Literal["high", "low"] = Field(
         "high",
         description="The member whose drive line carries the tone (roster role). The "
         "excitation is counted on BOTH members, so this only picks the line: use the "
         "more weakly coupled member's - through the strongly coupled one f01 broadens "
         "and f02/2 becomes the strongest line (5Q4C: 'low' for both couplers, q2's "
         "line).")
-    ramp_on: Literal["coupler", "probe"] = Field(
+    ramp_on: Literal["coupler", "tone_member"] = Field(
         "coupler",
-        description="Which flux line plays the ramp: the coupler's, or the probe's own "
+        description="Which flux line plays the ramp: the coupler's, or the tone member's own "
         "(for a coupler designed below the qubit, or a qubit that can move toward it).")
     ramp_v: tuple[float, float] | None = Field(
         None,
@@ -146,7 +146,7 @@ def simulated_line(pair: str, start_hz: float, end_hz: float, num_points: int) -
     """The hidden coupler ladder the simulator plants for ``pair`` over a tone
     window: f01 and f02/2 = f01 + alpha/2, split between the members at random, a
     share of f01 in the reference arm (a neighbour's readout seeing the coupler),
-    and a line of the probe member's own ABOVE f01, identical in both arms. Widths
+    and a line of the tone member's own ABOVE f01, identical in both arms. Widths
     are in sweep steps. Module-level so a test can compare."""
     lo, hi = window_bounds(start_hz, end_hz)
     span = hi - lo
@@ -196,14 +196,14 @@ class PairCouplerSpectroscopySwap(Experiment):
     params: PairCouplerSpectroscopySwapParameters
 
     # ------------------------------------------------------------------ helpers
-    def probe_member(self, pair: str) -> str:
-        return self.device.roster.entities[pair].roles[self.params.probe][0]
+    def tone_member(self, pair: str) -> str:
+        return self.device.roster.entities[pair].roles[self.params.tone_on][0]
 
     def ramp_line(self, pair: str) -> str:
         """The entity whose flux channel plays the ramp."""
         if self.params.ramp_on == "coupler":
             return pair_coupler(self.device.roster, pair)
-        return self.probe_member(pair)
+        return self.tone_member(pair)
 
     def ramp_duration_ns(self) -> int:
         """The played slow segment: |last - first| at the requested slope, rounded UP
@@ -231,13 +231,13 @@ class PairCouplerSpectroscopySwap(Experiment):
                 "past the crossings and swap on the slow way back. Take the far end from "
                 "pair_coupler_crossing_pulse's crossings (crossing_<role>_upper_v or "
                 "_lower_v, on the side the ramp goes) plus ~30 mV - 5Q4C q1_q2: 0.14 V.")
-        if p.ramp_on == "probe":
+        if p.ramp_on == "tone_member":
             roster = self.device.roster
             for pair in p.targets:
-                member = self.probe_member(pair)
+                member = self.tone_member(pair)
                 if (member, "flux") not in roster.defaults:
-                    raise ValueError(f"{pair}: ramp_on='probe' but the probe {member!r} "
-                                     f"has no flux channel to ramp")
+                    raise ValueError(f"{pair}: ramp_on='tone_member' but the tone member "
+                                     f"{member!r} has no flux channel to ramp")
         return {
             TONE_AXIS: np.linspace(p.start_tone_freq_hz, p.end_tone_freq_hz,
                                    p.num_tone_freq_points),
@@ -249,9 +249,9 @@ class PairCouplerSpectroscopySwap(Experiment):
 
     def run(self) -> Result:
         """define_sweep -> acquire inside the recorded tone-power boundary on the
-        PROBE member's drive channel -> estimate."""
+        TONE member's drive channel -> estimate."""
         self.sweep_axes = self.define_sweep()
-        members = [self.probe_member(pair) for pair in self.params.targets]
+        members = [self.tone_member(pair) for pair in self.params.targets]
         with drive_power_boundary(self, self.params.tone_power_dbm, targets=members):
             self.dataset = self.backend.acquire(self)
         self.Contract.validate(self.dataset)
@@ -259,7 +259,7 @@ class PairCouplerSpectroscopySwap(Experiment):
 
     def simulate(self, coords: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """The planted ladder (``simulated_line``): split between the members in the
-        ramp arm, a share of f01 on the high member in the reference arm, the probe's
+        ramp arm, a share of f01 on the high member in the reference arm, the tone member's
         own line in both; members independent, sampled with ``num_averages`` shots."""
         f = coords[TONE_AXIS]
         arms = coords[ARM_AXIS]
@@ -280,7 +280,7 @@ class PairCouplerSpectroscopySwap(Experiment):
                     ph, pl = ph + t["to_high"] * ladder, pl + (1 - t["to_high"]) * ladder
                 else:
                     ph = ph + t["reference_share"] * f01
-                if p.probe == "high":
+                if p.tone_on == "high":
                     ph = ph + own
                 else:
                     pl = pl + own
@@ -305,7 +305,7 @@ class PairCouplerSpectroscopySwap(Experiment):
         ds = self.dataset.transpose("target", "joint_state", TONE_AXIS, ARM_AXIS)
         results = per_qubit_results(
             ds, PairCouplerSpectroscopySwapEstimator(), artifact_dir=self.artifact_dir,
-            per_target_kwargs=names, probe=p.probe, lo_hz=self.lo_hz(),
+            per_target_kwargs=names, tone_on=p.tone_on, lo_hz=self.lo_hz(),
             ramp_duration_ns=float(played))
 
         result = PairCouplerSpectroscopySwapResult()
