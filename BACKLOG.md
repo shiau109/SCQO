@@ -438,8 +438,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   lines = the ones the ramp changes (a reference-arm line no longer vetoes); f01 = the TOP of the
   multi-photon ladder, alpha from f02/2; writeback f_01_hz + anharmonicity_hz; default 501
   points. Re-analysis of the 16 runs: q2_q3 through q3's line now reads 7.1558 (v1 took f02/2).
-  STILL OWED: (a) HARDWARE with v2's 1 MHz default, to get alpha from the fit (at 2 MHz steps
-  every f02/2 was 1-2 points and dropped); (b) a known blind spot - when f01 is not a line in the
+  v2 on HARDWARE the same evening (run 20260927-203446-486, q1_q2, 1 MHz steps, tone on q2's
+  line, -20 dBm): SUCCESSFUL, f01 = 7.0575 GHz +- 0.35 MHz, one coupler line only (f_01_hz
+  proposal left pending on the run). STILL OWED: (a) alpha from the fit - through q2's line
+  at -20 dBm f02/2 (6.991) does not show at 1 MHz steps (one-point spike, dropped); it needs
+  more power through q2's line or q1's line (which Stark-shifts f01); (b) a known blind spot - when f01 is not a line in the
   ramp arm at all, the highest remaining coupler line is taken for f01: run 20260927-183300-636
   (slow-then-fast ramp, tone through q1's line, -10 dBm) reads f03/3 = 6.921 GHz as a SUCCESSFUL
   f01. That setting is known not to work; decide whether the estimator should catch it (e.g. a
