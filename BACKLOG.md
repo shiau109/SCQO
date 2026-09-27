@@ -473,7 +473,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   experiments agree closely enough, either will do): q1_q2_c.f_01_hz = 7.05695 GHz. q2_q3 (run
   20260927-214341-704, tone on q2, pi on q3): SUCCESSFUL, q2_q3_c f01 = 7.15550 GHz +- 0.23 MHz
   (experiment 3: 7.1555-7.1560), dip 0.31; reference arm flat (q3's readout does not see
-  q2_q3_c); its f_01_hz proposal is pending on the run.
+  q2_q3_c); its f_01_hz ACCEPTED (q2_q3_c.f_01_hz = 7.15550 GHz).
 - Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
   neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
