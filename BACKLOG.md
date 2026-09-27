@@ -433,8 +433,9 @@ provenance or a trap a user can walk into, **low** = hygiene.
   last)` in play order (user's proposal). q2_q3 the same day: **q2_q3_c f01 = 7.156 GHz at idle
   0.06 V, alpha ~ -148 MHz** (7.082 = f02/2, 7.014 = f03/3); arch predicted 7.17 (14 MHz off);
   reference arm flat; the swap lands mostly on q2 (outer) here but on q1 (inner) for q1_q2.
-  STILL OWED - the estimator redesign, from this experience: total excitation 1 - P00; resolve
-  sub-resolution lines; identify f01 as the TOP of a multi-photon ladder (the strongest line is
+  STILL OWED - the estimator redesign (plan doc §4 "estimator v2", approved 2026-09-27, being
+  implemented), from this experience: total excitation 1 - P00; lines of 1-2 points are
+  IGNORED (a measurement problem - re-measure finer; user); identify f01 as the TOP of a multi-photon ladder (the strongest line is
   f02/2 when the tone goes through the more strongly coupled line - it picked 7.082 for q2_q3
   through q3's line); report alpha from the ladder; a reference-arm line is not disqualifying by
   itself (q1's readout sees q1_q2_c); no writeback without a consistent ladder or a single line.
