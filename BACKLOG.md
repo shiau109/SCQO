@@ -383,24 +383,90 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the path is shared verbatim with `scqo state --fields`, so this is cosmetic - but a
   per-target path would be nicer if VENDOR_ONLY ever grows a formatter.
 
-### F24 Coupler state readout through a neighbour's apex height + the crosstalk matrix (medium)
-- Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`). Evidence + open decisions:
-  `docs/coupler-readout-plan.md` (untracked); scripts/raw results in `scqat/temp/coupler_scan/`.
-  The user deferred it: separate session, and only when the coupler is actually touched. A
-  neighbour's raw frequency vs coupler DC MIXES two effects: coupler-line crosstalk into the
-  probe's own SQUID (moves the probe's apex LOCATION: q1 -0.055, q3 -0.072 mV per coupler mV
-  on the q1_q2_c line) and the coupler's Lamb shift (moves the apex HEIGHT: q1 +524 kHz for
-  -80 mV). The apex height is the coupler observable: q1_q2_c's own DC apex ~0.074 V
-  (reconstructed), idle 0.16 V sits 86 mV above it.
-- Plan: a PAIR-targeted sibling of `qubit_ramsey_flux_pulse` (`measure: high|low`, as `pair_zz_coupler`) that nests
-  its apex reading inside a coupler-bias loop -> writes `<coupler>_z.flux_offset`
-  (catalogued, no writer today) and moves the coupler `idle_flux` with its drift.
-- Blocked on the user's decisions (coupler doc §4.4): J=0 vs ZZ=0 as the idle criterion;
-  crosstalk matrix as facts + compensated (virtual-flux) moves, or measured only.
-- Also: note in `catalog.py` that a qubit's `flux_offset` / `f_q_max_hz` are measured AT THE
-  CURRENT COUPLER BIASES on a coupler chip.
-- Done when: the sibling experiment exists, one coupler is parked by it on 5Q4C, and the
-  crosstalk matrix (incl. coupler columns) has a home.
+### F26 Sweep windows that are not yet a traversal ORDER (low)
+- Found 2026-09-26 landing F25 (flux, detuning and amplitude windows are now start -> end in
+  the order given; scqat `sweep_order.ascending` + an `order_free` test per estimator; SCQO
+  `tests/test_sweep_order.py` checks every carrier). The rule in memory is that a NEW window
+  uses start/end; these older ones still do not:
+  - the parametric-drive pair (`qubit_parametric_drive_amp` / `_time`) already says
+    start/end but NORMALISES ascending through `_window.window_bounds` (its docstrings say
+    so); `time_axis_ns` would first have to accept a descending time window, and
+    scqo-qm's `test_a_reversed_window_still_plays_ascending_and_seeds_the_low_edge` pins
+    the current behaviour;
+  - min/max windows on non-capability axes: `pair_swap_angle` + `pair_swap_flux_map`
+    (`min/max_coupler_flux_v`, `min/max_qubit_flux_v`), `pair_swap_chevron` + `qc_n_swap_amp`
+    + `qc_swap_flux_stark` (`min/max_flux_amp_v`), `qc_n_stark_amp` + `qc_swap_flux_stark`
+    + `qubit_stark_phase_echo` (`min/max_stark_amp`), `qc_trotter_compensation` (`min/max_compensation_amp`), both DRAG
+    experiments (`min/max_beta`), both punchouts (`min/max_power_dbm`, validator min < max);
+    `pair_zz_coupler`'s `min/max_coupler_v` is I26's.
+  - Their estimators are not yet under `order_free` tests; F23's new scqat
+    `qubit_ramsey_flux_pulse` estimator (sorted internally) should get one too.
+- Time windows (`min/max_wait_ns`, `min/max_idle_time_ns`) are deliberately out: their grids
+  are built ascending on the 4 ns clock and are not a traversal choice.
+- 2026-09-27: restored. Commit `062bcbe` ("F23 landed and goes") deleted this entry along with
+  F23 although none of it had landed. F24's planned `coupler_flux` capability
+  (`docs/coupler-readout-plan.md` §3) gives the pair maps' `coupler_flux_v` a start/end home
+  to move onto.
+- Done when: each window above is start/end with a zero-width refusal only, its estimator
+  carries an `order_free` test, and both drivers' sweep-order tests cover it.
+
+### F24 Coupler state readout: three tool experiments, then the crosstalk matrix (medium)
+- Found 2026-09-26 (hardware 5Q4C, `--tag coupler-scan`; scripts/raw results in
+  `scqat/temp/coupler_scan/`). Design of the three experiments: `docs/coupler-readout-plan.md`
+  (§3 = experiment 1's full spec, AWAITING the user's approval; §6 = verification methods and
+  the 2026-09-26 evidence; §7 = analogous existing experiments).
+- The three BASIC TOOL experiments (user, 2026-09-27: "one step at a time"), in the order
+  1 -> 3 -> 2: (1) the coupler flux period from where a fixed x180 stops exciting BOTH
+  neighbours as the coupler crosses them (`pair_coupler_crossing_pulse`; brings the
+  `coupler_flux` capability); (3) the coupler frequency by an adiabatic SAWTOOTH swap into the
+  neighbour (`ramp_on: coupler | probe` - a coupler may be designed below the qubit);
+  (2) the coupler frequency by the qubit-coupler ZZ spoiling a selective pi (needs a port /
+  upconverter decision once (3) has found f_c).
+- Reading the coupler THROUGH A NEIGHBOUR - the raw neighbour frequency vs coupler DC, or the
+  neighbour's `qubit_ramsey_flux_pulse` apex at several coupler biases - is LOW PRIORITY and for
+  VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
+  own SQUID (apex LOCATION: q1 5.45 %, q3 7.16 % of the coupler move) with the coupler's Lamb
+  shift (apex HEIGHT: q1 +524 kHz for -80 mV); q1_q2_c's DC apex reconstructs to ~0.074 V.
+- DECIDED, for the work AFTER the three experiments (user, 2026-09-27): the idle criterion is
+  not the readout's business - J=0 (F27) and ZZ=0 (`pair_zz_coupler`, `_pulse` after I26) come
+  from their own experiments with their own writebacks, and a coupler-state readout parks the
+  coupler at a frequency the USER names. The crosstalk matrix becomes FACTS with no automatic
+  compensation (F29), shaped as `__<source>` scalars on the victim's flux channel
+  (`q1_z.flux_crosstalk__q1_q2_c_z`; parallel lists would break catalog's rule that `float[]`
+  never aligns to entities). Writers: F28.
+- Also owed after them: the catalog note that a qubit's `flux_offset` / `f_q_max_hz` hold at the
+  CURRENT coupler biases; a procedure `coupler-park` (park couplers before qubits).
+- Done when: the three tool experiments exist and have measured one 5Q4C coupler's apex,
+  period and f_c, and the crosstalk matrix (incl. coupler columns) has its fact home.
+
+### F27 A J=0 writer for the coupler's `idle_flux` (medium)
+- Decided 2026-09-27 with F24: the coupler idle criterion belongs to the experiments that measure
+  it, each keeping its own writeback. ZZ=0 has one (`pair_zz_coupler`, `_pulse` after I26); J=0
+  has NONE - the 5Q4C q1_q2_c value 0.16 V was picked by hand from a swap map on 2026-09-15.
+- Candidate: `pair_swap_flux_map` (or the chevron) proposes the coupler `idle_flux` at the J
+  minimum, re-referenced to absolute (its `coupler_flux_v` is a pulse riding on the idle).
+- Done when: some experiment proposes a J=0 coupler `idle_flux`, and its description states
+  its strengths/weaknesses next to the ZZ=0 one.
+
+### F28 Writers for the rest of the flux-crosstalk matrix (low)
+- From F24: the `flux_crosstalk__<source>` facts have NO planned writer. The
+  F24 neighbour-apex sibling (A) would have written the cell "probe <- its own coupler", but
+  the user made A verification-only, low priority (2026-09-27). Every cell needs a writer:
+  neighbour cells (q1 <- q1_q2_c 5.45 % by DC), non-neighbour cells (q3 <- q1_q2_c 7.16 %, both
+  measured by DC on 2026-09-26) and qubit <- qubit cells (~1 %).
+  The signed m needs the victim's apex LOCATION at several source biases; a parked-at-apex
+  `flux_component` scan gives only |m|.
+- Until then they are entered by hand.
+- Done when: an experiment measures a signed m for any (victim, source) pair and proposes it.
+
+### F29 Virtual-flux compensation of DC moves (deferred by decision)
+- The user decided 2026-09-27 (F24): the crosstalk matrix is stored as facts and NOT used to
+  compensate automatically. Compensation would mean every DC move of a line (`scqo set` /
+  accept of an `idle_flux`) also moves the victims by -m*dV, and pulse-frame probes add
+  compensating pulses (a neighbour pulsed by -m*b alongside the coupler stays on its own
+  apex, turning the nested neighbour-apex reading from 3D into 2D).
+  That touches the knob write path and both drivers - its own feature, when wanted.
+- Done when: decided and built, or dropped.
 
 ## Known issues / potential problems (found in passing)
 
