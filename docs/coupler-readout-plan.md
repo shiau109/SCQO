@@ -1,7 +1,8 @@
 # coupler 狀態讀取：三個基礎工具實驗的設計
 
 > 計畫文件（2026-09-27）。內容只有三個直接讀 coupler 的實驗該怎麼設計；其餘相關工作記在 BACKLOG F24。
-> §3 實驗 1 已於 2026-09-27 實作（只有 QM 版，離線驗證），上機驗證待做；§4、§5 仍待定。
+> §3 實驗 1 已於 2026-09-27 實作並上機（5Q4C q1_q2、q2_q3，只有 QM 版）；§4 實驗 3 的規格已於同日核可，
+> 實作中；§5 仍待定。
 > 驗證用的腳本與原始結果在 `scqat/temp/coupler_scan/`（gitignored），run 標記為 `coupler-scan`。
 
 ## 1. 三個實驗
@@ -161,21 +162,126 @@ F 偏差 < 0.1 GHz、P < 1.5 %，報的 stderr 約 0.07 GHz。這個 stderr 只�
 **施工**：一個 feature，落地順序 scqat → SCQO → scqo-qm，最後寫一個 `RELEASES.d` fragment，不切 release。
 上機遇到第一個硬體或 gateway 錯誤就停下來回報，動過的 knob 全部還原。
 
-## 4. 實驗 3：swap 讀 coupler 頻率（部分已定）
+## 4. 實驗 3：`pair_coupler_spectroscopy_swap`（暫名，feature `pair-coupler-spectroscopy-swap`）
 
-- **已定**：ramp 用鋸齒波，也就是線性慢升，接著突然回到 idle（慢邊絕熱轉移、快邊非絕熱，激發留在 qubit），
-  在 idle 讀取。ramp 打在哪條線由參數 `ramp_on: coupler | probe` 決定，因為 coupler 也可能被設計在
-  qubit 下方。QM 用 QUA 的 `ramp()` 就能產生這個波形。
-- 序列：reset → 在探針的 xy 上打 coupler tone（saturation）→ 鋸齒波 ramp 越過交叉點 → 讀探針。
-  f = f_c 時 P_e 出現峰值。
-- ramp 的終點取實驗 1 的交叉點再加一點餘量。
-- ramp 時間：依 Landau–Zener，g_qc 為 50 MHz 時 ≥ 約 60 ns，20 MHz 時 ≥ 約 350 ns，預設 500 ns。快邊以
-  約 3 ns 估算，g = 50 MHz 時約有 20 % 的激發會漏回 coupler。
-- tone 結束後，探針的 xy 不再播任何東西，所以 LO 可以分段掃描（做法見 §7 的 broadband）。換 band 時會把
-  同一組 port pair 的另一顆一起帶走。
-- 要避開探針自己的躍遷（f01，以及雙光子的 f02/2），否則會出現假峰。
-- **待定**：頻率視窗怎麼給（絕對 [start, stop]，比照 broadband）、coupler tone 的功率與長度，以及寫回
-  （coupler mode 的 `f_01_hz` = 目前 idle 下的 f_c）。
+> 規格 2026-09-27 寫成並核可。已定的四點（使用者，2026-09-27）：ramp 兩種形狀都可選；
+> 一次 run 只用一個 LO、跨距 ≤ 500 MHz；每個頻率點穿插不做 ramp 的參考組；SUCCESSFUL 時提議 coupler 的
+> `f_01_hz`。
+
+**問題**：coupler 在目前 idle 下的 0→1 頻率 f_c。
+
+**原理**：在探針（pair 的一個成員）的 xy 上打頻率 f 的 tone。f = f_c 時，tone 透過探針與 coupler 的混成把
+coupler 激發起來。接著用 flux ramp 讓 coupler 與探針**慢慢**越過彼此：絕熱通過把 coupler 的激發轉到探針上；
+然後**突然**回到 idle（非絕熱，激發留在探針），在 idle 讀取。探針的 P_e 對 f 在 f_c 出峰。參考組完全一樣，
+只是不做 ramp，coupler 的激發就留在 coupler 裡衰減，所以參考組只會看到直接激發探針的特徵（探針的躍遷、
+讀取、TLS）。**只在 ramp 組出現的峰才是 coupler**。
+
+**5Q4C 的數字**（實驗 1 的兩次上機結果與 live config）
+
+- f_c 預測（實驗 1 的 arch 在 idle 處）：q1_q2_c **6.80 GHz**、q2_q3_c **7.17 GHz**（統計誤差約 ±0.1 GHz，另有
+  對稱 SQUID 模型的系統誤差）。讀取共振腔在 5.87–6.08 GHz，探針自己的 f01、f02/2 都 ≤ 5.2 GHz，都不在視窗內。
+  coupler 自己的雙光子 f02/2 約在 f_c − 100 MHz，功率高時可能出現第二個較小的峰。
+- g_qc：由實驗 1 的 dip 寬度估約 50–70 MHz。tone 只能從探針的線打，coupler 的 Rabi 約是
+  Ω_q·g/Δ ≈ 3 % 的 Ω_q（Δ ≈ 1.65 GHz）。q1 的 16 ns x180 相當於 −6 dBm、峰值 Rabi 約 62 MHz，所以
+  −20 dBm 給 coupler 約 0.4 MHz 的 Rabi，足以飽和（估計誤差約 ±10 dB）。
+- ramp（q1_q2，ramp 打在 coupler）：q1 的交叉點在 b = +0.109 V，coupler 在那裡的斜率 22 MHz/mV。0.15 V/µs
+  越過交叉點時，g = 50 MHz 的絕熱率 99 %、30 MHz 時 82 %。快邊約 3 ns，漏回 coupler 約 2 %。
+- band：q1 的 xy 在 MW-FEM `6/2`、band 1、LO 4.9 GHz，band 1 最多到 5.75 GHz。LO 移到 6.8 GHz 要把 port
+  pair（`6/2` + `6/3`）換到 band 2。band 2 的 LO 範圍 4.5–7.5 GHz 也包含 q2 的 4.9 GHz，所以 q2 的 LO
+  不用動，只換 band。q3（`6/4`）換 band 會帶著 q4（`6/5`）。
+
+**target**：一個 `qubit_pair`，理由同實驗 1（coupler 線對非鄰居也有 5–7 % 串擾）。`probe` 選哪個成員接收激發。
+
+**Parameters**
+
+| 欄位 | 型別 / 預設 | 意義 |
+|---|---|---|
+| `start_tone_freq_hz` / `end_tone_freq_hz` | 6.55e9 / 7.05e9 | tone 的**絕對**頻率，依 start → end 的順序掃。跨距 ≤ 500 MHz（LO 放在中心、\|IF\| ≤ 250 MHz），超過時依名稱拒絕。以實驗 1 的 `f_c_at_idle_hz` 為中心 |
+| `num_tone_freq_points` | 251 | 預設 2 MHz 一步 |
+| `tone_power_dbm` | −20 | 探針 xy 的 tone 功率（儀器端 dBm），沿用 `drive_power_boundary`：run 前寫入、run 後精確還原 |
+| `tone_len_ns` | 10000 | tone 長度；比 coupler 的 T1 長就是飽和，峰高最多約 0.5 |
+| `probe` | `Literal["high","low"]` = `"high"` | 接收激發的成員。ramp 必須**先**越過它：coupler 在兩者上方時（5Q4C）是 high，在下方時是 low |
+| `ramp_on` | `Literal["coupler","probe"]` = `"coupler"` | ramp 打在哪條 flux 線。5Q4C 的 q1 在 apex、coupler 在上方，只能動 coupler；coupler 設計在 qubit 下方時可以改動探針 |
+| `ramp_start_v` | 0.0 | 線性段的起點，相對於被 ramp 那條線的 `idle_flux`。0 = 從 idle 慢升（原本的鋸齒波）；設在交叉點前約 30 mV = 先跳過去再慢升（激發待在 coupler 的時間約短 4 倍）。跳的那一段不能越過任何交叉點 |
+| `ramp_end_v` | `float \| None` = None | 線性段的終點，要越過交叉點。None 時依名稱拒絕，並提示用實驗 1 的交叉點再加約 30 mV（q1_q2：+0.14） |
+| `ramp_rate_v_per_us` | 0.15 | 線性段的斜率。Landau–Zener 只看越過交叉點時的斜率，所以兩種形狀在同一個斜率下絕熱性相同，差別只剩 coupler 的 T1 衰減 |
+| `flux_buffer_ns` | 100（0，或 ≥16 且為 4 的倍數） | tone 結束到 ramp 開始、以及 ramp 回到 idle 到讀取之間的等待 |
+| `num_averages` | 300 | |
+| `reset_method` 等 | `QubitResetParameters` | 只能用 thermal：active reset 需要探針的 xy 在 f_q，但這個實驗把 LO 移走了 |
+
+需要 state discrimination（輸出是 `joint_population`），規則同實驗 1。
+
+**序列（每一發）**
+
+1. reset 兩個成員。
+2. 探針的 xy 播 `saturation`（`duration` = `tone_len_ns`），頻率由 `update_frequency` 設成 f − LO。
+3. 等 `flux_buffer_ns`。
+4. ramp 組：被 ramp 的線播一段 arbitrary waveform：第一個取樣就在 `ramp_start_v`，以 `ramp_rate_v_per_us`
+   線性走到 `ramp_end_v`，結束時輸出回到 idle（突然）。參考組：同樣長度的 `wait`。
+5. 等 `flux_buffer_ns` → `align` → 兩個成員都讀取（2-level）→ 存四個 joint indicator。
+
+迴圈順序：averages（外）→ f（依 start → end）→ ramp 組、參考組（內，同一個 f 背靠背，漂移互相抵消）。
+q1_q2 預設值下一次 run 約 50 秒。ramp 的長度：從 idle 到 +0.14 是 933 ns，從 +0.08 起跳是 400 ns。
+
+**contract**：sweeps `("tone_freq_hz", "ramp_played")`（`ramp_played` 的座標是 [1, 0]），variables
+`("joint_population",)`，readout_dims `("joint_state",)`，`target_kinds = ("qubit_pair",)`。
+
+**simulate**：用 stable seed 在視窗內放一個 f_c，ramp 組探針的邊際出現 Lorentzian 峰（高約 0.35、寬約 3 步）。
+另外在**兩組都有**的位置放一個假峰，讓 estimator 的拒絕路徑有被測到。
+
+**estimator（scqat，新的，1:1）：`pair_coupler_spectroscopy_swap`**
+
+1. 進入時 `ascending(dataset, "tone_freq_hz")`，並有 `order_free` 測試。
+2. 算探針的邊際：ramp 組 P_r(f)、參考組 P_0(f)，差值 D = P_r − P_0。
+3. 對 D 用 `tools.peak_fit.fit_peaks`（實數訊號），取最強的峰：f_c、FWHM、高度、SNR。其他峰列出來
+   （可能是 coupler 的 f02/2），並設 `multiple_peaks`。
+4. 對參考組 P_0 也找峰：若在 f_c 的一個 FWHM 內有峰，設 `reference_feature`。
+5. 峰離視窗邊緣不到一個 FWHM 時設 `peak_at_edge`。
+6. SUCCESSFUL：D 有通過 SNR 的峰，而且沒有 `reference_feature`、`peak_at_edge`。
+
+**Result（`fit[pair]`）**：`f_c_hz`（附 stderr）、`fwhm_hz`、`peak_height`、`snr`、`other_peaks_hz`、`lo_hz`、
+`ramp_duration_ns`，旗標 `multiple_peaks`、`reference_feature`、`peak_at_edge`。
+
+**寫回**：單一 pair、SUCCESSFUL 才提議 coupler mode 的 `f_01_hz`（目前 idle 下的 f_c，fact）。不動任何 knob。
+
+**QM 的 band / LO**：LO 放在視窗中心。這個 LO 超出 port 目前 band 的範圍時，把整組 port pair 換到涵蓋它的
+band；partner 的 LO 若仍在新 band 內就不動，不在的話比照 broadband 停到 band 下限。probe 直接產生**一份
+config**（LO、band 已改好），產生完立刻把 QUAM tree 還原，所以不會有 drift；再把綁好這份 config 的
+`_lib.acquire` 當成 3-tuple 的 acquire callable 交給 backend。`--preview` 可用，QUA 內容正確，但 preview
+用的是 LO 沒移動的 config（它不經過 acquire callable）。
+
+**事前拒絕**：多於一對；coupler 沒有 flux channel；探針缺 drive、readout 或 threshold；`ramp_on=probe` 而
+探針沒有 flux channel；`ramp_end_v` 是 None；`ramp_start_v == ramp_end_v`；跨距超過 500 MHz；零寬度頻率
+視窗；rail 與取樣範圍（被 ramp 的線上 idle + max(|start|, |end|)，沿用 `_flux_limits`）；active reset。
+
+**只做 QM 版**，理由同實驗 1。
+
+**測試**
+
+- scqat：`tests/test_pair_coupler_spectroscopy_swap_estimator.py`：合成的真峰被找到；兩組都有的假峰被拒絕
+  （`reference_feature`）；`order_free`；貼邊的峰；沒有峰時報 FAILED 且圖仍畫得出來。
+- SCQO：`test_model_experiments -k spectroscopy_swap`（simulate → estimate 還原放進去的 f_c；只提議
+  `<coupler>.f_01_hz`；多對被拒絕；`ramp_end_v=None` 被拒絕；跨距 > 500 MHz 被拒絕），`test_capabilities`
+  的 `EXPECTED_CAPABILITIES` 加一列（`qubit_reset`；頻率是絕對 Hz，不是 detuning capability），跑
+  `update_docs.py`。沒動到 capability mixin，只跑相關的測試檔。
+- scqo-qm：用 live quam_state 建 q1_q2 的程式：`update_frequency` 在迴圈內、`saturation` 的長度、ramp
+  waveform 的起點／終點／長度、參考組同長度的 `wait`、兩個成員的讀取；產生的 config 裡 q1 的 port 在 band 2、
+  LO 在視窗中心，而 QUAM tree 保持原狀；超過 rail 時依名稱拒絕；census；qm 全套。
+
+**上機驗證（5Q4C，要先問）**
+
+1. q1_q2、probe=high、ramp_on=coupler、6.55–7.05 GHz（251 點）、−20 dBm、10 µs、`ramp_start_v=0.08`、
+   `ramp_end_v=0.14`、0.15 V/µs、`--no-update`。
+2. 同樣設定改 `ramp_start_v=0`（從 idle 慢升）：兩次的 f_c 應該一致，峰高差距反映 coupler 的 T1。
+3. q2_q3、probe=high（q3）、6.92–7.42 GHz、`ramp_end_v=0.136`（交叉點 +0.106 加 30 mV）。
+
+找不到峰時先移視窗（±250 MHz），再調功率（±10 dB）。
+
+**實作參考點**：scqat `tools/peak_fit.fit_peaks`、實驗 1 的 estimator（subpackage、`render_figures`、
+`order_free`）；SCQO `pair_coupler_crossing_pulse.py`（validate_targets、`_role_names`、joint readout）、
+`broadband_qubit_spectroscopy.py`（絕對 Hz 視窗）、`_drive_power.drive_power_boundary`；scqo-qm
+`pair_coupler_crossing_pulse.py`、`broadband_qubit_spectroscopy.py`（`_MW_FEM_BANDS`、`_partner_port_id`）、
+`qm_backend.acquire` 的 3-tuple acquire callable 路徑、`_lib.acquire(config=)`。
 
 ## 5. 實驗 2：ZZ 讀 coupler 頻率（等實驗 3 之後再定）
 
