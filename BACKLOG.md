@@ -970,6 +970,28 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   optimum outside the swept window is a FAILED outcome with no suggestion (never clipped), and
   a synthetic test with an off-centre optimum pins both.
 
+### I31 An MW-FEM band change shifts the port's latency ~19 ns; `adopt-channel` keeps the old `delay` (high)
+- Found 2026-09-28 starting the q1_q2 partial swaps for `qc_unidirectional_trotter` on 5Q4C.
+  `scqo-qm adopt-channel` (for `xy2.q1_q2_c` / `xy2.q2_q3_c`) moved the port pair con1/6/2
+  (q1 xy) + con1/6/3 (q2 xy) from band 1 to band 2 and left both at `delay: 20` ns. On this
+  setup the band-2 readout port con1/6/1 has delay 0 and the band-1 xy ports 20, so the 20 ns
+  was compensating band-2 latency.
+- Symptom: `pair_swap_flux_map` q1_q2 lost q1's excitation over the whole map (P00 ~0.9;
+  runs 20260928-205021-088, -205723-918). Sweeping the z amplitude 0 -> -0.16 V
+  (20260928-210338-650) gives a smooth loss, half at ~-52 mV: the 40 ns z pulse overlaps the
+  16 ns pi pulse (off-resonant Rabi, Omega ~31 MHz). Rabi, readout and small-excursion Ramsey
+  (no or small z pulse) look healthy, so nothing else flags it.
+- Measured with `qubit_xyz_delay`: q1 +19.5 ns (20260928-210808-599), q2 +18.8 ns
+  (20260928-210631-128), q3 (still band 1) +0.2 ns (20260928-210718-284). Their pending
+  `flux_delay_s` suggestions (~113 ns) are the WRONG fix: delaying z1/z2 alone misaligns them
+  from the coupler lines zc12/zc23, which a swap plays simultaneously.
+- Pointer: `scqo-qm adopt-channel` (its CAUTION only asks for `qubit_power_rabi`), the MW port
+  `delay` in `<setup>/backend_config/state.json` (`ports/mw_outputs/con1/<slot>/<port>/delay`).
+  No operator command writes an MW port delay today.
+- Done when: a band change keeps every port's latency consistent (adjusts `delay`, or refuses
+  and names the `qubit_xyz_delay` re-check for every qubit on the port pair), and the XY-XY,
+  XY-Z and XY-readout alignment across band-1 and band-2 ports is written down per setup.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
   QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run
