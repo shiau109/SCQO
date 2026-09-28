@@ -918,6 +918,12 @@ class Roster:
                     if m.refs.get("qubit") == mode]
         return tuple(members)
 
+    def pairs_of_coupler(self, mode: str) -> tuple[str, ...]:
+        """The composites whose ``coupler`` role holds ``mode`` - the pairs a
+        coupler can be read through (a mapped readout reads it via a member)."""
+        return tuple(name for name, c in self.composites().items()
+                     if mode in (c.roles.get("coupler") or ()))
+
     def default_channel(self, target: str, kind: str) -> str:
         """Default addressing: the ONE designed channel of this kind on this
         target."""

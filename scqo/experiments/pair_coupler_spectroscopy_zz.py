@@ -54,6 +54,7 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from . import register
 from ._capabilities.coupler_flux import pair_coupler
+from ._capabilities.mapped_readout import SELECTIVE_PI_LEN_DESC
 from ._capabilities.qubit_reset import QubitResetParameters
 from ._capabilities.state_readout import joint_state_labels
 from ._coupler_tone import TONE_AXIS, CouplerToneParameters, tone_lo_hz
@@ -77,12 +78,7 @@ class PairCouplerSpectroscopyZZParameters(
 
     num_averages: int = Field(300, gt=0, description="Number of shots to average per sweep point.")
     selective_pi_len_ns: int = Field(
-        2000, ge=16, multiple_of=4,
-        description="Length of the pi member's SELECTIVE pi (ns, multiple of 4): a square "
-        "pulse with the calibrated x180's area, so its bandwidth is ~1/length. It has to "
-        "be narrower than the qubit-coupler ZZ (5Q4C: 0.3-0.9 MHz) yet short against the "
-        "coupler's T1 (5Q4C: ~5 us), which decays during it; 2 us leaves 0.67-0.83 of "
-        "the coupler occupation as dip. Longer for a smaller ZZ.")
+        2000, ge=16, multiple_of=4, description=SELECTIVE_PI_LEN_DESC)
     tone_on: Literal["high", "low"] = Field(
         "low",
         description="The member whose drive line carries the tone (roster role); the "

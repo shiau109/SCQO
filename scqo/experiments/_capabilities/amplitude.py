@@ -166,8 +166,19 @@ def amp_anchor(experiment: "Experiment", target: str) -> float:
     Every carrier's ``estimate()`` reads ``old_<knob>`` through this same call,
     so the attached axis and the reported reference can never come from two
     different reads.
+
+    A DRIVE-channel knob resolves through :func:`drive_line.drive_owner`: a
+    carrier that names a drive line reads the knob on ``<line>.<target>`` (a
+    coupler's borrowed ``xy2.q1_q2_c``), every other read stays the qubit
+    shorthand it always was. A readout knob never follows the drive line.
     """
-    return experiment.anchor(target, experiment.amp_reference_field())
+    from ...catalog import CHANNELS
+    from .drive_line import drive_owner
+
+    field = experiment.amp_reference_field()
+    owner = (drive_owner(experiment, target) if field in CHANNELS["drive"].fields
+             else target)
+    return experiment.anchor(owner, field)
 
 
 def absolute_amps(experiment: "Experiment") -> Optional[np.ndarray]:

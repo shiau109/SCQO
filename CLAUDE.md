@@ -360,6 +360,21 @@ scqo/
                     #   (start/end_coupler_flux_v, axis coupler_flux_v), RELATIVE to
                     #   the coupler's idle_flux - its only frame, so every carrier ends
                     #   in `_pulse` and records old_coupler_idle_flux;
+                    #   drive_line.py + mapped_readout.py = the two halves of taking
+                    #   a mode with no designed drive or readout (a coupler) as a
+                    #   `qubit_*` target, independent of each other
+                    #   (docs/coupler-transmon-plan.md). drive_line names the line
+                    #   whose channel <line>.<target> drives it - BORROWED
+                    #   (xy2.q1_q2_c) and realized only once the vendor config adopts
+                    #   it - and its knobs are read (drive_owner, amp_anchor) and
+                    #   written (drive_view) ON that channel; readout_member reads it
+                    #   through a pair member (the zz experiment's selective pi plus
+                    #   the member's x180 copy the coupler's state onto the member,
+                    #   then its discriminated readout; v1 = one target, thermal
+                    #   reset). The Session's roster gate reads both BY NAME, like
+                    #   flux_component: drive_line stands in for `rx` (the channel
+                    #   must exist AND be realized), readout_member for `readout`
+                    #   (the target must couple the member's pair);
                     #   catalog
                     #   `capabilities` are DERIVED from mixin subclassing — never declared
                     #   strings, zero capabilities legitimate (new experiments may be

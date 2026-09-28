@@ -26,6 +26,9 @@ from scqo.experiments._capabilities import (
     AMP_AXIS,
     COUPLER_FLUX_AXIS,
     DETUNING_AXIS,
+    DRIVE_LINE_DESC,
+    READOUT_MEMBER_DESC,
+    SELECTIVE_PI_LEN_DESC,
     END_AMP_FACTOR_DESC,
     END_COUPLER_FLUX_DESC,
     NUM_COUPLER_FLUX_DESC,
@@ -99,7 +102,10 @@ EXPECTED_CAPABILITIES = {
     "qubit_relaxation": ["state_readout", "qubit_reset"],
     "qubit_echo": ["state_readout", "qubit_reset"],
     "qubit_ramsey": ["state_readout", "qubit_reset"],
-    "qubit_power_rabi": ["state_readout", "qubit_reset", "amplitude"],
+    # the first carrier of the coupler pair of capabilities: drive_line (a named,
+    # possibly borrowed, drive channel) and mapped_readout (read through a member)
+    "qubit_power_rabi": ["state_readout", "qubit_reset", "amplitude", "drive_line",
+                         "mapped_readout"],
     "qubit_deterministic_benchmarking": ["state_readout", "qubit_reset", "amplitude"],
     "qubit_sqrb": ["state_readout", "qubit_reset"],
     # ramsey cryoscope: state_readout + qubit_reset, but NO flux capability — the
@@ -250,7 +256,8 @@ def test_capability_summaries_track_the_derived_set():
 
     assert list(CAPABILITY_SUMMARIES) == [
         "state_readout", "flux", "qubit_reset", "flux_pulse", "amplitude",
-        "drive_detuning", "readout_detuning", "coupler_flux"]
+        "drive_detuning", "readout_detuning", "coupler_flux", "drive_line",
+        "mapped_readout"]
     assert set(CAPABILITY_SUMMARIES) == {
         cap for caps in EXPECTED_CAPABILITIES.values() for cap in caps}
     # one short plain line each: no reST markup, no scraped "Mixin:" prefix
@@ -329,6 +336,14 @@ def test_canonical_field_text_never_drifts():
             assert props["end_coupler_flux_v"]["description"] == END_COUPLER_FLUX_DESC, name
             assert props["num_coupler_flux_points"]["description"].startswith(
                 NUM_COUPLER_FLUX_DESC), name
+        if "drive_line" in entry["capabilities"]:
+            assert props["drive_line"]["description"] == DRIVE_LINE_DESC, name
+        if "mapped_readout" in entry["capabilities"]:
+            assert props["readout_member"]["description"] == READOUT_MEMBER_DESC, name
+            assert props["selective_pi_len_ns"]["description"] == SELECTIVE_PI_LEN_DESC, name
+        # the zz spectroscopy's selective pi IS the map's, one text for both
+        if "selective_pi_len_ns" in props:
+            assert props["selective_pi_len_ns"]["description"] == SELECTIVE_PI_LEN_DESC, name
 
 
 def test_flux_axis_is_the_contract_axis():

@@ -1029,6 +1029,29 @@ carries the drive knobs except the target's own `thermalization_time_s` (and the
 config has an element for that route: until then a read finds no value and a
 write is refused.
 
+**A coupler as a target.** The `qubit_*` experiments that carry the
+`drive_line` and `mapped_readout` capabilities (`scqo run --capability
+mapped_readout`; `qubit_power_rabi` first) take a tunable coupler as their
+target. `drive_line` names the line whose (usually borrowed) channel plays the
+pulse; that channel's knobs (`pi_amp`, ...) are the ones read and calibrated.
+`readout_member` reads the coupler through a member of its pair: a selective pi
+on the member, narrower than the member-coupler ZZ (the selective pi of
+`pair_coupler_spectroscopy_zz`), plus the member's x180 copy the coupler's state
+onto the member, whose discriminated readout is the signal. On QM, adopt the
+borrowed channel first, once per setup: `scqo-qm adopt-channel --list` to look,
+then `scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9`, which adds an element on
+q2's port through its second upconverter, tuned to the coupler's measured
+`f_01_hz`. Qblox refuses both fields by name. Then
+
+```
+scqo run qubit_power_rabi --targets q1_q2_c --set drive_line=xy2 --set readout_member=q1 --set use_state_discrimination=true
+```
+
+proposes `xy2.q1_q2_c.pi_amp`. One target per run, discriminated readout and
+thermal reset only, each refused by name otherwise; a coupler target without the
+fields is refused with the lines and members it could use. Design and the 5Q4C
+numbers: `docs/coupler-transmon-plan.md`.
+
 Two record-only maps come BEFORE it at bring-up, when no two-qubit gate is
 defined yet: `pair_swap_chevron` excites one member and sweeps a flux pulse
 (absolute volts) against its duration, drawing the swap arch that locates the

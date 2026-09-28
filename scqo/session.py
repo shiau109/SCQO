@@ -1058,7 +1058,15 @@ class Session:
         carried (derived from wiring for modes, declared for composites).
         A ``flux_component`` Parameter must name an entity with a default
         flux channel — kind-agnostic, so qubit z-lines and coupler z-lines
-        gate identically."""
+        gate identically.
+
+        Two Parameters stand in for a missing designed operation the same way
+        (``docs/coupler-transmon-plan.md``): ``drive_line`` for ``rx`` - the
+        channel ``<line>.<target>`` must exist and the backend must REALIZE it
+        (a borrowed channel only once the vendor config adopted it) - and
+        ``readout_member`` for ``readout`` - the target must be the coupler of
+        a pair the member belongs to. All read BY NAME: this module never
+        imports the experiments package."""
         from .result import Outcome
 
         targets = list(getattr(exp.params, "targets", []))
@@ -1075,6 +1083,12 @@ class Session:
                 problems.append(
                     f"flux_component {flux_component!r}: has no flux "
                     f"channel (nothing to sweep)")
+        drive_line = getattr(exp.params, "drive_line", None)
+        if drive_line is not None:
+            want_ops -= {"rx"}  # the named line's channel drives instead
+        readout_member = getattr(exp.params, "readout_member", None)
+        if readout_member is not None:
+            want_ops -= {"readout"}  # the member's readout reads instead
         for t in targets:
             if t not in self.roster:
                 problems.append(
@@ -1086,6 +1100,10 @@ class Session:
                 problems.append(f"{t}: is kind {e.kind!r}, {cls.name} "
                                 f"targets {sorted(want_kinds)}")
                 continue
+            if drive_line is not None:
+                problems += self._drive_line_problems(t, drive_line)
+            if readout_member is not None:
+                problems += self._readout_member_problems(t, readout_member)
             try:
                 have_ops = set(self.roster.operations(t))
             except Exception:
@@ -1094,7 +1112,8 @@ class Session:
             if missing:
                 problems.append(
                     f"{t}: lacks operation(s) {sorted(missing)} "
-                    f"(carried: {sorted(have_ops) or 'none'})")
+                    f"(carried: {sorted(have_ops) or 'none'})"
+                    + self._reach_hint(cls, t, missing))
         problems += cls.validate_targets(self.roster, targets)
         if not problems:
             return None
@@ -1102,6 +1121,74 @@ class Session:
             outcomes={t: Outcome.FAILED for t in targets},
             error="target validation refused the run before any hardware: "
                   + "; ".join(problems))
+
+    def _drive_line_problems(self, target: str, line: str) -> list[str]:
+        """``drive_line``: the channel ``<line>.<target>`` must be a drive
+        channel of the roster, and the backend must realize it - its vendor
+        device model answers for it, the same door ``components()`` walks. Its
+        KeyError names the missing step (QM: ``scqo-qm adopt-channel``)."""
+        from .entities import Channel
+
+        name = f"{line}.{target}"
+        e = self.roster.entities.get(name)
+        if not (isinstance(e, Channel) and "drive" in e.kinds):
+            if line not in self.roster.lines():
+                return [f"{target}: drive_line={line!r} is not a line of this "
+                        f"roster ({', '.join(sorted(self.roster.lines()))})"]
+            reach = sorted(c.line for c in self.roster.entities.values()
+                           if isinstance(c, Channel) and "drive" in c.kinds
+                           and c.target == (target,))
+            return [f"{target}: drive_line={line!r} has no drive channel to "
+                    f"{target!r} (lines that drive it: {reach or 'none'})"]
+        try:
+            self.backend.device.component(name)
+        except KeyError as err:
+            return [f"{target}: drive_line={line!r}: "
+                    f"{err.args[0] if err.args else err}"]
+        return []
+
+    def _readout_member_problems(self, target: str, member: str) -> list[str]:
+        """``readout_member``: the target must be the coupler of a pair the
+        member belongs to (high or low), and the member must carry the ``rx``
+        and ``readout`` the map plays on it."""
+        pairs = self.roster.pairs_of_coupler(target)
+        if not pairs:
+            return [f"{target}: readout_member={member!r} reads a pair's COUPLER "
+                    f"through a member, and {target!r} is the coupler of no pair"]
+        members = sorted({m for p in pairs
+                          for role in ("high", "low")
+                          for m in self.roster.entities[p].roles.get(role, ())})
+        if member not in members:
+            return [f"{target}: readout_member={member!r} is not a member of "
+                    f"{target!r}'s pair(s) {list(pairs)} (members: {members})"]
+        missing = {"rx", "readout"} - set(self.roster.operations(member))
+        if missing:
+            return [f"{target}: readout_member={member!r} lacks operation(s) "
+                    f"{sorted(missing)} (the map drives and reads it)"]
+        return []
+
+    def _reach_hint(self, cls, target: str, missing: set[str]) -> str:
+        """For a mode missing ``rx``/``readout`` on an experiment that can
+        reach it another way: the fields to set and the values that exist."""
+        from .entities import Channel
+
+        fields = getattr(cls.Parameters, "model_fields", {})
+        hints: list[str] = []
+        if "rx" in missing and "drive_line" in fields:
+            lines = sorted(c.line for c in self.roster.entities.values()
+                           if isinstance(c, Channel) and "drive" in c.kinds
+                           and c.target == (target,))
+            if lines:
+                hints.append(f"drive it through a line (drive_line="
+                             f"{'|'.join(lines)})")
+        if "readout" in missing and "readout_member" in fields:
+            members = sorted({m for p in self.roster.pairs_of_coupler(target)
+                              for role in ("high", "low")
+                              for m in self.roster.entities[p].roles.get(role, ())})
+            if members:
+                hints.append(f"read it through a member (readout_member="
+                             f"{'|'.join(members)})")
+        return f" - {' and '.join(hints)}" if hints else ""
 
     @staticmethod
     def _failure(cls, exp, err):

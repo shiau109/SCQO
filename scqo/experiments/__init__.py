@@ -92,8 +92,10 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
         AmplitudeSweepParameters,
         CouplerFluxPulseSweepParameters,
         DriveDetuningSweepParameters,
+        DriveLineParameters,
         FluxPulseSweepParameters,
         FluxSweepParameters,
+        MappedReadoutParameters,
         QubitResetParameters,
         ReadoutDetuningSweepParameters,
         StateReadoutParameters,
@@ -102,7 +104,8 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     # Derivation order is fixed (tests pin the exact lists): the two original
     # capabilities first, then each later addition appended at the END so it
     # does not reshuffle every existing entry — qubit_reset, then flux_pulse,
-    # then amplitude, then drive_detuning, then readout_detuning, then coupler_flux.
+    # then amplitude, then drive_detuning, then readout_detuning, then coupler_flux,
+    # then drive_line and mapped_readout.
     caps = []
     if issubclass(cls.Parameters, StateReadoutParameters):
         caps.append("state_readout")
@@ -131,6 +134,13 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     # only frame there is, so every carrier ends its name in "_pulse" (test-pinned)
     if issubclass(cls.Parameters, CouplerFluxPulseSweepParameters):
         caps.append("coupler_flux")
+    # the two halves of taking a mode with no designed drive or readout (a
+    # coupler): drive it through a named line's (borrowed) channel, read it
+    # through a pair member. Independent - drive_line alone is a crosstalk drive.
+    if issubclass(cls.Parameters, DriveLineParameters):
+        caps.append("drive_line")
+    if issubclass(cls.Parameters, MappedReadoutParameters):
+        caps.append("mapped_readout")
     return caps
 
 

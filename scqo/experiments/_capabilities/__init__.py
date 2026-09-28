@@ -33,6 +33,12 @@ from .coupler_flux import (
     coupler_flux_sweep,
     pair_coupler,
 )
+from .drive_line import (
+    DRIVE_LINE_DESC,
+    DriveLineParameters,
+    drive_owner,
+    drive_view,
+)
 from .detuning import (
     DETUNING_AXIS,
     END_DRIVE_DETUNING_DESC,
@@ -61,6 +67,12 @@ from .flux import (
     flux_frame,
     flux_sweep,
     foreign_flux_source,
+)
+from .mapped_readout import (
+    READOUT_MEMBER_DESC,
+    SELECTIVE_PI_LEN_DESC,
+    MappedReadoutParameters,
+    mapped_population,
 )
 from .qubit_reset import (
     ACTIVE_RESET_ROUNDS_DESC,
@@ -100,6 +112,8 @@ CAPABILITY_SUMMARIES = {
     "drive_detuning": "sweeps the drive detuning relative to the current drive frequency",
     "readout_detuning": "sweeps the readout detuning relative to the current readout frequency",
     "coupler_flux": "sweeps a pair's coupler flux pulse relative to the coupler's idle_flux",
+    "drive_line": "drives the target through a named line's channel, borrowed when it has none there",
+    "mapped_readout": "reads the target through a pair member (selective pi plus x180, then its readout)",
 }
 
 __all__ = [
@@ -138,7 +152,12 @@ __all__ = [
     "START_DRIVE_DETUNING_DESC",
     "START_READOUT_DETUNING_DESC",
     "THERMALIZATION_TIME_DESC",
+    "DRIVE_LINE_DESC",
+    "READOUT_MEMBER_DESC",
+    "SELECTIVE_PI_LEN_DESC",
     "DriveDetuningSweepParameters",
+    "DriveLineParameters",
+    "MappedReadoutParameters",
     "ReadoutDetuningSweepParameters",
     "FluxComponentParameters",
     "FluxPulseSweepParameters",
@@ -153,12 +172,15 @@ __all__ = [
     "attach_absolute_amp",
     "discrimination_method",
     "drive_detuning_sweep",
+    "drive_owner",
+    "drive_view",
     "flux_anchor_v",
     "flux_frame",
     "flux_sweep",
     "foreign_flux_source",
     "joint_state_labels",
     "joint_to_marginals",
+    "mapped_population",
     "member_order",
     "population_row",
     "readout_detuning_sweep",
