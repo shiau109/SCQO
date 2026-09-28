@@ -487,6 +487,11 @@ provenance or a trap a user can walk into, **low** = hygiene.
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
   own SQUID (apex LOCATION: q1 5.45 %, q3 7.16 % of the coupler move) with the coupler's Lamb
   shift (apex HEIGHT: q1 +524 kHz for -80 mV); q1_q2_c's DC apex reconstructs to ~0.074 V.
+- NEXT (unblocked 2026-09-28 by v4.0.0, which re-keyed the store by line so a coupler's drive
+  parameters can live on the route that drives it): the coupler pi pulse, starting with a power
+  Rabi through a BORROWED drive channel (`xy2.q1_q2_c` or `xy1.q1_q2_c`, the line chosen by
+  experiment). Its plan's FIRST decision: how the QUAM state ADOPTS a borrowed route (the vendor
+  element behind it) - both drivers refuse borrowed channels by name until then.
 - DECIDED, for the work AFTER the three experiments (user, 2026-09-27): the idle criterion is
   not the readout's business - J=0 (F27) and ZZ=0 (`pair_zz_coupler`, `_pulse` after I26) come
   from their own experiments with their own writebacks, and a coupler-state readout parks the
@@ -509,7 +514,8 @@ provenance or a trap a user can walk into, **low** = hygiene.
   its strengths/weaknesses next to the ZZ=0 one.
 
 ### F28 Writers for the rest of the flux-crosstalk matrix (low)
-- From F24: the `flux_crosstalk__<source>` facts have NO planned writer. The
+- From F24: the `flux_crosstalk__<source>` facts have NO planned writer (that name predates
+  v4.0.0, which removed the `<field>__<target>` grammar - re-plan the fact's owner first). The
   F24 neighbour-apex sibling (A) would have written the cell "probe <- its own coupler", but
   the user made A verification-only, low priority (2026-09-27). Every cell needs a writer:
   neighbour cells (q1 <- q1_q2_c 5.45 % by DC), non-neighbour cells (q3 <- q1_q2_c 7.16 %, both
@@ -527,26 +533,6 @@ provenance or a trap a user can walk into, **low** = hygiene.
   apex, turning the nested neighbour-apex reading from 3D into 2D).
   That touches the knob write path and both drivers - its own feature, when wanted.
 - Done when: decided and built, or dropped.
-
-### F30 Store by line: `scqo_state.json` keyed by line -> target, released alone as 4.0.0 (high)
-- Decided by the user 2026-09-27/28 while planning the coupler pi pulse (F24's NEXT): a coupler
-  is driven through EITHER neighbour's xy line and the better line is found by experiment, so
-  its pulse parameters cannot wait for a hand-declared channel. Knobs are keyed by roster LINE
-  names (never instrument ports) with the target as a sub-key (`xy2.q1_q2_c.pi_amp`), gate
-  knobs by composite -> operation (`q1_q2.iswap.coupler_flux`), line transfer facts under the
-  line in physical.json (`z1.q1.flux_per_phi0`); borrowed drive channels need no declaration;
-  one-time data conversion at the cutover.
-- Spec approved 2026-09-28: `docs/store-by-line-plan.md` (section 10 = what the
-  implementation changed). 3.15.0 went out first; this is built in `feature/store-by-line`
-  worktrees (SCQO, scqo-qm, scqo-qblox) and goes out ALONE as 4.0.0. Merging to main (the
-  shared venvs import main live, and 4.0.0 refuses a 3.x data root), converting
-  `D:\qpu_data_dev`, the 5Q4C smoke run and the release each wait for the user's word.
-- Left for the coupler power Rabi plan: how the instrument ADOPTS a borrowed channel (the
-  vendor element behind `xy2.q1_q2_c`); both drivers refuse borrowed channels by name until
-  then.
-- Blocks: the coupler pi-pulse calibration (F24 NEXT) and the flux-crosstalk re-plan (F28's
-  `flux_crosstalk__<source>` naming predates this; the user re-plans it after 4.0.0).
-- Done when: 4.0.0 is released with the conversion as its upgrade action.
 
 ## Known issues / potential problems (found in passing)
 
@@ -900,8 +886,10 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   `RecordingDevice._sync_coupled` re-reads only the written entity: no history row, the stored
   `*_power_dbm` of the others goes stale.
 - 5Q4C today: the five readouts share port con1/6/1 at full scale -11 dBm, so any
-  `readout_power_dbm` above -17 dBm triggers it. F30 adds a coupler route on q2's port too.
-- F30 widens `_sync_coupled` to every owner on the same line, so the move is at least recorded.
+  `readout_power_dbm` above -17 dBm triggers it. v4.0.0's borrowed routes put a coupler route
+  on q2's port too.
+- v4.0.0 widened `_sync_coupled` to every owner on the same LINE, so the move is at least
+  recorded when the owners share a roster line (two lines on one port still are not).
   Left open: the driver policy - hold a shared port's full scale and solve the amplitude only,
   refusing by name when the amplitude cannot absorb the change (the Octave branch already holds).
 - Done when: a power write on a shared port either keeps the other channels' absolute power or
