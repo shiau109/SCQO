@@ -529,10 +529,16 @@ provenance or a trap a user can walk into, **low** = hygiene.
   map reads the coupler as 0.13 + 0.66 x P_c.
 - 2026-09-28, step 6 closure PASSES (run 20260928-194531-866, `--no-update`): fit factor 0.995
   (1/(2f), f 0.5026, phi = pi), grid argmax 1.008; baseline 0.115, peak 0.79.
-- NEXT, asked first: step 7 - adopt `xy2.q2_q3_c` (upconverter 2 is shared at 7.1 GHz, IF
-  +55.50 MHz, no band change) and repeat steps 3-6 with `readout_member=q3`. The coupler
-  channel's `pi_amp_x90` is still the adoption seed 0.125: calibrate it before any x90-based
-  coupler experiment (Ramsey, echo).
+- 2026-09-28, step 7 DONE: `xy2.q2_q3_c` adopted (upconverter 2 shared at 7.1 GHz, IF +55.50 MHz;
+  the state diff is the one new element; backup `state.json.pre-adopt-q2_q3_c.bak`). Read
+  through q3 (its port 6/4 stays on band 1, no recalibration): coarse 0-1.9 (run
+  20260928-200550-400) a clean coherent Rabi - baseline 0.16, peaks 0.80, ~4 periods, first
+  extremum taken; fit first peak 0.0592; fine (run -201451-692) factor 1.008 ->
+  `xy2.q2_q3_c.pi_amp` = 0.0597 ACCEPTED; closure (run -201536-329) factor 0.991 (fit) / 0.980
+  (grid). The plan's section 8 is complete for both couplers.
+- NEXT: both adopted channels' `pi_amp_x90` are still the adoption seed 0.125 - calibrate them
+  (the benchmarking experiment, after I30 or around a seed as for q1) before any x90-based
+  coupler experiment; then the LATER list below, one experiment at a time with its own spec.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
