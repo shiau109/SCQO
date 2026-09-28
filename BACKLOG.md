@@ -496,12 +496,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   day on `feature/coupler-transmon` (scqat cea9ea8: `power_rabi` takes the FIRST extremum;
   SCQO e0e3312; scqo-qm f0adf0c: `scqo-qm adopt-channel`, `MixedTransmonQuam.borrowed_channels`,
   `QMBorrowedDriveChannel`, `MappedTarget`; scqo-qblox a7a57a2 refuses both fields by name).
-  First carrier: `qubit_power_rabi`.
-- NEXT: the plan's section-8 hardware steps on 5Q4C, each asked first - copy state.json, adopt
-  `xy2.q1_q2_c` at LO 7.1 GHz (ports 6/2 + 6/3 move to band 2), re-check q1/q2 (`qubit_power_rabi`
-  within 3 %, `pair_coupler_spectroscopy_zz` f01 within a FWHM), then the coupler's power Rabi
-  through `xy2` read through q1 (200 ns cosine, coarse then fine), then `xy2.q2_q3_c` read
-  through q3.
+  First carrier: `qubit_power_rabi`. Merged to main the same day (fragment `coupler-transmon`).
+- 2026-09-28, plan section-8 steps 0-1 DONE on 5Q4C (cd2/qm_5q): `xy2.q1_q2_c` is ADOPTED - con1/6/3
+  upconverter 2 at 7.1 GHz, RF 7.05695 GHz (IF -43.05 MHz), x180/x90 0.25/0.125 x 200 ns; ports 6/2
+  + 6/3 are now band 2 (LO 4.9 GHz kept). Nothing else in state.json moved; wiring.json
+  byte-identical. Backup: `backend_config/state.json.pre-adopt-channel.bak`.
+- NEXT, each asked first: re-check q1/q2 on band 2 (`qubit_power_rabi` within 3 % of 0.2141 /
+  0.2142, `pair_coupler_spectroscopy_zz` q1_q2 f01 within a FWHM of 7.05695 GHz), then the
+  coupler's power Rabi through `xy2` read through q1 (200 ns cosine, coarse then fine), then
+  `xy2.q2_q3_c` read through q3.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,

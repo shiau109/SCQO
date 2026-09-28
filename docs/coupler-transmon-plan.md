@@ -193,7 +193,7 @@ lab 的 root class `MixedTransmonQuam` 加一個欄位 `borrowed_channels: Dict[
 | `RF_frequency` | 7056954510.1（`q1_q2_c.f_01_hz`） |
 | `intermediate_frequency` | `#./inferred_intermediate_frequency`，推得 −43.05 MHz |
 | `core` | 沿用 q2.xy 的 `"b"`（quam：同一個 core 可以給多個 channel 共用），同一個 port 的兩個 element 不多佔資源 |
-| `operations` | `x180`、`x90`：`DragCosinePulse`，200 ns，振幅 0.25 / 0.125，`alpha` 0，`anharmonicity` 135e6（DRAG 關閉時不影響波形），`detuning` 0，`axis_angle` 0 |
+| `operations` | `x180`、`x90`：`DragCosinePulse`，200 ns，振幅 0.25 / 0.125，`alpha` 0，`anharmonicity` 取 physical.json 的 `anharmonicity_hz`、沒有就 200e6（5Q4C 的 coupler 沒有這個 fact，實際寫入 200e6；DRAG 關閉時不影響波形），`detuning` 0，`axis_angle` 0 |
 
 - LO 選 7.1 GHz 是兩個 coupler 的中間：之後 `xy2.q2_q3_c` 共用同一個 upconverter，IF +55.50 MHz。
 - q1、q2 自己的 element 不變（LO 4.9 GHz，IF +244.60 / −57.85 MHz）。產生的 config 除了 band 應該完全相同。
