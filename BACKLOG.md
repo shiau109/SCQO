@@ -511,10 +511,15 @@ provenance or a trap a user can walk into, **low** = hygiene.
   unit amplitude is 12 % higher on band 2 (fit f 0.5594 vs 0.5001, same contrast): the band-2
   path outputs ~1 dB more at 5.14 GHz, which q2 at 4.84 GHz does not show. The 09-27 zz runs
   already had q1 on band 2 (pi_contrast 0.80-0.89).
-- NEXT (the user decides): recalibrate q1 on band 2 (accept a power-Rabi pi_amp ~0.192, then
-  pi_amp_x90 and DRAG) before the coupler steps - the map's selective pi takes q1's x180 area -
-  or roll back to `state.json.pre-adopt-channel.bak`. Then the coupler's power Rabi through
-  `xy2` read through q1 (steps 3-6), then `xy2.q2_q3_c` through q3.
+- 2026-09-28, q1 recalibration on band 2 (user: recalibrate rather than roll back): `pi_amp`
+  0.2141 -> 0.1918 ACCEPTED (run 20260928-190940-876, reproducing -184843-486). `pi_amp_x90`
+  NOT yet: the benchmarking run's data put the optimum at ~0.877 x 0.1055 = ~0.0926, but its
+  estimator proposed 0.0528 (I30; rejected). DRAG and the x180's frame detuning need no
+  recalibration: band 2 scales both quadratures alike, so the pi_amp fix restores the same
+  physical pulse at the qubit.
+- NEXT: q1's `pi_amp_x90` (the user's call - set ~0.0926 from that run, then benchmark a window
+  straddling 1.0; or fix I30 and re-estimate the run offline). Then the coupler's power Rabi
+  through `xy2` read through q1 (plan steps 3-6), then `xy2.q2_q3_c` through q3.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
@@ -928,6 +933,23 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   q2 `drive_power_dbm` write still moves the coupler route's absolute power.
 - Done when: a power write on a shared port either keeps the other channels' absolute power or
   refuses, pinned by a two-channels-on-one-port test.
+
+### I30 `qubit_deterministic_benchmarking` proposes a clipped fallback as a SUCCESSFUL amplitude (high)
+- Found 2026-09-28 recalibrating 5Q4C q1's x90 on band 2 (run
+  20260928-191126-666, `target_gate=x90`, window 0.8-1.0 x 21): the data are a clean V -
+  |omega| 0.137 at 0.80, ~0.02 at 0.87-0.89, 0.22 at 1.00, both arms slope +-1.78 =
+  (pi/2)/a_opt - so the optimum is ~0.877. The estimator returned `opt_factor` 0.5 and SCQO
+  proposed `pi_amp_x90` 0.0528 (half the stored value) as SUCCESSFUL. REJECTED on the run.
+- Cause: scqat `estimators/qubit_deterministic_benchmarking/estimator.py` signs each fitted
+  omega by `a >= 1.0`, i.e. assumes the optimum sits at the stored amplitude; a window whose
+  optimum is elsewhere gets one sign almost everywhere, the linear fit goes flat, and
+  `np.clip(a_opt, 0.5, 1.5)` hides the result. SCQO's `estimate()` then marks every target
+  SUCCESSFUL - there is no outcome gate at all.
+- Workaround until fixed: put the stored amplitude near the optimum first, then benchmark a
+  window straddling 1.0.
+- Done when: the sign comes from the data (the |omega| minimum, or a V fit |k (a - a0)|), an
+  optimum outside the swept window is a FAILED outcome with no suggestion (never clipped), and
+  a synthetic test with an off-centre optimum pins both.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
