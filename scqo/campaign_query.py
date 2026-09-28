@@ -13,17 +13,14 @@ from __future__ import annotations
 
 from typing import Any, Literal, Sequence
 
-from .catalog import CHANNELS
+from .v3_names import V3_RIDER_SUFFIXES
 
-#: Entity-name suffixes that belong to a MODE's riders, so stripping one lands
-#: back on the mode: the channel kinds' frozen ``rider_suffix`` values plus the
-#: ``_res`` resonator a readout rider mints (``roster.py``, ``_expand``).
-#:
-#: Derived from the catalog rather than written out, because the set is frozen
-#: THERE — store keys depend on it — and a hand-copied list would drift.
+#: Entity-name suffixes that belong to a MODE, so stripping one lands back on
+#: the mode: the pre-4.0.0 rider suffixes (campaign statistics recorded before
+#: the store-by-line cutover may carry them, and a campaign folder is immutable)
+#: plus the ``_res`` resonator a readout rider still mints.
 RIDER_SUFFIXES: tuple[str, ...] = tuple(
-    sorted({c.rider_suffix for c in CHANNELS.values() if c.rider_suffix} | {"_res"},
-           key=len, reverse=True)
+    sorted(set(V3_RIDER_SUFFIXES.values()) | {"_res"}, key=len, reverse=True)
 )
 
 #: The estimators this module actually implements. "mad_sigma" is deliberately
