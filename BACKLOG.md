@@ -528,6 +528,21 @@ provenance or a trap a user can walk into, **low** = hygiene.
   That touches the knob write path and both drivers - its own feature, when wanted.
 - Done when: decided and built, or dropped.
 
+### F30 Store by line: `scqo_state.json` keyed by line -> target, released alone as 4.0.0 (high)
+- Decided by the user 2026-09-27/28 while planning the coupler pi pulse (F24's NEXT): a coupler
+  is driven through EITHER neighbour's xy line and the better line is found by experiment, so
+  its pulse parameters cannot wait for a hand-declared channel. Knobs are keyed by roster LINE
+  names (never instrument ports) with the target as a sub-key (`xy2.q1_q2_c.pi_amp`), gate
+  knobs by composite -> operation (`q1_q2.iswap.coupler_flux`), line transfer facts under the
+  line in physical.json (`z1.q1.flux_per_phi0`); borrowed drive channels need no declaration;
+  one-time data conversion at the cutover.
+- Spec (pending approval): `docs/store-by-line-plan.md`. Order: release the 7 pending
+  fragments as 3.15.0 first, build this in `feature/store-by-line` worktrees (SCQO, scqo-qm,
+  scqo-qblox), release it ALONE as 4.0.0.
+- Blocks: the coupler pi-pulse calibration (F24 NEXT) and the flux-crosstalk re-plan (F28's
+  `flux_crosstalk__<source>` naming predates this; the user re-plans it after 4.0.0).
+- Done when: 4.0.0 is released with the conversion as its upgrade action.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -870,6 +885,21 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: both cases pass together - e.g. seed on the detected feature unless it sits within
   a width of the window edge, or narrow the window to the neighbouring detections - pinned by a
   synthetic test of each, and the saved 5Q4C cryoscope runs keep their line counts.
+
+### I28 A chain-power write moves an MW-FEM port shared by other channels, unrecorded (medium)
+- Found 2026-09-28 designing F30. On MW-FEM, `readout_power_dbm` / `drive_power_dbm` pick the
+  smallest `full_scale_power_dbm` keeping the amplitude <= 0.5 and write it on the PORT
+  (`scqo-qm/scqo_qm/backend/qm_backend.py::_write_chain_power`). Every other channel on that
+  port keeps its amplitude, so its absolute power moves by the full-scale step, and
+  `RecordingDevice._sync_coupled` re-reads only the written entity: no history row, the stored
+  `*_power_dbm` of the others goes stale.
+- 5Q4C today: the five readouts share port con1/6/1 at full scale -11 dBm, so any
+  `readout_power_dbm` above -17 dBm triggers it. F30 adds a coupler route on q2's port too.
+- F30 widens `_sync_coupled` to every owner on the same line, so the move is at least recorded.
+  Left open: the driver policy - hold a shared port's full scale and solve the amplitude only,
+  refusing by name when the amplitude cannot absorb the change (the Octave branch already holds).
+- Done when: a power write on a shared port either keeps the other channels' absolute power or
+  refuses, pinned by a two-channels-on-one-port test.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
