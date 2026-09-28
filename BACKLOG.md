@@ -501,10 +501,20 @@ provenance or a trap a user can walk into, **low** = hygiene.
   upconverter 2 at 7.1 GHz, RF 7.05695 GHz (IF -43.05 MHz), x180/x90 0.25/0.125 x 200 ns; ports 6/2
   + 6/3 are now band 2 (LO 4.9 GHz kept). Nothing else in state.json moved; wiring.json
   byte-identical. Backup: `backend_config/state.json.pre-adopt-channel.bak`.
-- NEXT, each asked first: re-check q1/q2 on band 2 (`qubit_power_rabi` within 3 % of 0.2141 /
-  0.2142, `pair_coupler_spectroscopy_zz` q1_q2 f01 within a FWHM of 7.05695 GHz), then the
-  coupler's power Rabi through `xy2` read through q1 (200 ns cosine, coarse then fine), then
-  `xy2.q2_q3_c` read through q3.
+- 2026-09-28, step 2 (hardware regression on band 2, all `--no-update`, no setup drift): q2 PASSES
+  (`qubit_power_rabi` pi_amp 0.2159 vs stored 0.2142, run 20260928-185021-139); the zz re-find
+  PASSES on the two-upconverter port (f01 7.0590 GHz +- 0.10 MHz, FWHM 5.07 MHz, dip 0.39,
+  pi_contrast 0.83 - 2.05 MHz above 09-27's 7.05695; tone LO 7.1 GHz, no band switch; run
+  20260928-185316-000 with the 09-27 window 6.85-7.35 GHz - the DEFAULT window 6.55-7.05 GHz
+  misses this coupler, run -185057-298 = no_line). q1 FAILS the 3 % gate: pi_amp 0.1918 vs
+  0.2141 (run 20260928-184843-486; the band-1 smoke the same day read 0.2098). Its Rabi rate per
+  unit amplitude is 12 % higher on band 2 (fit f 0.5594 vs 0.5001, same contrast): the band-2
+  path outputs ~1 dB more at 5.14 GHz, which q2 at 4.84 GHz does not show. The 09-27 zz runs
+  already had q1 on band 2 (pi_contrast 0.80-0.89).
+- NEXT (the user decides): recalibrate q1 on band 2 (accept a power-Rabi pi_amp ~0.192, then
+  pi_amp_x90 and DRAG) before the coupler steps - the map's selective pi takes q1's x180 area -
+  or roll back to `state.json.pre-adopt-channel.bak`. Then the coupler's power Rabi through
+  `xy2` read through q1 (steps 3-6), then `xy2.q2_q3_c` through q3.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
