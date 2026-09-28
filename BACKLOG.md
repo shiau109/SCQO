@@ -519,8 +519,17 @@ provenance or a trap a user can walk into, **low** = hygiene.
   0.9-1.1) read a_opt 0.9995 -> 0.09255, ACCEPTED. DRAG and the x180's frame detuning need no
   recalibration: band 2 scales both quadratures alike, so the amplitude fix restores the same
   physical pulse at the qubit.
-- NEXT, each asked first: the coupler's power Rabi through `xy2` read through q1 (plan steps
-  3-6: preview, coarse, fine, closure), then `xy2.q2_q3_c` through q3.
+- 2026-09-28, plan steps 3-5 DONE - the coupler's power Rabi works: the preview's QUA matches
+  section 4 (q1's 301 us thermal wait, x180 on `xy2.q1_q2_c`, q1's 2 us selective pi then x180,
+  q1's discriminated read; nothing on q2). Coarse scan, window 0-1.9 (run
+  20260928-193455-510): a clean coherent Rabi read through q1 - baseline 0.13, peaks 0.80,
+  back to baseline at 2pi, 3+ periods, and the FIRST extremum taken (decision 5(b) working);
+  the fit's first peak 0.0696 (grid argmax 0.0665). Seed set to 0.0696, fine scan 0-1.4 (run
+  20260928-193927-094): one arch, factor 1.008 -> `xy2.q1_q2_c.pi_amp` = 0.0702 ACCEPTED. The
+  map reads the coupler as 0.13 + 0.66 x P_c.
+- NEXT, each asked first: step 6 closure (rerun, factor 1.00 +- 0.03), then step 7 -
+  `xy2.q2_q3_c` read through q3. The coupler channel's `pi_amp_x90` is still the adoption seed
+  0.125: calibrate it before any x90-based coupler experiment (Ramsey, echo).
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
