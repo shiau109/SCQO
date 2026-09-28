@@ -487,11 +487,24 @@ provenance or a trap a user can walk into, **low** = hygiene.
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
   own SQUID (apex LOCATION: q1 5.45 %, q3 7.16 % of the coupler move) with the coupler's Lamb
   shift (apex HEIGHT: q1 +524 kHz for -80 mV); q1_q2_c's DC apex reconstructs to ~0.074 V.
-- NEXT (unblocked 2026-09-28 by v4.0.0, which re-keyed the store by line so a coupler's drive
-  parameters can live on the route that drives it): the coupler pi pulse, starting with a power
-  Rabi through a BORROWED drive channel (`xy2.q1_q2_c` or `xy1.q1_q2_c`, the line chosen by
-  experiment). Its plan's FIRST decision: how the QUAM state ADOPTS a borrowed route (the vendor
-  element behind it) - both drivers refuse borrowed channels by name until then.
+- NEXT (user 2026-09-28): the `qubit_*` experiments take a COUPLER target through two
+  Parameters mixins - `drive_line` (drive through a named line's channel, e.g. the borrowed
+  `xy2.q1_q2_c`) and `mapped_readout` (`readout_member`: the zz experiment's selective pi plus
+  the member's x180 copy the coupler's state onto a pair member, which is then read) - instead
+  of `coupler_*` copies (CLAUDE.md estimator-binding rule 4). Spec `docs/coupler-transmon-plan.md`
+  (APPROVED 2026-09-28 with every section-10 recommendation; implementation in worktrees
+  `feature/coupler-transmon`): the first carrier is `qubit_power_rabi` on 5Q4C `q1_q2_c` through `xy2`,
+  read through q1, with a 200 ns cosine; the QM tree adopts the channel as
+  `MixedTransmonQuam.borrowed_channels["xy2.q1_q2_c"]` on port 6/3's second upconverter (7.1 GHz,
+  ports 6/2 + 6/3 to band 2) via a new `scqo-qm adopt-channel`.
+- LATER, one experiment at a time, each with its own spec once the power Rabi works:
+  `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
+  (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
+  so the QM handle then needs `z` = the coupler's flux element and an `initialize_qpu` that
+  settles it; the microwave-crosstalk Rabi (`drive_line` alone, e.g. `xy2.q1`, adopted on
+  upconverter 1); the zz/swap tone through the adopted channel instead of moving the LO per run;
+  the swap map as a second mapped-readout method; IQ (non-discriminated) mapped readout; Qblox
+  adoption.
 - DECIDED, for the work AFTER the three experiments (user, 2026-09-27): the idle criterion is
   not the readout's business - J=0 (F27) and ZZ=0 (`pair_zz_coupler`, `_pulse` after I26) come
   from their own experiments with their own writebacks, and a coupler-state readout parks the
@@ -894,6 +907,19 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   refusing by name when the amplitude cannot absorb the change (the Octave branch already holds).
 - Done when: a power write on a shared port either keeps the other channels' absolute power or
   refuses, pinned by a two-channels-on-one-port test.
+
+### I29 `pair_coupler_spectroscopy_zz` plays its selective pi on a PARKED member (low)
+- Found 2026-09-28 writing `docs/coupler-transmon-plan.md`. `_coupler_tone.moved_lo_config`
+  (scqo-qm) switches the tone port's band together with its MW-FEM port-pair partner and, when
+  the partner's LO falls outside the new band, parks it at the band floor with IF 0 for the
+  run's config. In the zz experiment the pi member is often that partner (5Q4C q1_q2: tone on
+  q2 at 6/3, pi on q1 at 6/2). Parked, its selective pi plays at the band floor, so the pi arm
+  shows no pi (pi_contrast ~0) and the run fails as `no_line` after the full scan. The
+  `partner_parked` flag is recorded in `self._moved` but never refused on.
+- 5Q4C does not hit it today (q1's LO 4.9 GHz lies in band 2). The coupler-transmon work edits
+  both files (`_coupler_tone.py` and the zz probe), so fold the refusal in there or after it.
+- Done when: the zz probe refuses by name, before any QUA is built, when the pi member's port
+  would be parked; a test on a tree whose partner LO lies outside the new band.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
