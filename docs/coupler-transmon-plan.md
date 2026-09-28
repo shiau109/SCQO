@@ -271,7 +271,8 @@ scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9 [--dry-run]
 | `thermalization_time_s`、`parity_delta_f_hz` | roster 本來就不給借用 channel（它們屬於 target 自己） |
 
 有了這個 view：
-- `components()`、`snapshot()`、`scqo state`、`scqo doctor` 會自動看到已採用的借用 channel。
+- `components()`、`snapshot()`、`scqo state` 會自動看到已採用的借用 channel。`scqo doctor` 不會：它的 CLI 只跑
+  roster、design、lock 三類檢查，列出已採用 channel 的 `checks.vendor_checks` 目前只在 API 裡。
 - session 開始時會 seed 它的值（`RecordingDevice._seed_pull`）。
 - `scqo set xy2.q1_q2_c.pi_amp=…` 能用。
 
@@ -463,9 +464,12 @@ compile，以及 gate 轉述的 KeyError 訊息。
 
 遇到第一個硬體或 gateway 錯誤就停下來回報；動過的 knob 全部還原。
 
-0. **看**：`scqo-qm adopt-channel --list`、`scqo state`；把 `cd2\qm_5q\backend_config\state.json` 複製一份留底。
-1. **採用**：`scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9`。之後：
-   - `scqo doctor` 乾淨，並列出 `xy2.q1_q2_c`；
+0. **看**：`scqo-qm adopt-channel --list`、`scqo state`、`scqo doctor`（採用前的基準），以及步驟 1 的 `--dry-run`。
+1. **採用**：先把 `cd2\qm_5q\backend_config\state.json` 複製成同資料夾的 `state.json.pre-adopt-channel.bak`
+   （照那裡既有的 `.bak` 慣例；副檔名不是 `.json`，QUAM 載入時不會讀到），再
+   `scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9`。之後：
+   - `scqo doctor` 跟採用前一樣通過（它不列借用 channel，見 §2.5）；
+   - `scqo-qm adopt-channel --list` 列出 `xy2.q1_q2_c`：con1/6/3 up2，IF −43.05 MHz；
    - `scqo state` 顯示 `pi_amp` 0.25、`drive_freq_hz` 7.05695 GHz、`pi_duration_s` 2e-7。
 2. **回歸檢查**（ports 6/2、6/3 換到了 band 2）：
    - `qubit_power_rabi` 分別打 q1、q2，`--no-update`。π 振幅要在存值的 ±3% 內（0.2141 / 0.2142；2026-09-28 在
