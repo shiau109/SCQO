@@ -374,7 +374,7 @@ class QubitRamseyFluxPulse(Experiment):
             if self.result.outcomes[q] is not Outcome.SUCCESSFUL or "idle_flux" not in fit:
                 continue
             flux = self.device.channel(q, "flux")
-            flux.idle_flux = fit["idle_flux"]
+            self.device.flux_line(q).idle_flux = fit["idle_flux"]
             self.device.channel(q, "drive").drive_freq_hz = fit["drive_freq_hz"]
             mode = self.device.component(q)
             mode.f_01_hz = fit["f_01_hz"]

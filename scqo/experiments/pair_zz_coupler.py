@@ -123,7 +123,7 @@ class PairZZCoupler(Experiment):
             zz = f_hz - det  # signed residual ZZ per bias point
             try:
                 coupler = self.device.roster.entities[pair].roles["coupler"][0]
-                old = self.device.channel(coupler, "flux").idle_flux
+                old = self.device.flux_line(coupler).idle_flux
                 old = float(old) if old is not None else None
             except Exception:
                 old = None
@@ -164,7 +164,7 @@ class PairZZCoupler(Experiment):
                 raise ValueError(
                     f"{pair} declares no coupler role — pair_zz_coupler "
                     f"needs a tracked coupler with a flux channel")
-            self.device.channel(couplers[0], "flux").idle_flux = (
+            self.device.flux_line(couplers[0]).idle_flux = (
                 fit["coupler_zero_v"])
             self.device.component(pair).zz_hz = fit["zz_hz"]
 

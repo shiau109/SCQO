@@ -269,7 +269,7 @@ class QubitSpectroscopyFluxPulse(Experiment):
                     setattr(flux_view, field, fit[field])
             # ... and the operating point itself: park at the measured sweet spot.
             if "flux_offset" in fit:
-                flux_view.idle_flux = fit["flux_offset"]
+                self.device.flux_line(qubit).idle_flux = fit["flux_offset"]
 
     def probe(self):  # pragma: no cover - driver half
         raise NotImplementedError("a driver backend supplies probe()")

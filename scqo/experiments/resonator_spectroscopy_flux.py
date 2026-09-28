@@ -594,15 +594,15 @@ class ResonatorSpectroscopyFlux(Experiment):
             for field in ("flux_offset", "flux_per_phi0"):
                 if field in fit:
                     setattr(flux_view, field, fit[field])
-            # Set up the idle point at the sweet spot — two pushed channel
-            # knobs: park the standing idle flux at the sweet-spot bias
-            # (idle_flux = flux_offset on the flux channel), and read out at the
+            # Set up the idle point at the sweet spot — two pushed knobs:
+            # park the standing idle flux at the sweet-spot bias
+            # (idle_flux = flux_offset, on the qubit's flux LINE), and read out at the
             # resonator dip there (readout_freq_hz = sweet_spot_res_hz on the
             # readout channel). The flux channel exists because an own-flux run
             # requires the flux_bias operation (the target is flux-tunable); a
             # later readout_frequency run refines readout_freq_hz.
             if "flux_offset" in fit:
-                flux_view.idle_flux = fit["flux_offset"]
+                self.device.flux_line(qubit).idle_flux = fit["flux_offset"]
             if "sweet_spot_res_hz" in fit:
                 self.device.channel(qubit, "readout").readout_freq_hz = (
                     fit["sweet_spot_res_hz"])

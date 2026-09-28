@@ -92,7 +92,7 @@ def parse_selection(text: str, suggestions: list[dict], *, allow_decided: bool =
                 raise ValueError(f"row #{token} is already decided (re-decide with --reapply)")
             matches = [idx]
         elif "." in token:
-            name, _, field = token.partition(".")
+            name, _, field = token.rpartition(".")  # xy2.q1_q2_c.pi_amp
             matches = [i for i in selectable
                        if suggestions[i]['entity'] == name and suggestions[i]["field"] == field]
         else:

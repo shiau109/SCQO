@@ -166,13 +166,18 @@ def state_rows(roster: Roster, state: dict, physical: dict, *,
 def qubit_rows(roster: Roster, qubit: str, state: dict,
                physical: dict) -> list[dict[str, Any]]:
     """The per-qubit ASSEMBLED view: the mode plus its closure (default
-    channels, attached resonator), each row tagged with the closure ROLE it
-    plays — grouping derived from refs, never declared."""
+    channels, the lines they ride when those carry fields of their own - the
+    flux bias - and the attached resonator), each row tagged with the closure
+    ROLE it plays — grouping derived from refs, never declared."""
     members: list[tuple[str, str]] = [(qubit, "mode")]
     for kind in CHANNELS:
         ch = roster.defaults.get((qubit, kind))
         if ch is not None:
             members.append((ch, f"{kind} channel"))
+            line = roster.entities[ch].line
+            if (roster.fields_of(line)
+                    and line not in {name for name, _ in members}):
+                members.append((line, f"{kind} line"))
     members += [(m.name, "resonator") for m in roster.modes().values()
                 if m.refs.get("qubit") == qubit]
     rows = []

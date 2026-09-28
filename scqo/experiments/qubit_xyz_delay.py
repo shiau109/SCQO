@@ -122,7 +122,7 @@ class QubitXyzDelay(Experiment):
             # The triangle half-width is the pi length; centre it on the stored
             # delay so a re-run after accept sees the peak move to 0.
             xy_ns = float(self.device.channel(q, "drive").pi_duration_s) * 1e9
-            t0 = float(self.device.channel(q, "flux").flux_delay_s) * 1e9
+            t0 = float(self.device.flux_line(q).flux_delay_s) * 1e9
             tri = np.maximum(0.0, 1.0 - np.abs(t_ns - t0) / xy_ns)
             pops = {0: np.full(n_rt, 0.05), 1: 0.05 + 0.9 * tri}
             if use_state:
@@ -167,7 +167,7 @@ class QubitXyzDelay(Experiment):
         for qubit in self.params.targets:
             r = results[qubit]
             shift = float(r["t0_s"])
-            old = float(self.device.channel(qubit, "flux").flux_delay_s)
+            old = float(self.device.flux_line(qubit).flux_delay_s)
             result.fit[qubit] = {
                 # the vendored node INCREMENTED the port delay by the fitted peak;
                 # scqo pushes absolutes, so the new line delay is old + fitted.
@@ -186,7 +186,7 @@ class QubitXyzDelay(Experiment):
             return
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
-                self.device.channel(qubit, "flux").flux_delay_s = fit["flux_delay_s"]
+                self.device.flux_line(qubit).flux_delay_s = fit["flux_delay_s"]
 
     def probe(self):  # pragma: no cover - driver half
         raise NotImplementedError("a driver backend supplies probe()")

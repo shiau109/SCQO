@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from .datastore import BACKEND_CONFIG_SUBDIR, SCQO_SUBDIR, DataStore
 from .design import Design
-from .device import CompositeView, RecordingDevice
+from .device import OperationView, RecordingDevice
 from .estimate_inputs import embed_run, is_embedded
 from .roster import Roster
 from .stores import (
@@ -43,6 +43,8 @@ from .stores import (
     Store,
     _current_operator,
     _now,
+    is_waveform,
+    nest_values,
     physical_store,
     state_store,
 )
@@ -1135,7 +1137,7 @@ class Session:
         """One knob/monitor write through the recording device (push-first
         for knobs; record-only for monitors)."""
         view = self.device.component(entity)
-        if isinstance(view, CompositeView):
+        if isinstance(view, OperationView):
             view.write_knob(field, value)
         else:
             setattr(view, field, value)
@@ -1613,11 +1615,14 @@ class Session:
         out = []
         resolved: dict[tuple[str, str], str] = {}
         for key, value in assignments.items():
-            name, _, field = key.partition(".")
+            # The field is after the LAST dot: an entity name may carry one
+            # (xy2.q1_q2_c.pi_amp, q1_q2.iswap.coupler_flux).
+            name, _, field = key.rpartition(".")
             if not name or not field:
                 raise ValueError(
                     f"assignment key {key!r} must be 'entity.field' "
-                    f"(e.g. q1.pi_amp, q1_res.f_dress0_hz)")
+                    f"(e.g. q1.pi_amp, xy2.q1_q2_c.pi_amp, z1.idle_flux, "
+                    f"q1_res.f_dress0_hz)")
             try:
                 entity, spec = self.roster.resolve_field(name, field)
             except Exception as err:
@@ -1654,7 +1659,7 @@ class Session:
         overlay: dict[str, dict[str, Any]] = {}
         current = self._batch_reader(overlay)
         for entity, field, spec, value in items:
-            if (spec.shape == "float[]" and field.endswith("_waveform")
+            if (spec.shape == "float[]" and is_waveform(field)
                     and current(entity, f"{field}_dt_s") is None):
                 raise ValueError(
                     f"{entity}.{field}: set {field}_dt_s first (in the same "
@@ -1715,7 +1720,8 @@ class Session:
         ``backend_config/``, every OTHER regular file of the setup's backend_config
         folder verbatim (Qblox's att_limits.json / mixer_cal.json ride along), and
         this context's two scqo value files under ``scqo/`` in their on-disk shape
-        (``{"schema": 3, "values": ...}``, so a restore can drop them in as-is).
+        (``{"schema": 4, "values": <nested>}``, so a restore can drop them in
+        as-is).
         {} when there is no vendor config or anything fails."""
         if not vendor:
             return {}
@@ -1732,7 +1738,8 @@ class Session:
                             files[f"{BACKEND_CONFIG_SUBDIR}/{p.name}"] = p.read_bytes()
             for name, values in ((STATE_FILE, self.state.values()),
                                  (PHYSICAL_FILE, self.physical.values())):
-                text = json.dumps({"schema": STATE_SCHEMA, "values": values},
+                text = json.dumps({"schema": STATE_SCHEMA,
+                                   "values": nest_values(values)},
                                   indent=2, allow_nan=False) + "\n"
                 files[f"{SCQO_SUBDIR}/{name}"] = text.encode("utf-8")
             return files
