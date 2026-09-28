@@ -487,16 +487,21 @@ provenance or a trap a user can walk into, **low** = hygiene.
   VERIFICATION only (user, 2026-09-27). It mixes the coupler line's crosstalk into the probe's
   own SQUID (apex LOCATION: q1 5.45 %, q3 7.16 % of the coupler move) with the coupler's Lamb
   shift (apex HEIGHT: q1 +524 kHz for -80 mV); q1_q2_c's DC apex reconstructs to ~0.074 V.
-- NEXT (user 2026-09-28): the `qubit_*` experiments take a COUPLER target through two
-  Parameters mixins - `drive_line` (drive through a named line's channel, e.g. the borrowed
-  `xy2.q1_q2_c`) and `mapped_readout` (`readout_member`: the zz experiment's selective pi plus
-  the member's x180 copy the coupler's state onto a pair member, which is then read) - instead
-  of `coupler_*` copies (CLAUDE.md estimator-binding rule 4). Spec `docs/coupler-transmon-plan.md`
-  (APPROVED 2026-09-28 with every section-10 recommendation; implementation in worktrees
-  `feature/coupler-transmon`): the first carrier is `qubit_power_rabi` on 5Q4C `q1_q2_c` through `xy2`,
-  read through q1, with a 200 ns cosine; the QM tree adopts the channel as
-  `MixedTransmonQuam.borrowed_channels["xy2.q1_q2_c"]` on port 6/3's second upconverter (7.1 GHz,
-  ports 6/2 + 6/3 to band 2) via a new `scqo-qm adopt-channel`.
+- 2026-09-28 (user): the `qubit_*` experiments take a COUPLER target through two Parameters
+  mixins - `drive_line` (drive through a named line's channel, e.g. the borrowed `xy2.q1_q2_c`)
+  and `mapped_readout` (`readout_member`: the zz experiment's selective pi plus the member's
+  x180 copy the coupler's state onto a pair member, which is then read) - instead of
+  `coupler_*` copies (CLAUDE.md estimator-binding rule 4). Spec `docs/coupler-transmon-plan.md`
+  (APPROVED with every section-10 recommendation). IMPLEMENTED and offline-validated the same
+  day on `feature/coupler-transmon` (scqat cea9ea8: `power_rabi` takes the FIRST extremum;
+  SCQO e0e3312; scqo-qm f0adf0c: `scqo-qm adopt-channel`, `MixedTransmonQuam.borrowed_channels`,
+  `QMBorrowedDriveChannel`, `MappedTarget`; scqo-qblox a7a57a2 refuses both fields by name).
+  First carrier: `qubit_power_rabi`.
+- NEXT: the plan's section-8 hardware steps on 5Q4C, each asked first - copy state.json, adopt
+  `xy2.q1_q2_c` at LO 7.1 GHz (ports 6/2 + 6/3 move to band 2), re-check q1/q2 (`qubit_power_rabi`
+  within 3 %, `pair_coupler_spectroscopy_zz` f01 within a FWHM), then the coupler's power Rabi
+  through `xy2` read through q1 (200 ns cosine, coarse then fine), then `xy2.q2_q3_c` read
+  through q3.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
@@ -905,21 +910,11 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   recorded when the owners share a roster line (two lines on one port still are not).
   Left open: the driver policy - hold a shared port's full scale and solve the amplitude only,
   refusing by name when the amplitude cannot absorb the change (the Octave branch already holds).
+- coupler-transmon (2026-09-28): an ADOPTED borrowed channel (`xy2.q1_q2_c`) plays on q2's port
+  at that port's full scale. Its own `drive_power_dbm` is refused by name for this reason, but a
+  q2 `drive_power_dbm` write still moves the coupler route's absolute power.
 - Done when: a power write on a shared port either keeps the other channels' absolute power or
   refuses, pinned by a two-channels-on-one-port test.
-
-### I29 `pair_coupler_spectroscopy_zz` plays its selective pi on a PARKED member (low)
-- Found 2026-09-28 writing `docs/coupler-transmon-plan.md`. `_coupler_tone.moved_lo_config`
-  (scqo-qm) switches the tone port's band together with its MW-FEM port-pair partner and, when
-  the partner's LO falls outside the new band, parks it at the band floor with IF 0 for the
-  run's config. In the zz experiment the pi member is often that partner (5Q4C q1_q2: tone on
-  q2 at 6/3, pi on q1 at 6/2). Parked, its selective pi plays at the band floor, so the pi arm
-  shows no pi (pi_contrast ~0) and the run fails as `no_line` after the full scan. The
-  `partner_parked` flag is recorded in `self._moved` but never refused on.
-- 5Q4C does not hit it today (q1's LO 4.9 GHz lies in band 2). The coupler-transmon work edits
-  both files (`_coupler_tone.py` and the zz probe), so fold the refusal in there or after it.
-- Done when: the zz probe refuses by name, before any QUA is built, when the pi member's port
-  would be parked; a test on a tree whose partner LO lies outside the new band.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;

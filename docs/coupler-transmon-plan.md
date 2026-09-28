@@ -1,7 +1,9 @@
 # coupler 當 transmon：借用 drive channel 與映射讀出（第一個實驗：qubit_power_rabi）
 
 > 狀態：規格已核可（2026-09-28，使用者：「照你原訂規畫，不要折衷版」；§10 六項都採建議，決定 5 選 (b)）。
-> 實作在四個 repo 的 worktree `feature/coupler-transmon`；上機的每一步都先問。
+> 同日實作完成、離線驗證通過，在四個 repo 的 `feature/coupler-transmon`：scqat cea9ea8、SCQO e0e3312、
+> scqo-qm f0adf0c、scqo-qblox a7a57a2。實作跟原稿不同的地方已寫進本文（§2.2 相容性、§2.5 view 的作法、
+> §2.6、§5）。§8 的上機步驟還沒做，每一步都先問。
 > 範圍：只把一個實驗設計到能實作的細節——`qubit_power_rabi` 打在 5Q4C 的 `q1_q2_c`，經 q2 的線 `xy2`
 > 驅動、經 q1 讀出。其餘 `qubit_*` 實驗之後一個一個接，記在 BACKLOG F24。
 > 依據：`docs/coupler-readout-plan.md` §5（選擇性 π 與它在 5Q4C 上的結果）、`docs/store-by-line-plan.md`
@@ -170,8 +172,9 @@ lab 的 root class `MixedTransmonQuam` 加一個欄位 `borrowed_channels: Dict[
 - **放在 root，不掛在 qubit 或 pair 上**：線不是 qubit（共用一條 xy 線的晶片，一條線上有好幾個 target）。
   微波串擾的 Rabi（`xy2.q1`）也不屬於任何 pair。
 - **不用 `extras`**：它沒有型別，裡面的 component 能不能正確序列化沒有保證，也會把 lab 的結構藏起來。
-- **相容性**：舊的 state.json 沒有這個欄位，載入後是空的。新版存過的 state.json 會帶著它，舊版 scqo-qm 就載不了
-  ——寫進 release notes。
+- **相容性**：舊的 state.json 沒有這個欄位，載入後是空的。`to_dict()` 在它是空的時候把它拿掉，所以沒採用過任何
+  channel 的 tree 存出來跟以前完全一樣（setup snapshot 也照舊跟 state.json 相等）。只有 `adopt-channel` 寫過之後
+  才出現這個 key，從那之後舊版 scqo-qm 就載不了——寫進 release notes。
 
 ### 2.3 5Q4C 採用 `xy2.q1_q2_c` 之後
 
@@ -243,7 +246,7 @@ scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9 [--dry-run]
 
 ### 2.5 driver：用位址找到它
 
-`QMDeviceModel._channel_view` 遇到借用 channel 時，先查 `machine.borrowed_channels.get(name)`：
+`QMDeviceModel._channel_view` 遇到借用 channel 時交給 `_borrowed_view`，先查 `machine.borrowed_channels.get(name)`：
 - 沒有：照舊丟 KeyError，但訊息要寫出採用指令（`scqo-qm adopt-channel xy2.q1_q2_c --lo-hz <Hz>`）。
 - 有：回傳新的 view `QMBorrowedDriveChannel`。
 - `_realized` 只接 KeyError，所以查找本身不能丟別種例外。
@@ -252,10 +255,11 @@ scqo-qm adopt-channel xy2.q1_q2_c --lo-hz 7.1e9 [--dry-run]
 - 它的欄位全部透過 `quam_fields`，而 `quam_fields` 寫死走 `qubit.xy`。
 - 對一個不是 qubit 的物件，讀會得到 0.0、寫會靜默不做事（`quam_fields.py` 863、885、945、1023、1047）。
 
-作法：
-- 把 `quam_fields` 裡 x180/x90 系列的讀寫（振幅、長度、alpha，含跳過 `#` 參照的邏輯）改成接 channel，qubit 版本
-  傳 `q.xy` 進去。這是純重構，設計 channel 的行為不變，`test_quam_fields.py` 照舊要過。
-- 新 view 在 operation 不存在時丟錯，不靜默。
+作法（實作時定的，比原先規劃的重構小）：
+- 不重構 `quam_fields`。那些 helper 只經過 `q.xy.operations`，所以新 view 把採用的 element 包成只有一個屬性
+  `xy` 的替身（`_XyHolder`）交給它們。設計 channel 的程式一行都沒動，`test_quam_fields.py` 照舊通過。
+- 新 view 讀寫前先檢查 operation（`_require`），不存在就丟錯，不靜默。
+- `pi_duration_s` 同時改 `x180` 與 `x90` 的長度：兩者是採用時一起建立的，x90 跟著 x180。
 
 | 欄位 | 借用 channel 上 |
 |---|---|
@@ -284,10 +288,11 @@ port 改用 `upconverters` 字典之後，直接讀寫 `port.upconverter_frequen
 - 新的 `scqo_qm/_mw_fem.py`（放在 package 根目錄，理由同 `_octave.py`）提供 `port_lo(port, upconverter)` 與
   `set_port_lo(port, upconverter, hz)`，兩種寫法都懂，上面每一處都改用它。
 - `_coupler_tone`：
-  - tone 用的是 upconverter 1，只移它。
-  - 需要換 band、而 port 上 upconverter 2 的 LO 新 band 裝不下時，按名稱拒絕。
+  - 只移 tone element 自己的 upconverter（qubit 的 xy 都在 upconverter 1）。
+  - 需要換 band、而 port pair 上另一個 upconverter 的 LO 新 band 裝不下時，按名稱拒絕。
   - 5Q4C 採用之後，coupler 的視窗（6.85–7.4 GHz）本來就在 band 2，不需要換 band，upconverter 2 留在 7.1 GHz。
-- broadband：換 band 會讓 upconverter 2 的 LO 出界時，按名稱拒絕。
+- zz：tone 換 band 時要 park 的 partner 正好是 π member，按名稱拒絕，在建 QUA 之前（BACKLOG I29，這次一起修）。
+- broadband：port pair 上有第二個 upconverter（採用過的 channel）時，按名稱拒絕。
 
 ## 3. SCQO：兩個 mixin
 
@@ -394,7 +399,9 @@ roster 加一個 helper，由 coupler mode 找出它所在的 composite。
 `QbloxQubitPowerRabi.probe()` 開頭：給了 `drive_line` 或 `readout_member` 就丟 NotImplementedError，按名稱說明
 Qblox 還沒有採用任何借用 channel、也沒有映射讀出。
 - 這跟 `flux_component` 在三個 Qblox probe 裡的寫法相同，這次補上測試。
-- Qblox 的 device model 本來就拒絕借用 channel，所以通常 gate 會先擋下。
+- Qblox 的 device model 本來就拒絕借用 channel，所以通常 gate 會先擋下。它的 KeyError 訊息也補上「Qblox 還沒有
+  採用任何借用 channel」，gate 轉述的就是這句。
+- probe 這一關擋的是 gate 放行的情況：`drive_line` 指向 target 自己的線（設計 channel，device model 認得）。
 
 ## 6. 事前拒絕總表
 
@@ -434,7 +441,7 @@ Qblox 還沒有採用任何借用 channel、也沒有映射讀出。
 - **借用 view**：
   - 讀寫落在新 element 上；`drive_amp`、`drive_power_dbm` 按名稱拒絕。
   - 設計 channel 的 `test_quam_fields.py` 照舊。
-- **`_channel_view`**：
+- **`_borrowed_view`**：
   - 沒採用時是 KeyError，訊息裡有指令名；採用後 `components()`、`snapshot()` 看得到它。
   - 更新 `test_qm_backend.py` 裡「借用 channel 被拒絕」與 snapshot 集合的測試。
 - **LO 的兩種寫法**：`_mw_fem` 兩種都讀寫得對。在採用過的 tree 上：
@@ -445,10 +452,12 @@ Qblox 還沒有採用任何借用 channel、也沒有映射讀出。
   - q1 的 `saturation` 帶 `amp(0.00180)`，`duration` 500；
   - 接著是 q1 的 `x180`，再來是 q1 的讀取；
   - q2 沒有任何 pulse；
-  - `qubit_power_rabi q1` 產生的 QUA 跟改之前逐字相同。
+  - `qubit_power_rabi q1` 產生的 QUA 跟改之前相同。沒有逐字比對的測試：沒給這兩個欄位時 probe 照舊呼叫
+    `select_qubits`，程式本身一字未改；`test_qm_backend.py` 的 builder 對 class 等價測試照舊通過。
 - **census**：`test_cli.py`（`OPERATOR_COMMANDS` 多了一項）。
 
-**scqo-qblox**（兩個環境都跑）：兩個欄位的拒絕各一個測試。
+**scqo-qblox**（兩個環境都跑）：兩個欄位的拒絕（含 `drive_line` 指向 target 自己的線）、沒給欄位時照舊
+compile，以及 gate 轉述的 KeyError 訊息。
 
 ## 8. 上機驗證（5Q4C；每一步都先問你）
 
@@ -534,12 +543,12 @@ Qblox 還沒有採用任何借用 channel、也沒有映射讀出。
   - `MixedTransmonQuam.borrowed_channels`；
   - `adopt_channel.py` 與它的 `OPERATOR_COMMANDS` 項目；
   - `_mw_fem.py`，以及 `_coupler_tone`、broadband、fieldmap 改用它；
-  - `quam_fields` 的重構、`QMBorrowedDriveChannel`、`_channel_view`；
+  - `QMBorrowedDriveChannel`（用 `_XyHolder`，不必重構 `quam_fields`，§2.5）、`_borrowed_view`；
   - `_vendor.py` 的借用 channel 入口、`_selective_pi.py`、`_mapped_target.py`；
   - `QMQubitPowerRabi.probe` 與 power context；
   - CLAUDE.md（layout 與借用 channel）。
-- **scqo-qblox**：probe 的拒絕與測試。
+- **scqo-qblox**：probe 的拒絕、device model 的 KeyError 訊息與測試。
 
 **版本**：MINOR，全部是新增（新欄位都有預設值、新 capability、新 QUAM 欄位、新指令）。release notes 要寫：
-- 新版存過的 state.json 帶有 `borrowed_channels`，舊版 scqo-qm 載不了；
+- 採用過 channel 的 state.json 帶有 `borrowed_channels`，舊版 scqo-qm 載不了（沒採用的照舊）；
 - 採用是操作員的動作，不是升級的必要步驟。
