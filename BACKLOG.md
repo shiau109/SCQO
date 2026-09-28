@@ -513,13 +513,14 @@ provenance or a trap a user can walk into, **low** = hygiene.
   already had q1 on band 2 (pi_contrast 0.80-0.89).
 - 2026-09-28, q1 recalibration on band 2 (user: recalibrate rather than roll back): `pi_amp`
   0.2141 -> 0.1918 ACCEPTED (run 20260928-190940-876, reproducing -184843-486). `pi_amp_x90`
-  NOT yet: the benchmarking run's data put the optimum at ~0.877 x 0.1055 = ~0.0926, but its
-  estimator proposed 0.0528 (I30; rejected). DRAG and the x180's frame detuning need no
-  recalibration: band 2 scales both quadratures alike, so the pi_amp fix restores the same
+  0.1055 -> 0.09255: the first benchmarking run's data put the optimum at ~0.877 of the stored
+  value but its estimator proposed 0.0528 (I30; rejected), so 0.0926 was SET by hand from that
+  run's V vertex (user-approved) and a second run straddling 1.0 (20260928-191745-112, window
+  0.9-1.1) read a_opt 0.9995 -> 0.09255, ACCEPTED. DRAG and the x180's frame detuning need no
+  recalibration: band 2 scales both quadratures alike, so the amplitude fix restores the same
   physical pulse at the qubit.
-- NEXT: q1's `pi_amp_x90` (the user's call - set ~0.0926 from that run, then benchmark a window
-  straddling 1.0; or fix I30 and re-estimate the run offline). Then the coupler's power Rabi
-  through `xy2` read through q1 (plan steps 3-6), then `xy2.q2_q3_c` through q3.
+- NEXT, each asked first: the coupler's power Rabi through `xy2` read through q1 (plan steps
+  3-6: preview, coarse, fine, closure), then `xy2.q2_q3_c` through q3.
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
