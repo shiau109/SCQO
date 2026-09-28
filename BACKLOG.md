@@ -527,9 +527,12 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the fit's first peak 0.0696 (grid argmax 0.0665). Seed set to 0.0696, fine scan 0-1.4 (run
   20260928-193927-094): one arch, factor 1.008 -> `xy2.q1_q2_c.pi_amp` = 0.0702 ACCEPTED. The
   map reads the coupler as 0.13 + 0.66 x P_c.
-- NEXT, each asked first: step 6 closure (rerun, factor 1.00 +- 0.03), then step 7 -
-  `xy2.q2_q3_c` read through q3. The coupler channel's `pi_amp_x90` is still the adoption seed
-  0.125: calibrate it before any x90-based coupler experiment (Ramsey, echo).
+- 2026-09-28, step 6 closure PASSES (run 20260928-194531-866, `--no-update`): fit factor 0.995
+  (1/(2f), f 0.5026, phi = pi), grid argmax 1.008; baseline 0.115, peak 0.79.
+- NEXT, asked first: step 7 - adopt `xy2.q2_q3_c` (upconverter 2 is shared at 7.1 GHz, IF
+  +55.50 MHz, no band change) and repeat steps 3-6 with `readout_member=q3`. The coupler
+  channel's `pi_amp_x90` is still the adoption seed 0.125: calibrate it before any x90-based
+  coupler experiment (Ramsey, echo).
 - LATER, one experiment at a time, each with its own spec once the power Rabi works:
   `qubit_relaxation` (the coupler's T1), `qubit_ramsey` and `qubit_echo`; `qubit_xyz_delay`
   (zc12 against xy2) and the two cryoscopes (zc12's taps) - these pulse the TARGET's flux line,
