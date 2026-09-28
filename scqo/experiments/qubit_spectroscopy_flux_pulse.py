@@ -12,7 +12,7 @@ the volts-to-flux transfer function lands on the target's FLUX CHANNEL as
 
 FRAME (``_pulse`` in the name, ``FluxPulseSweepParameters`` in the schema):
 the flux is a PULSE the DAC adds to the standing bias, so the window is
-measured from the channel's ``idle_flux`` and 0 means "stay parked".
+measured from the flux line's ``idle_flux`` and 0 means "stay parked".
 ``estimate()`` re-references the fitted excursion to an absolute set-point
 before writing ``flux_offset`` — see :mod:`._capabilities.flux`.
 """
@@ -55,7 +55,7 @@ class QubitSpectroscopyFluxPulseParameters(
 ):
     """Inputs for the qubit-frequency-vs-flux map.
 
-    The flux window is RELATIVE to the swept channel's ``idle_flux`` (the probe
+    The flux window is RELATIVE to the swept flux line's ``idle_flux`` (the probe
     plays a z pulse on top of the standing bias), so 0 means "stay parked".
     """
 
@@ -80,7 +80,7 @@ class QubitSpectroscopyFluxPulseResult(Result):
     ``flux_per_phi0``, ``ej_sum_hz`` (+ stderrs). ``update()`` proposes them
     as physical facts: ej_sum_hz/f_q_max_hz on the target mode,
     flux_offset/flux_per_phi0 on the target's flux channel — plus ``idle_flux``
-    on that channel, the one knob.
+    on that channel's LINE, the one knob.
 
     The window is idle-relative, so the sweet spot is reported TWICE, in the
     two frames, exactly as ``qubit_ramsey`` reports old/delta/new for the drive
@@ -102,11 +102,11 @@ class QubitSpectroscopyFluxPulse(Experiment):
         "2D qubit spectroscopy vs PULSED flux (bias applied only during the drive; "
         "readout at idle flux every slice, reduced against one global IQ reference): "
         "finds the 0-1 peak at every flux and fits the transmon arch. The flux "
-        "window is RELATIVE to the channel's idle_flux (0 = stay parked), so a "
+        "window is RELATIVE to the flux line's idle_flux (0 = stay parked), so a "
         "well-tuned qubit maps an arch centred on 0. Proposes sweet spot "
         "(flux_offset, absolute), flux period (flux_per_phi0) on the target's flux "
         "channel and ej_sum_hz/f_q_max_hz on the target mode as physical facts "
-        "(the Phase-3 EJ/EC inference inputs), plus idle_flux on the flux channel "
+        "(the Phase-3 EJ/EC inference inputs), plus idle_flux on the flux line "
         "— accepting it RE-PARKS the qubit at the measured sweet spot, so the next "
         "map centres at 0. One of three complementary ways to place a qubit on "
         "its arch: this one maps the WHOLE arch and works with a short T2*, but "

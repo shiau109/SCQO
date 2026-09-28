@@ -19,7 +19,7 @@ is decided by the PROBE MECHANISM:
 * **relative** (:class:`FluxPulseSweepParameters`) — the probe PLAYS a pulse on
   top of the standing bias (QM ``z.play("const", ...)``), which the DAC adds to
   the idle offset. 0 is then "stay parked" and the window is an excursion
-  measured from the flux channel's ``idle_flux`` knob.
+  measured from the flux line's ``idle_flux`` knob.
 
 A relative carrier MUST end its registered name in ``_pulse`` (pinned by
 ``tests/test_capabilities.py``), so the frame is legible wherever the name is —
@@ -95,7 +95,7 @@ END_FLUX_DESC = (
 NUM_FLUX_DESC = "Number of flux points."
 START_FLUX_PULSE_DESC = (
     "First flux-pulse amplitude (V) of the sweep, RELATIVE to the flux "
-    "channel's idle_flux (0 = stay parked at the standing bias). The probe walks "
+    "line's idle_flux (0 = stay parked at the standing bias). The probe walks "
     "start_flux_v -> end_flux_v IN THAT ORDER, either direction, and the data "
     "keeps it; the fitted result does not depend on it."
 )
@@ -143,7 +143,7 @@ class FluxSweepParameters(Parameters):
 
 
 class FluxPulseSweepParameters(FluxSweepParameters):
-    """Mixin: the swept flux-PULSE window, RELATIVE to the channel's ``idle_flux``.
+    """Mixin: the swept flux-PULSE window, RELATIVE to the flux line's ``idle_flux``.
 
     Subclasses the absolute mixin rather than forking it, so the derived
     ``"flux"`` capability and the ``FLUX_AXIS`` contract rule keep covering both
@@ -201,13 +201,13 @@ def flux_anchor_v(experiment: "Experiment", target: str) -> float:
     """The origin the swept window is measured from, in the source's native unit.
 
     ``0.0`` in the absolute frame (the probe sets the offset outright); the
-    SWEPT channel's standing ``idle_flux`` in the relative one. Read through
+    SWEPT flux line's standing ``idle_flux`` in the relative one. Read through
     ``Experiment.anchor``, which already owns "the sweep rides on a standing
     knob": it falls back to ``design.toml`` (tagging the run ``seeded:``) and
     otherwise raises a bring-up instruction rather than fitting around garbage.
 
     With a foreign ``flux_component`` the bias that matters is the SWEPT
-    channel's, not the target's — that run is crosstalk data and its window
+    line's, not the target's — that run is crosstalk data and its window
     rides on the source line's own idle.
     """
     if flux_frame(experiment.params) == FLUX_FRAME_ABSOLUTE:

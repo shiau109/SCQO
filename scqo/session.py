@@ -17,8 +17,11 @@ manual notebook and an LLM tool-use loop::
     sess.history()                        # every recorded change
 
 Addressing is the QUBIT-CLOSURE sugar (:meth:`Roster.resolve_field`):
-``q0.pi_amp`` routes to ``q0_xy``, ``q0.readout_freq_hz`` to ``q0_ro``,
-``q0.f_dress0_hz`` to ``q0_res`` — explicit entity names always work. Suggestions
+``q0.pi_amp`` routes to q0's designed drive channel (``xy_q0.q0`` on the demo
+device), ``q0.readout_freq_hz`` to its readout channel (``fl.q0``),
+``q0.idle_flux`` to its flux LINE (``z_q0``), ``q0.f_dress0_hz`` to ``q0_res`` —
+explicit entity names always work, and a borrowed channel only by its full
+name (``xy_q0.q0_q1_c.pi_amp``). Suggestions
 carry the field's ROLE; applying routes facts to the physical store and
 knobs/monitors through the recording device (vendor-push-first).
 """
@@ -1624,7 +1627,8 @@ class Session:
                     f"(e.g. q1.pi_amp, xy2.q1_q2_c.pi_amp, z1.idle_flux, "
                     f"q1_res.f_dress0_hz)")
             try:
-                entity, spec = self.roster.resolve_field(name, field)
+                entity, spec = self.roster.resolve_field(
+                    name, field, valued=self._holds_value)
             except Exception as err:
                 raise ValueError(str(err)) from None
             prior = resolved.get((entity, field))
@@ -1642,6 +1646,12 @@ class Session:
         if relations:
             self._validate_batch(out)
         return out
+
+    def _holds_value(self, entity: str, field: str) -> bool:
+        """Whether either store already holds ``entity.field`` - how a refusal
+        that lists the routes to a mode puts the ones in use first."""
+        return (self.state.get(entity, field) is not None
+                or self.physical.get(entity, field) is not None)
 
     def _batch_reader(self, overlay: dict):
         def current(entity: str, field: str):
@@ -1828,8 +1838,9 @@ class Session:
 
     def qubit_state(self, name: str) -> dict:
         """The per-qubit ASSEMBLED view: the mode's facts plus every closure
-        member (default channels, attached resonator) — grouping is derived
-        at read time from refs, never declared."""
+        member (:meth:`Roster.closure` - default channels, the flux line they
+        ride, the attached resonator) — grouping is derived at read time from
+        the wiring and refs, never declared."""
         e = self.roster.entities.get(name)
         if e is None:
             raise KeyError(f"unknown entity {name!r}")
@@ -1844,12 +1855,7 @@ class Session:
         out: dict[str, dict] = {}
         physical = self.physical.values()
         state = self.device.snapshot()
-        members = [name]
-        members += [c.name for c in self.roster.channels_of(name)
-                    if self.roster.defaults.get((name, c.kind)) == c.name]
-        members += [m.name for m in self.roster.modes().values()
-                    if m.refs.get("qubit") == name]
-        for member in members:
+        for member, _role in self.roster.closure(name):
             merged = {**physical.get(member, {}), **state.get(member, {})}
             if merged:
                 out[member] = merged

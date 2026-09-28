@@ -8,7 +8,7 @@ kind-based gating inherited from the greenfield base.
 
 FRAME (``_pulse`` in the name, ``FluxPulseSweepParameters`` in the schema):
 the z bias is a PULSE played inside the echo and the DAC adds it to the
-standing bias, so the window is measured from the channel's ``idle_flux`` and
+standing bias, so the window is measured from the flux line's ``idle_flux`` and
 0 means "sit at the operating point". See :mod:`._capabilities.flux`.
 """
 
@@ -70,7 +70,7 @@ class QubitEchoFluxPulse(Experiment):
 
     name: ClassVar[str] = "qubit_echo_flux_pulse"
     description: ClassVar[str] = (
-        "Sweep a Z PULSE amplitude — RELATIVE to the flux channel's idle_flux, "
+        "Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, "
         "0 = stay parked — and a total wait delay in a Hahn echo sequence, "
         "fitting T2_echo decay at each flux point to map out the T2_echo "
         "spectrum. Record-only: the fits are saved, nothing is proposed."

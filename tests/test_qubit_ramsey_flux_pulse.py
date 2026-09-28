@@ -23,8 +23,9 @@ from scqo.testing import (
 )
 
 NAME = "qubit_ramsey_flux_pulse"
-APEX_WRITES = {("q0_z", "idle_flux"), ("q0_xy", "drive_freq_hz"), ("q0", "f_01_hz"),
-               ("q0_z", "flux_offset"), ("q0", "f_q_max_hz")}
+#: the re-park lands on q0's flux LINE, the apex offset on its flux channel
+APEX_WRITES = {("z_q0", "idle_flux"), ("xy_q0.q0", "drive_freq_hz"), ("q0", "f_01_hz"),
+               ("z_q0.q0", "flux_offset"), ("q0", "f_q_max_hz")}
 
 
 @pytest.fixture()
@@ -35,7 +36,7 @@ def session(tmp_path):
     s = Session(SimulatedBackend(vendor), roster, design=design,
                 scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
                 device_name="chipT", setup_name="sim", cooldown_id="cd1")
-    s.set_values({"q0_z.idle_flux": 0.05})
+    s.set_values({"z_q0.idle_flux": 0.05})
     return s
 
 
@@ -67,14 +68,15 @@ def test_apex_run_reparks_in_the_absolute_frame(session):
 
 
 def test_park_run_finds_the_root_and_retunes_the_drive(session):
-    drive = session.device_state()["q0_xy"]["drive_freq_hz"]
+    drive = session.device_state()["xy_q0.q0"]["drive_freq_hz"]
     out = _run(session, park_frequency_hz=drive - 0.3e6, flux_side="upper")
     assert out["error"] is None, out["error"]
     fit = out["fit"]["q0"]
     assert fit["question"] == "park" and fit["park_out_of_window"] == 0
     assert fit["idle_flux"] == pytest.approx(0.05 + fit["park_excursion_v"])
     assert fit["f_01_hz"] == pytest.approx(drive - 0.3e6)
-    assert {("q0_z", "idle_flux"), ("q0_xy", "drive_freq_hz"), ("q0", "f_01_hz")} <= _writes(out)
+    assert {("z_q0", "idle_flux"), ("xy_q0.q0", "drive_freq_hz"),
+            ("q0", "f_01_hz")} <= _writes(out)
 
 
 def test_several_targets_are_record_only(session):
@@ -96,9 +98,9 @@ def test_park_requests_that_cannot_park_are_refused(session, extra, match):
 
 def _with_arch(session, apex_above_drive_hz=0.0):
     """Arch facts with the apex AT the standing idle, apex_above_drive_hz over the drive."""
-    session.set_values({"q0_z.flux_offset": 0.05,
-                        "q0_z.flux_per_phi0": 0.9,
-                        "q0.f_q_max_hz": session.device_state()["q0_xy"]["drive_freq_hz"]
+    session.set_values({"z_q0.q0.flux_offset": 0.05,
+                        "z_q0.q0.flux_per_phi0": 0.9,
+                        "q0.f_q_max_hz": session.device_state()["xy_q0.q0"]["drive_freq_hz"]
                         + apex_above_drive_hz})
 
 

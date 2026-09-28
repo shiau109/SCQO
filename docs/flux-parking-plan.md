@@ -33,7 +33,7 @@ kHz 級：
 
 腳本在 `scqat/temp/park_scan.py`（gitignored）。每顆 5 個磁通點加 1 個重複點，約 3 分鐘：
 
-1. `scqo set q<n>_z.idle_flux=<v> --yes`，也就是 DC park。
+1. `scqo set z<n>.idle_flux=<v> --yes`（或簡寫 `q<n>.idle_flux`），也就是 DC park。
 2. `qubit_ramsey --targets <單一顆>`，虛擬 detuning 4 MHz、`max_idle_time_ns=4000`、201 點。
 3. **用 periodogram 直接從原始 trace 讀 fringe**，不用 estimator 回報的頻率（見 §3）。
    `drop = detuning − fringe`，所以 apex 是 fringe 最大的地方。
@@ -244,8 +244,12 @@ reading：資料形狀 (target, `flux_bias_v`, `idle_time_ns`) × {I,Q | populat
 
 | 模式 | knob | fact |
 |---|---|---|
-| apex | `q_z.idle_flux = flux_offset`；`q_xy.drive_freq_hz = f_01_hz` | `q_z.flux_offset`、`q.f_q_max_hz`、`q.f_01_hz`（= apex 頻率） |
-| park | `q_z.idle_flux`（= old_idle + 根）；`q_xy.drive_freq_hz = f_01_hz` | `q.f_01_hz`；**視窗也包住 apex 時**再加 `flux_offset`、`f_q_max_hz` |
+| apex | `q.idle_flux = flux_offset`；`q.drive_freq_hz = f_01_hz` | `q.flux_offset`、`q.f_q_max_hz`、`q.f_01_hz`（= apex 頻率） |
+| park | `q.idle_flux`（= old_idle + 根）；`q.drive_freq_hz = f_01_hz` | `q.f_01_hz`；**視窗也包住 apex 時**再加 `flux_offset`、`f_q_max_hz` |
+
+表中的位址是 4.0.0 的簡寫 `q.<field>`，實際的 owner：`idle_flux` 在 q 的 flux 線（5Q4C q1：
+`z1.idle_flux`），`drive_freq_hz` 在 drive channel（`xy1.q1`），`flux_offset` 在 flux channel
+（`z1.q1`），`f_q_max_hz`、`f_01_hz` 在 mode（`q1`）。
 
 - 提議 `drive_freq_hz`（它是 `f_01_hz` 的合法雙胞胎），就不會重演 `qubit_spectroscopy_flux_pulse`
   接受之後 drive 被晾在舊頻率的問題。

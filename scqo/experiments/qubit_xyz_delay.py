@@ -79,7 +79,7 @@ class QubitXyzDelay(Experiment):
         "other at 1 ns resolution for two preparations (|e> via x180, |g> via "
         "idle) and fit the |e> - |g> contrast to the triangle overlap of the two "
         "pulses; its peak is the flux line's delay relative to the drive line, "
-        "written to the flux channel's flux_delay_s so simultaneous XY+Z gates "
+        "written to the flux line's flux_delay_s so simultaneous XY+Z gates "
         "actually coincide. Needs a calibrated x180 (its length sets the triangle "
         "width). use_state_discrimination returns the FPGA-discriminated averaged "
         "state instead of I/Q (run single_shot_readout and accept its "

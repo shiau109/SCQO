@@ -123,7 +123,7 @@ class QubitSpectroscopyCryoscopeParameters(
     flux_pulse_amp_v: float = Field(
         0.1,
         description="Parked flux-pulse amplitude in volts, RELATIVE to the flux "
-        "channel's idle_flux (the pulse rides on the standing bias). The qubit "
+        "line's idle_flux (the pulse rides on the standing bias). The qubit "
         "sits at this excursion for the whole wait sweep; the drive is centered on "
         "the resulting detuning. Band-limited v1: keep it small enough that the "
         "detuning stays in the analog band (no LO shift).",

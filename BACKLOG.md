@@ -536,9 +536,14 @@ provenance or a trap a user can walk into, **low** = hygiene.
   knobs by composite -> operation (`q1_q2.iswap.coupler_flux`), line transfer facts under the
   line in physical.json (`z1.q1.flux_per_phi0`); borrowed drive channels need no declaration;
   one-time data conversion at the cutover.
-- Spec (pending approval): `docs/store-by-line-plan.md`. Order: release the 7 pending
-  fragments as 3.15.0 first, build this in `feature/store-by-line` worktrees (SCQO, scqo-qm,
-  scqo-qblox), release it ALONE as 4.0.0.
+- Spec approved 2026-09-28: `docs/store-by-line-plan.md` (section 10 = what the
+  implementation changed). 3.15.0 went out first; this is built in `feature/store-by-line`
+  worktrees (SCQO, scqo-qm, scqo-qblox) and goes out ALONE as 4.0.0. Merging to main (the
+  shared venvs import main live, and 4.0.0 refuses a 3.x data root), converting
+  `D:\qpu_data_dev`, the 5Q4C smoke run and the release each wait for the user's word.
+- Left for the coupler power Rabi plan: how the instrument ADOPTS a borrowed channel (the
+  vendor element behind `xy2.q1_q2_c`); both drivers refuse borrowed channels by name until
+  then.
 - Blocks: the coupler pi-pulse calibration (F24 NEXT) and the flux-crosstalk re-plan (F28's
   `flux_crosstalk__<source>` naming predates this; the user re-plans it after 4.0.0).
 - Done when: 4.0.0 is released with the conversion as its upgrade action.
@@ -859,7 +864,8 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Found 2026-09-26 reading it for the coupler-readout design. The QM probe plays the coupler as
   a PULSE on top of `decouple_offset` (`check_flux_pulse_relative`, `amplitude_scale =
   amp / const.amplitude`), but SCQO's `update()` writes the fitted zero crossing straight into
-  `<coupler>_z.idle_flux`, and the axis text says "coupler standing bias". The write is off by
+  `<coupler>_z.idle_flux` (since 4.0.0 the coupler's flux LINE, `zc12.idle_flux` on 5Q4C q1_q2),
+  and the axis text says "coupler standing bias". The write is off by
   the standing `decouple_offset` (0.16 V on 5Q4C q1_q2_c today). No Qblox probe; no run in this
   machine's index.
 - Done when: the experiment takes one frame and says so in its name — either a DC probe

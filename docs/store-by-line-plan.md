@@ -314,5 +314,36 @@ accept 或 reject。
 - 腳本、notebook 裡的舊名字（`q1_xy.pi_amp`、`q1_z.idle_flux`）不能用了；改用簡寫
   `q1.pi_amp`，或新位址 `xy1.q1.pi_amp`、`z1.idle_flux`。例：`scqat/temp/` 裡幾個
   `scqo set q1_z.idle_flux=…` 的草稿。
-- `scqo accept --entity` 改成 `--owner`。
+- ~~`scqo accept --entity` 改成 `--owner`~~：不改，見 §10.1。
 - 直接讀 store 檔的外部程式（例如 scqo-agent 的 fork）要跟著改。
+
+## 10. 實作時的修訂（2026-09-28）
+
+實作中發現、跟上面規格不同的地方，以這一節為準。
+
+1. **`entity` 不改名 `owner`**（§3 的 changes.py 一句、§9 的 `--owner` 作廢）。run 資料夾的
+   `record.json` suggestions、`campaign.json`、history 的列都以 `entity` 為 key，而 run 資料不可變；
+   改名等於所有讀取端永遠要同時認兩個 key，就是「不留舊格式」要避免的相容層。owner 只是文件
+   用語，`scqo accept --entity` 照舊。
+2. **轉換指令多一個 `--reject-pending`**（§5.1、§5.2）。這台的 data root 有 452 個 run／campaign、
+   共 1875 個未決 suggestion（最早 2026-07-20）。預設仍拒絕，列出最新 15 筆與總數；要保留的先在
+   3.x 上 accept，其餘加 `--reject-pending` 一次 reject（走 datastore 自己的上鎖編輯器，index 同步
+   更新，comment 註明是這次換版）。
+3. **對不到新位址的舊值保留舊名**（§5.3）。roster 已經沒有的 entity／field，或兩個 3.x 值落在同一個
+   新位址（例：廣播 coil 每個 target 各存一份 taps，4.0.0 只有 line 一份），以舊名留在新檔、報告裡
+   逐筆列出，不刪。history 裡這類列也原樣保留。
+4. **operation view 保留 `read_knob`／`write_knob`**（§3 device.py 說要改成屬性）。driver 對每個欄位
+   各自對到 gate macro，做不到的逐欄以名字拒絕；泛用的一對方法讓這件事留在一處，改成屬性反而要
+   每個 driver 為每個欄位實作一個抽象屬性。
+5. **driver 的 fieldmap 不分 line、channel 兩層**（§3 scqo-qm 一節）。欄位名在每個 kind 裡唯一，
+   `field_bindings()` 仍是每個 kind 一張表，屬於哪一層由 catalog 決定。`Backend` 新增三個 hook：
+   `operation_bindings()`、`operation_unrealized()`、`line_ports()`（`{line: port}`，只供顯示）。
+6. **借用 channel 的「採用」還沒有慣例**。兩個 driver 目前對借用 channel 一律 KeyError（未採用），
+   `components()`、`snapshot()` 不列。儀器設定裡怎麼表示一個被採用的借用 channel，留給下一步
+   coupler power Rabi 的計畫決定。
+7. 沒有新增 `roster.owners()`：`roster.entities` 就是全部 owner。新增的是 `roster.closure(mode)`，
+   簡寫解析與 `qubit_state`／`scqo state --qubit` 用同一份成員表。
+8. §5.5 的實際數字（這台 `D:\qpu_data_dev` 的副本，2026-09-28）：5Q4C cd2 physical 47 個值、14 個
+   換位址；state 75 個值（19 個舊 owner）全部換位址；history 2271 列、1979 列換位址（= 1799 state
+   ＋ 180 physical），6 列是更早就退役的欄位名（`q1_res.f_r_hz` 等），原樣保留。cd1 history 156 列、
+   135 列換位址。chipA qblox history 30 列、27 列換位址。重跑不改任何東西。

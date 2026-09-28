@@ -6,7 +6,7 @@ in LCHQBDriver/tests/test_cli_parameters.py. The --params loader (``_load_params
 is also tested in-process, for the file-handling cases a run need not pay for.
 
 Greenfield: the temp lab now writes a schema-3 components.toml (modes + lines; the
-readout rider mints q0_res/q0_ro, the drive rider q0_xy) plus the design.toml the
+readout rider declares fl.q0 and mints q0_res, the drive rider xy_q0.q0) plus the design.toml the
 simulated vendor seeds its knobs from, and the neutral field names moved with the
 model (readout_freq -> readout_freq_hz on <q>_ro, f_dress0_hz/kappa_tot_hz on <q>_res,
 t1_s on the qubit mode).
@@ -45,7 +45,7 @@ def _run_cli(tmp_path: Path, *args: str, parameters_toml: str | None = None) -> 
             blocks.append(f'[modes.{q}]\nkind = "transmon"')
         # one multiplexed feedline (mints <q>_res + <q>_ro), one drive wire each
         blocks.append('[lines.fl]\nreadout = ["q0", "q1"]')
-        blocks.extend(f'[lines.{q}_xyl]\ndrive = ["{q}"]' for q in ("q0", "q1"))
+        blocks.extend(f'[lines.xy_{q}]\ndrive = ["{q}"]' for q in ("q0", "q1"))
         roster.write_text("\n".join(blocks) + "\n", encoding="utf-8")
     design = data_root / "simdev" / "design.toml"
     if not design.is_file():
@@ -238,7 +238,7 @@ def test_default_run_suggests_then_accept_by_run_id(tmp_path):
     assert [s["field"] for s in result["suggestions"]] == [
         "readout_freq_hz", "f_dress0_hz", "kappa_tot_hz", "readout_depletion_s"]
     assert [s["entity"] for s in result["suggestions"]] == [
-        "q0_ro", "q0_res", "q0_res", "q0_ro"]
+        "fl.q0", "q0_res", "q0_res", "fl.q0"]
     assert {s["status"] for s in result["suggestions"]} == {"pending"}
     assert "suggested updates" in proc.stderr
     assert f"scqo accept {result['run_id']}" in proc.stderr
@@ -297,7 +297,7 @@ def test_reject_needs_no_backend(tmp_path):
     # KNOB on the drive channel. Rejecting drops BOTH.
     assert summary["rejected"] == [
         {"entity": "q0", "field": "t1_s"},
-        {"entity": "q0_xy", "field": "thermalization_time_s"},
+        {"entity": "xy_q0.q0", "field": "thermalization_time_s"},
     ]
     assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
     # the T1 was never applied: the physical table stays empty
@@ -313,7 +313,7 @@ def test_suggest_attaches_operator_value_then_accept(tmp_path):
     run_id = _result(proc)["run_id"]
     assert "no runs match" in _run_cli(tmp_path, "find", "--pending").stdout
 
-    # q0.readout_freq_hz routes through the qubit closure to the q0_ro channel
+    # q0.readout_freq_hz routes through the qubit closure to the fl.q0 channel
     suggest = _run_cli(tmp_path, "suggest", run_id,
                        "q0.readout_freq_hz=5.912e9", "q0_res.f_dress0_hz=5.912e9",
                        "--comment", "read off the dip")
@@ -321,7 +321,7 @@ def test_suggest_attaches_operator_value_then_accept(tmp_path):
     summary = json.loads(suggest.stdout)  # stdout stays parseable JSON
     assert summary["pending_total"] == 2
     assert [a["field"] for a in summary["added"]] == ["readout_freq_hz", "f_dress0_hz"]
-    assert [a["entity"] for a in summary["added"]] == ["q0_ro", "q0_res"]
+    assert [a["entity"] for a in summary["added"]] == ["fl.q0", "q0_res"]
     # non-TTY: table + operator marker + decide-later hint on stderr, nothing applied
     assert "[operator:" in suggest.stderr and "read off the dip" in suggest.stderr
     assert f"scqo accept {run_id}" in suggest.stderr
@@ -425,8 +425,9 @@ def test_device_sources_traces_current_values(tmp_path):
     # strict match: a hand-edited value credits no run (per-(cooldown, setup) file)
     state_path = tmp_path / "data" / "simdev" / "cd1" / "main" / "scqo" / "scqo_state.json"
     data = json.loads(state_path.read_text(encoding="utf-8"))
-    # schema 3: ONE top-level "values" block in both store files, keyed by ENTITY
-    data["values"]["q0_ro"]["readout_freq_hz"] = 9.9e9  # another tool wrote the state
+    # schema 4: ONE top-level "values" block in both store files, keyed by
+    # ENTITY with a channel nested under its line (fl.q0 -> ["fl"]["q0"])
+    data["values"]["fl"]["q0"]["readout_freq_hz"] = 9.9e9  # another tool wrote it
     state_path.write_text(json.dumps(data), encoding="utf-8")
     src3 = _run_cli(tmp_path, "state", "--sources")
     readout_row3 = next(line for line in src3.stdout.splitlines() if "readout_freq_hz" in line)

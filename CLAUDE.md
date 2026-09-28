@@ -128,14 +128,22 @@ device-state update + history → next decision.
 ## Package layout
 
 The device model is the greenfield schema — `docs/greenfield-schema.md` is the spec
-(marked implemented). A device = MODES (quantum degrees of freedom), COMPOSITES (named
-mode groups with joint physics), LINES (physical control paths) and CHANNELS (one signal
-of one kind riding a line); a line's rider lists mint the channels. Field routing is
+(marked implemented) — addressed BY LINE since 4.0.0 (`docs/store-by-line-plan.md`). A
+device = MODES (quantum degrees of freedom), COMPOSITES (named mode groups with joint
+physics) and their declared OPERATIONS (`q1_q2.iswap`), LINES (physical control paths)
+and CHANNELS (the signal on one line aimed at one target, named by ADDRESS
+`<line>.<target>`); a line's rider lists declare the designed channels, and every drive
+line also lends itself to every other drivable mode as a BORROWED channel
+(`xy2.q1_q2_c`, realized only once the vendor config adopts it). Field routing is
 per-field by ROLE: fact -> physical.json, knob -> scqo_state.json + pushed to the vendor,
-monitor -> scqo_state.json never pushed. Knobs live on CHANNELS (`q1_ro.readout_freq_hz`,
-`q1_xy.pi_amp`, `q1_xy.thermalization_time_s`, `q1_z.idle_flux`); facts live on modes and composites (`q1.f_01_hz`,
-`q1_res.f_dress0_hz`, `q1_q2.zz_hz`); composite per-operation knobs are full names
-(`iswap_coupler_flux`). As-designed targets live in the sibling `design.toml`.
+monitor -> scqo_state.json never pushed. Every value has ONE owner: channel knobs
+(`feedline.q1.readout_freq_hz`, `xy1.q1.pi_amp`, `xy1.q1.thermalization_time_s`), the
+line's own knobs and facts (`z1.idle_flux`, `z1.distortion_amp`), the target's transfer
+function on its flux channel (`z1.q1.flux_per_phi0`), gate knobs on operations
+(`q1_q2.iswap.coupler_flux`), facts on modes and composites (`q1.f_01_hz`,
+`q1_res.f_dress0_hz`, `q1_q2.zz_hz`). An address splits at its LAST dot; `q1.<field>` is
+the qubit shorthand (`Roster.resolve_field`). As-designed targets live in the sibling
+`design.toml`.
 
 ```
 scqo/
@@ -147,18 +155,29 @@ scqo/
                   #   role fact|knob|monitor, portable, design_ok, shape, paired_with,
                   #   design_source} + the frozen DERIVATION (channel kind x target
                   #   kind) legality table - the schema source
-  entities.py     # the four frozen entity dataclasses over one base (mode/composite/
-                  #   line/channel) + signature() = the components.lock identity
+  entities.py     # the five frozen entity dataclasses over one base (mode/composite/
+                  #   operation/line/channel) + signature() = the components.lock
+                  #   identity (operations and borrowed channels are never locked)
   roster.py       # components.toml (schema 3) loader: [modes]/[composites]/[lines]/
-                  #   [channels]; EXPANDS rider lists into minted channels
-                  #   (readout -> q1_ro + q1_res, drive -> q1_xy, flux -> q1_z) and
-                  #   compiles each entity's exact legal-field set
+                  #   [channels]; EXPANDS rider lists into designed channels named by
+                  #   address (readout -> fl1.q1 + the q1_res mode, drive -> xy1.q1,
+                  #   flux -> z1.q1 while the LINE z1 owns the bias), mints the
+                  #   operations and the borrowed drive channels, and compiles each
+                  #   entity's exact legal-field set; resolve_field = the qubit
+                  #   shorthand, closure() = its member list
+  v3_names.py     # the PERMANENT pre-4.0.0 name map (q1_xy -> xy1.q1, q1_z.idle_flux
+                  #   -> z1.idle_flux, iswap_coupler_flux -> q1_q2.iswap.coupler_flux):
+                  #   immutable run data keeps 3.x names and is read through it (frozen
+                  #   estimate inputs, 3.x setup snapshots on `scqo restore`); the
+                  #   one-time scripts/convert_store_v4.py (4.0.0 only) uses it too
   design.py       # design.toml loader: entity-named as-designed targets (the chip
                   #   datasheet; bring-up sweep anchors), validated AFTER roster
                   #   expansion; Design.compare = doctor's design-vs-measured join
   stores.py       # the two per-context value stores, one shape
-                  #   {"schema": 3, "values": {entity: {field: ...}}}: physical.json
-                  #   (facts) + scqo_state.json (knobs + monitors); ROLE routes the write;
+                  #   {"schema": 4, "values": {...}} NESTED by owner (z1 -> its fields
+                  #   beside its channel z1.q1; flat dotted owners in memory):
+                  #   physical.json (facts) + scqo_state.json (knobs + monitors); a
+                  #   3.x file is REFUSED by name (convert first); ROLE routes the write;
                   #   history appends to the context's changes DB (O(new) saves, no
                   #   history load at init)
   changes.py      # the per-context change-history TRUTH: history.sqlite in each
@@ -169,9 +188,12 @@ scqo/
                   #   context_facts/fact_series) + cross-context collect_* helpers
   _state_io.py    # the values-file .lock (acquired strictly OUTSIDE the changes-DB
                   #   transaction) + the retired sidecar's name for the v2 gate
-  device.py       # vendor views per CHANNEL KIND (make_view_base) + CompositeView
-                  #   (per-operation knobs via read_knob/write_knob) + RecordingDevice
-                  #   (every write -> ChangeRecord) + DeviceModel ABC
+  device.py       # vendor views per CHANNEL KIND (make_view_base) and per flux LINE
+                  #   (make_line_view_base) + OperationView (gate knobs via
+                  #   read_knob/write_knob) + RecordingDevice (every write ->
+                  #   ChangeRecord; channel/flux_line/line/channel_on/operation; a
+                  #   write re-reads its wire mates and records what moved) +
+                  #   DeviceModel ABC
   fieldmap.py     # VendorBinding/VendorOnly/OperatorCommand shapes: the DRIVER-declared
                   #   field catalog (neutral field -> vendor path/unit/convert
                   #   DESCRIPTION + the backend-unique inventory, whose coupled/edit/
@@ -225,7 +247,8 @@ scqo/
   backend.py      # Backend ABC: .device + .acquire(experiment) -> xarray.Dataset
   experiment.py   # Experiment ABC: physics half (define_sweep/simulate/estimate/update)
                   #   + backend half (probe); kind-based gating (target_kinds) +
-                  #   validate_targets pre-probe hook; knobs via device.channel(t, kind).
+                  #   validate_targets pre-probe hook; knobs via device.channel(t, kind)
+                  #   and device.flux_line(t).
                   #   run_estimate() is the ONE caller of estimate() (see
                   #   estimate_inputs.py) - a run() override calls it, never estimate()
   _scqat.py       # the one scqat import point (lazy): per-target split + analyze() loop
@@ -234,7 +257,8 @@ scqo/
                   #   find_campaigns() / load_campaign() / campaign_runs() / check_campaign() /
                   #   accept_campaign() / reject_campaign() / suggest_campaign() /
                   #   device_state() / physical_state() /
-                  #   qubit_state() / history(); qubit-closure addressing (q1.pi_amp -> q1_xy).
+                  #   qubit_state() / history(); qubit-closure addressing (q1.pi_amp -> xy1.q1,
+                  #   q1.idle_flux -> z1).
                   #   run_campaign finalize replays the statistics through each step
                   #   experiment's update() (SuggestionCapture) -> campaign-level pending
                   #   suggestions; _preflight refuses a plan label shadowing an experiment
@@ -262,8 +286,8 @@ scqo/
                   #   the device's SELECTED named setup picks the backend, resolved via
                   #   the scqo.backends entry-point group; a factory is
                   #   build_backend(cfg, setup, roster) - a driver serves a view PER
-                  #   CHANNEL ENTITY and resolves names through the roster, never by
-                  #   parsing them; simulated is built in
+                  #   ENTITY (channel, flux line, operation) and resolves names through
+                  #   the roster, never by parsing them; simulated is built in
   experiments/    # the registry lives in __init__.py: @register / get / catalog (the
                   #   AI's menu; maturity core|contrib + DERIVED capabilities —
                   #   never "tags", that word is the datastore's run tags)
@@ -272,7 +296,7 @@ scqo/
                     #   flux.py = the swept flux window in TWO FRAMES sharing one axis
                     #   key (flux_bias_v): FluxSweepParameters is ABSOLUTE DAC volts
                     #   (probe sets the DC offset) and FluxPulseSweepParameters is
-                    #   RELATIVE to the channel's idle_flux (probe plays on top of the
+                    #   RELATIVE to the flux line's idle_flux (probe plays on top of the
                     #   standing bias). Frame follows MECHANISM and must show in the
                     #   NAME - a relative carrier ends in `_pulse` (checked, not a
                     #   convention) - and every carrier records `old_idle_flux` so
@@ -691,7 +715,7 @@ Classify each USE of a quantity, in order, first match wins:
 (no instrument SETTING realizes it; setup coordinates OK if declared) → role `fact`
 → physical.json; (3) measured but a vendor knob realizes it (TOF) → write the vendor
 knob, catalog unit; (4) a knob the loop reads/writes vendor-neutrally → role `knob`
-on its channel/composite → scqo_state.json + pushed (absolute at a declared plane =
+on its channel, line or operation → scqo_state.json + pushed (absolute at a declared plane =
 portable; chain-fraction = non-portable, twin or catalogued scale);
 (5) measured, no knob → performance of the current knobs = role `monitor`
 (scqo_state.json, never pushed), else run-record-only;
@@ -712,5 +736,5 @@ install. [CONTRIBUTING.md](CONTRIBUTING.md) has the layout.
 - **QBLOX_training** - the vendor's read-only Qblox example repo (`docs/applications/superconducting/...`). It is a LOCAL reference checkout on the lab machine, not part of this project and not needed to build or test anything here.
 
 ## Status
-Current published release: **v3.13.0** — see `RELEASES.toml` for the combo manifest and required upgrade actions. Release history lives in git tags + `RELEASES.toml`, not here.
+The published release is the newest block of `RELEASES.toml` (combo manifest + required upgrade actions) — no version is quoted here, since this line rotted two releases deep. Release history lives in git tags + `RELEASES.toml`, not here.
 Deferred features and known issues live in [BACKLOG.md](BACKLOG.md): append there when you defer or discover something (date, context, pointer, done-when); remove entries when they land. Consult it before planning a feature.

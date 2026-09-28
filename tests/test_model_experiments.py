@@ -106,14 +106,14 @@ def session(tmp_path_factory):
                 device_name="chipT", setup_name="sim",
                 cooldown_id="cd1",
                 parameter_defaults=OFFLINE_DEFAULTS)
-    s.set_values({f"{q}_ro.{field}": value
+    s.set_values({f"fl.{q}.{field}": value
                   for q in CHAIN_QUBITS
                   for field, value in REFERENCE_BLOBS.items()})
     # the parity-switch monitors REFUSE without a governed depletion wait (the
     # shot cadence is their telegraph timebase) and a stored parity splitting
     # (their fixed idle). 250 kHz -> idle = 1 / (2 x 250 kHz) = 2000 ns, on-grid.
-    s.set_values({f"{q}_ro.readout_depletion_s": 1e-6 for q in CHAIN_QUBITS})
-    s.set_values({f"{q}_xy.parity_delta_f_hz": 250e3 for q in CHAIN_QUBITS})
+    s.set_values({f"fl.{q}.readout_depletion_s": 1e-6 for q in CHAIN_QUBITS})
+    s.set_values({f"xy_{q}.{q}.parity_delta_f_hz": 250e3 for q in CHAIN_QUBITS})
     return s
 
 
@@ -259,7 +259,7 @@ def _stark_session(tmp_path, *, depletion=True):
                 scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
                 device_name="chipT", setup_name="sim", cooldown_id="cd1")
     if depletion:
-        s.set_values({"q0_ro.readout_depletion_s": 1e-6})
+        s.set_values({"fl.q0.readout_depletion_s": 1e-6})
     return s
 
 
@@ -416,12 +416,12 @@ def test_qubit_sqrb_discriminated_end_to_end(session):
 
 def test_qubit_spectroscopy_writes_channel_knob_and_mode_fact(session):
     assert _suggest(session, "qubit_spectroscopy") == {
-        ("q0_xy", "drive_freq_hz"), ("q0", "f_01_hz")}
+        ("xy_q0.q0", "drive_freq_hz"), ("q0", "f_01_hz")}
 
 
 def test_ramsey_writes_drive_freq_fact_twin_and_t2(session):
     assert _suggest(session, "qubit_ramsey") == {
-        ("q0_xy", "drive_freq_hz"), ("q0", "f_01_hz"), ("q0", "t2_star_s")}
+        ("xy_q0.q0", "drive_freq_hz"), ("q0", "f_01_hz"), ("q0", "t2_star_s")}
 
 
 def test_ramsey_moves_the_drive_toward_the_qubit(session):
@@ -462,7 +462,7 @@ def test_drag_writes_the_knob_of_the_target_gate(session, name, gate, knob):
     the x90 branch crashed on QM and leaked KeyError on the strict views)."""
     out = session.run(name, {"targets": ["q0"], "target_gate": gate})
     assert out.get("error") is None, out.get("error")
-    assert {(s["entity"], s["field"]) for s in out["suggestions"]} == {("q0_xy", knob)}
+    assert {(s["entity"], s["field"]) for s in out["suggestions"]} == {("xy_q0.q0", knob)}
 
 
 def test_drag_target_gate_rejects_unnormalized_spellings(session):
@@ -475,10 +475,11 @@ def test_drag_target_gate_rejects_unnormalized_spellings(session):
 
 def test_flux_map_writes_the_sweet_spot_on_the_flux_channel(session):
     """The sweet spot + period always, and the dispersive physics too because the
-    demo qubit HAS a standing drive_freq_hz to anchor f_q_max on."""
+    demo qubit HAS a standing drive_freq_hz to anchor f_q_max on. The transfer
+    function lands on the flux channel, the re-parked bias on the flux LINE."""
     assert _suggest(session, "resonator_spectroscopy_flux") == {
-        ("q0_z", "idle_flux"), ("q0_z", "flux_offset"),
-        ("q0_z", "flux_per_phi0"), ("q0_ro", "readout_freq_hz"),
+        ("z_q0", "idle_flux"), ("z_q0.q0", "flux_offset"),
+        ("z_q0.q0", "flux_per_phi0"), ("fl.q0", "readout_freq_hz"),
         ("q0_res", "f_bare_hz"), ("q0_res", "g_hz"), ("q0_res", "g_coeff")}
 
 
@@ -511,8 +512,8 @@ def test_flux_map_withholds_dispersive_physics_without_an_arch_anchor(tmp_path, 
     assert out.get("error") is None, out.get("error")
     assert out["fit"]["q0"]["f_q_max_source"] == "assumed"
     assert {(sg["entity"], sg["field"]) for sg in out["suggestions"]} == {
-        ("q0_z", "idle_flux"), ("q0_z", "flux_offset"),
-        ("q0_z", "flux_per_phi0"), ("q0_ro", "readout_freq_hz")}
+        ("z_q0", "idle_flux"), ("z_q0.q0", "flux_offset"),
+        ("z_q0.q0", "flux_per_phi0"), ("fl.q0", "readout_freq_hz")}
 
 
 def test_flux_map_f_q_max_falls_back_to_the_fab_resistance(tmp_path, monkeypatch):
@@ -651,8 +652,8 @@ def test_flux_map_projects_a_detuned_park_up_to_the_arch_top(tmp_path):
     f_q_max_plain = plain["fit"]["q0"]["f_q_max_hz"]
 
     # store an arch whose sweet spot is a sixth of a period from the park
-    idle = float(s.device.channel("q0", "flux").idle_flux)
-    s.set_values({"q0_z.flux_offset": idle + 0.1, "q0_z.flux_per_phi0": 0.6})
+    idle = float(s.device.flux_line("q0").idle_flux)
+    s.set_values({"z_q0.q0.flux_offset": idle + 0.1, "z_q0.q0.flux_per_phi0": 0.6})
     detuned = s.run("resonator_spectroscopy_flux", {"targets": ["q0"]}, update="none")
     fit = detuned["fit"]["q0"]
     assert fit["f_q_max_source"] == F_Q_MAX_DRIVE_ARCH
@@ -747,7 +748,7 @@ def test_punchout_writes_the_operating_point_and_both_branches(session, name):
     g_coeff. Both mechanisms (fast amplitude sweep, chain-stepped) are one
     measurement and must agree on what they write."""
     assert _suggest(session, name) == {
-        ("q0_ro", "readout_power_dbm"), ("q0_ro", "readout_freq_hz"),
+        ("fl.q0", "readout_power_dbm"), ("fl.q0", "readout_freq_hz"),
         ("q0_res", "f_bare_hz"), ("q0_res", "f_dress0_hz"),
         ("q0_res", "g_hz"), ("q0_res", "g_coeff")}
 
@@ -898,18 +899,19 @@ def test_fact_helper_precedence(session):
 
 
 def test_pair_zz_writes_coupler_idle_and_pair_fact(session):
+    """The decouple point is the coupler's flux LINE's idle_flux."""
     assert _suggest(session, "pair_zz_coupler", target="q0_q1") == {
-        ("q0_q1_c_z", "idle_flux"), ("q0_q1", "zz_hz")}
+        ("zc_q0_q1", "idle_flux"), ("q0_q1", "zz_hz")}
 
 
 def test_ramsey_cryoscope_writes_the_paired_distortion_taps(session):
-    """The cryoscope proposes ONLY the flux channel's paired distortion facts,
+    """The cryoscope proposes ONLY the flux line's paired distortion facts,
     and the two arrays are proposed with equal length (the paired-array
     invariant the accept batches together)."""
     out = session.run("qubit_ramsey_cryoscope", {"targets": ["q0"]})
     assert out.get("error") is None, out.get("error")
     assert {(s["entity"], s["field"]) for s in out["suggestions"]} == {
-        ("q0_z", "distortion_amp"), ("q0_z", "distortion_tau_s")}
+        ("z_q0", "distortion_amp"), ("z_q0", "distortion_tau_s")}
     after = {s["field"]: s["after"] for s in out["suggestions"]}
     assert len(after["distortion_amp"]) == len(after["distortion_tau_s"]) > 0
 
@@ -931,23 +933,23 @@ def test_ramsey_cryoscope_fit_values_are_physical(session):
 
 
 def test_ramsey_cryoscope_accept_roundtrips_paired_facts(session):
-    """Accepting lands both arrays on the flux channel with equal length —
+    """Accepting lands both arrays on the flux line with equal length —
     exercising the per-entity paired batch apply end to end."""
     out = session.run("qubit_ramsey_cryoscope", {"targets": ["q1"]})
     summary = session.accept(out["run_id"])
     assert not summary["errors"]
-    physical = session.physical_state()["q1_z"]
+    physical = session.physical_state()["z_q1"]
     assert physical["distortion_amp"] is not None
     assert len(physical["distortion_amp"]) == len(physical["distortion_tau_s"]) > 0
 
 
 def test_spectroscopy_cryoscope_writes_the_paired_distortion_taps(session):
-    """The long-time spectroscopy cryoscope proposes the SAME paired flux-channel
+    """The long-time spectroscopy cryoscope proposes the SAME paired flux-line
     distortion facts as the Ramsey one, with equal length."""
     out = session.run("qubit_spectroscopy_cryoscope", {"targets": ["q0"]})
     assert out.get("error") is None, out.get("error")
     assert {(s["entity"], s["field"]) for s in out["suggestions"]} == {
-        ("q0_z", "distortion_amp"), ("q0_z", "distortion_tau_s")}
+        ("z_q0", "distortion_amp"), ("z_q0", "distortion_tau_s")}
     after = {s["field"]: s["after"] for s in out["suggestions"]}
     assert len(after["distortion_amp"]) == len(after["distortion_tau_s"]) > 0
 
@@ -995,12 +997,12 @@ def test_cryoscope_fit_tau_seeds_flow_through_and_validate(session):
 
 
 def test_spectroscopy_cryoscope_accept_roundtrips_paired_facts(session):
-    """Accepting lands both arrays on the flux channel with equal length — the same
+    """Accepting lands both arrays on the flux line with equal length — the same
     paired batch apply the Ramsey cryoscope uses (REPLACE, last-writer-wins)."""
     out = session.run("qubit_spectroscopy_cryoscope", {"targets": ["q1"]})
     summary = session.accept(out["run_id"])
     assert not summary["errors"]
-    physical = session.physical_state()["q1_z"]
+    physical = session.physical_state()["z_q1"]
     assert physical["distortion_amp"] is not None
     assert len(physical["distortion_amp"]) == len(physical["distortion_tau_s"]) > 0
 
@@ -1250,7 +1252,8 @@ BROKEN_CHAINS = [
       "swap_coupler_flux": {"q0_q1": 0.04}}, "whose operation is 'idle'"),
     # the channel-existence gates: a resonator mode has neither a z line to
     # play the parametric reset on, nor an xy line for a Stark tone; the tracked
-    # coupler has flux but no drive, so it isolates the second gate alone.
+    # coupler has flux but no DESIGNED drive (its borrowed xy channels are never
+    # a default), so it isolates the second gate alone.
     ({"reset_qubit": "q0_res"}, "no flux channel"),
     ({"compensation_amps": {"q0_q1_c": 0.2}}, "no drive channel"),
 ]
@@ -1330,7 +1333,7 @@ def test_readout_sweeps_average_mode_optimizes_separation_not_fidelity(
     assert math.isnan(fit["best_fidelity"])
     assert math.isfinite(fit["best_separation"]) and fit["best_separation"] > 0
     # the knob is still proposed — the sweep answered its question
-    assert ("q0_ro", knob) in {(s["entity"], s["field"]) for s in out["suggestions"]}
+    assert ("fl.q0", knob) in {(s["entity"], s["field"]) for s in out["suggestions"]}
 
 
 @pytest.mark.parametrize("name,knob,params", READOUT_SWEEPS)
@@ -1342,7 +1345,7 @@ def test_readout_sweeps_shot_mode_still_reports_a_fidelity(session, name, knob, 
     fit = out["fit"]["q0"]
     assert math.isfinite(fit["best_fidelity"]) and fit["best_fidelity"] > 0.5
     assert math.isfinite(fit["best_separation"])
-    assert ("q0_ro", knob) in {(s["entity"], s["field"]) for s in out["suggestions"]}
+    assert ("fl.q0", knob) in {(s["entity"], s["field"]) for s in out["suggestions"]}
 
 
 def test_single_shot_proposes_monitors_never_the_aggregate(session):
@@ -1351,9 +1354,9 @@ def test_single_shot_proposes_monitors_never_the_aggregate(session):
     discriminating backend overrides update(), exactly like the old module.
     The deleted readout_fidelity aggregate must never reappear."""
     proposed = _suggest(session, "single_shot_readout")
-    assert {("q0_ro", "pos_g_i"), ("q0_ro", "pos_g_q"),
-            ("q0_ro", "pos_e_i"), ("q0_ro", "pos_e_q"),
-            ("q0_ro", "fidelity_g"), ("q0_ro", "fidelity_e")} == proposed
+    assert {("fl.q0", "pos_g_i"), ("fl.q0", "pos_g_q"),
+            ("fl.q0", "pos_e_i"), ("fl.q0", "pos_e_q"),
+            ("fl.q0", "fidelity_g"), ("fl.q0", "fidelity_e")} == proposed
     assert not any(f == "readout_fidelity" for _, f in proposed)
 
 
@@ -1605,10 +1608,11 @@ def test_arch_fit_writes_mode_facts_and_transfer_function(session):
     proposed = _suggest(session, "qubit_spectroscopy_flux_pulse")
     assert ("q0", "ej_sum_hz") in proposed
     assert ("q0", "f_q_max_hz") in proposed
-    assert ("q0_z", "flux_offset") in proposed
+    assert ("z_q0.q0", "flux_offset") in proposed
     # ... and the operating point: without this the fit is bookkeeping only and
     # accepting it can never re-centre the next map (the bug this frame work fixed).
-    assert ("q0_z", "idle_flux") in proposed
+    # It is the flux LINE's knob, the transfer function its channel's fact.
+    assert ("z_q0", "idle_flux") in proposed
 
 
 def test_arch_fit_re_references_its_relative_window_to_absolute(session):
@@ -1624,7 +1628,7 @@ def test_arch_fit_re_references_its_relative_window_to_absolute(session):
     would pass against the very bug it guards.
     """
     parked = 0.11
-    session.set_values({"q0_z.idle_flux": parked})
+    session.set_values({"z_q0.idle_flux": parked})
     out = session.run("qubit_spectroscopy_flux_pulse", {"targets": ["q0"]})
     assert out.get("error") is None, out.get("error")
     fit = out["fit"]["q0"]
@@ -1636,8 +1640,8 @@ def test_arch_fit_re_references_its_relative_window_to_absolute(session):
 
     # the fact and the knob are one number on one plane
     proposals = {(s["entity"], s["field"]): s["after"] for s in out["suggestions"]}
-    assert proposals[("q0_z", "idle_flux")] == pytest.approx(fit["flux_offset"])
-    assert proposals[("q0_z", "flux_offset")] == pytest.approx(fit["flux_offset"])
+    assert proposals[("z_q0", "idle_flux")] == pytest.approx(fit["flux_offset"])
+    assert proposals[("z_q0.q0", "flux_offset")] == pytest.approx(fit["flux_offset"])
 
 
 def test_pair_zz_refused_on_a_coupler_less_pair(tmp_path):
@@ -1667,7 +1671,7 @@ def test_accept_roundtrip_on_the_pair(session):
     out = session.run("pair_zz_coupler", {"targets": ["q0_q1"]})
     summary = session.accept(out["run_id"])
     assert not summary["errors"]
-    assert session.device_state()["q0_q1_c_z"]["idle_flux"] is not None
+    assert session.device_state()["zc_q0_q1"]["idle_flux"] is not None
     assert session.physical_state()["q0_q1"]["zz_hz"] is not None
 
 
@@ -1684,12 +1688,12 @@ def _fresh_parity_session(tmp_path, *, splitting=True, depletion=True):
                 scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
                 device_name="chipT", setup_name="sim", cooldown_id="cd1",
                 parameter_defaults=PARITY_DEFAULTS)
-    s.set_values({f"q0_ro.{field}": value
+    s.set_values({f"fl.q0.{field}": value
                   for field, value in REFERENCE_BLOBS.items()})
     if depletion:
-        s.set_values({"q0_ro.readout_depletion_s": 1e-6})
+        s.set_values({"fl.q0.readout_depletion_s": 1e-6})
     if splitting:
-        s.set_values({"q0_xy.parity_delta_f_hz": 250e3})
+        s.set_values({"xy_q0.q0.parity_delta_f_hz": 250e3})
     return s
 
 
@@ -1704,8 +1708,8 @@ def test_ramsey_beat_proposes_the_parity_splitting(session):
         "max_idle_time_ns": 10000, "num_points": 201})
     assert out.get("error") is None, out.get("error")
     proposed = {(s["entity"], s["field"]) for s in out["suggestions"]}
-    assert proposed == {("q0_xy", "drive_freq_hz"), ("q0", "f_01_hz"),
-                        ("q0", "t2_star_s"), ("q0_xy", "parity_delta_f_hz")}
+    assert proposed == {("xy_q0.q0", "drive_freq_hz"), ("q0", "f_01_hz"),
+                        ("q0", "t2_star_s"), ("xy_q0.q0", "parity_delta_f_hz")}
     # replay the sim's draws (err, t2_star, then delta on the beat branch)
     rng = np.random.default_rng(stable_seed("qubit_ramsey", "q0"))
     rng.uniform(-0.2, 0.2)
@@ -2364,8 +2368,8 @@ def test_resonator_spectroscopy_dip_branch_dress0_is_the_default(session):
     out = session.run("resonator_spectroscopy", {"targets": ["q0"]})
     assert out.get("error") is None, out.get("error")
     assert [(s["entity"], s["field"]) for s in out["suggestions"]] == [
-        ("q0_ro", "readout_freq_hz"), ("q0_res", "f_dress0_hz"),
-        ("q0_res", "kappa_tot_hz"), ("q0_ro", "readout_depletion_s")]
+        ("fl.q0", "readout_freq_hz"), ("q0_res", "f_dress0_hz"),
+        ("q0_res", "kappa_tot_hz"), ("fl.q0", "readout_depletion_s")]
     assert out["fit"]["q0"]["dip_branch"] == "dress0"
 
 
@@ -2393,7 +2397,7 @@ def test_resonator_spectroscopy_branches_never_write_both_frequencies(session):
     declares, only that one frequency reaches the resonator."""
     phys_before = session.physical_state().get("q0_res", {})
     dress0_before = phys_before.get("f_dress0_hz")
-    tone_before = session.device_state()["q0_ro"]["readout_freq_hz"]
+    tone_before = session.device_state()["fl.q0"]["readout_freq_hz"]
     out = session.run("resonator_spectroscopy",
                       {"targets": ["q0"], "dip_branch": "bare"}, update="apply")
     assert out.get("error") is None, out.get("error")
@@ -2402,7 +2406,7 @@ def test_resonator_spectroscopy_branches_never_write_both_frequencies(session):
     # a delta, not an absence -- the session fixture is module-scoped
     assert res.get("f_dress0_hz") == dress0_before
     # the standing tone is left exactly where it was
-    assert session.device_state()["q0_ro"]["readout_freq_hz"] == tone_before
+    assert session.device_state()["fl.q0"]["readout_freq_hz"] == tone_before
 
 
 def test_qc_swap_flux_stark_lifts_the_ridge_read_into_the_fit(session):
@@ -2517,8 +2521,9 @@ def crossing_session(tmp_path):
     s = Session(SimulatedBackend(vendor), roster, design=design,
                 scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
                 device_name="chipT", setup_name="sim", cooldown_id="cd1")
-    s.set_values({"q1_xy.drive_freq_hz": SIM_F_HIGH_HZ, "q0_xy.drive_freq_hz": SIM_F_LOW_HZ,
-                  "q0_q1_c_z.idle_flux": 0.16})
+    s.set_values({"xy_q1.q1.drive_freq_hz": SIM_F_HIGH_HZ,
+                  "xy_q0.q0.drive_freq_hz": SIM_F_LOW_HZ,
+                  "zc_q0_q1.idle_flux": 0.16})
     return s
 
 
@@ -2550,9 +2555,10 @@ def test_coupler_crossing_recovers_the_planted_arch(crossing_session):
                  "center_mismatch", "side_conflict", "arch_unsolved"):
         assert fit[flag] == 0, flag
     proposals = _proposals(out)
-    assert set(proposals) == {("q0_q1_c_z", "flux_offset"), ("q0_q1_c_z", "flux_per_phi0"),
+    assert set(proposals) == {("zc_q0_q1.q0_q1_c", "flux_offset"),
+                              ("zc_q0_q1.q0_q1_c", "flux_per_phi0"),
                               ("q0_q1_c", "f_q_max_hz")}
-    assert proposals[("q0_q1_c_z", "flux_offset")] == pytest.approx(fit["flux_offset"])
+    assert proposals[("zc_q0_q1.q0_q1_c", "flux_offset")] == pytest.approx(fit["flux_offset"])
 
 
 def test_coupler_crossing_with_one_member_proposes_only_a_known_apex(crossing_session):
@@ -2568,7 +2574,7 @@ def test_coupler_crossing_with_one_member_proposes_only_a_known_apex(crossing_se
                                  "coupler_side": "above"})
     assert told["fit"]["q0_q1"]["center_kind"] == "apex"
     assert told["fit"]["q0_q1"]["arch_unsolved"] == 1
-    assert set(_proposals(told)) == {("q0_q1_c_z", "flux_offset")}
+    assert set(_proposals(told)) == {("zc_q0_q1.q0_q1_c", "flux_offset")}
 
 
 def test_coupler_crossing_side_conflict_fails_and_proposes_nothing(crossing_session):
@@ -2609,7 +2615,7 @@ def test_coupler_swap_spectroscopy_finds_the_planted_ladder(crossing_session):
     truth = simulated_line("q0_q1", p.start_tone_freq_hz, p.end_tone_freq_hz,
                            p.num_tone_freq_points)
     assert truth["member_line_hz"] > truth["f01_hz"]
-    power_before = crossing_session.device_state()["q1_xy"]["drive_power_dbm"]
+    power_before = crossing_session.device_state()["xy_q1.q1"]["drive_power_dbm"]
     out = crossing_session.run("pair_coupler_spectroscopy_swap",
                                {"targets": ["q0_q1"], "ramp_v": [0.0, 0.14]})
     assert out.get("error") is None, out.get("error")
@@ -2630,7 +2636,7 @@ def test_coupler_swap_spectroscopy_finds_the_planted_ladder(crossing_session):
     assert set(proposals) == {("q0_q1_c", "f_01_hz"), ("q0_q1_c", "anharmonicity_hz")}
     assert proposals[("q0_q1_c", "f_01_hz")] == pytest.approx(fit["f_c_hz"])
     assert proposals[("q0_q1_c", "anharmonicity_hz")] == pytest.approx(fit["alpha_hz"])
-    assert crossing_session.device_state()["q1_xy"]["drive_power_dbm"] == power_before
+    assert crossing_session.device_state()["xy_q1.q1"]["drive_power_dbm"] == power_before
 
 
 def test_coupler_swap_spectroscopy_refusals(session):
@@ -2697,7 +2703,7 @@ def test_coupler_zz_spectroscopy_finds_the_planted_ladder(crossing_session):
     assert set(proposals) == {("q0_q1_c", "f_01_hz"), ("q0_q1_c", "anharmonicity_hz")}
     assert proposals[("q0_q1_c", "f_01_hz")] == pytest.approx(fit["f_c_hz"])
     after = crossing_session.device_state()
-    for xy in ("q0_xy", "q1_xy"):
+    for xy in ("xy_q0.q0", "xy_q1.q1"):
         assert after[xy]["drive_power_dbm"] == before[xy]["drive_power_dbm"]
 
 

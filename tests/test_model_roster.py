@@ -482,3 +482,50 @@ def test_bom_is_tolerated_in_the_hand_edited_file(tmp_path):
     p = tmp_path / "components.toml"
     p.write_bytes(b"\xef\xbb\xbf" + EXAMPLE.encode())
     assert "q1" in load_components(p).entities
+
+
+# ------------------------------------------------ refusals that teach 4.0.0
+
+def test_a_3x_name_says_where_it_went(roster):
+    """4.0.0 never accepts a 3.x name; the refusal names the new address."""
+    with pytest.raises(RosterError, match=r"3\.x name of z1\.q1, with .*"
+                                          r"idle_flux on its line z1"):
+        roster.fields_of("q1_z")
+    with pytest.raises(RosterError, match=r"3\.x name of xy1\.q1 "):
+        roster.resolve_field("q1_xy", "pi_amp")
+    with pytest.raises(RosterError, match=r"3\.x name of xyz2\.q2 "):
+        roster.resolve_field("q2_xy", "pi_amp")
+    with pytest.raises(RosterError,
+                       match=r"3\.x spelling of q1_q2\.iswap\.coupler_flux"):
+        roster.resolve_field("q1_q2", "iswap_coupler_flux")
+
+
+def test_a_borrowed_route_refuses_a_target_owned_field_exactly(roster):
+    with pytest.raises(RosterError, match="is a BORROWED channel and "
+                       "thermalization_time_s belongs to 'q1_q2_c'"):
+        roster.resolve_field("xy1.q1_q2_c", "thermalization_time_s")
+
+
+def test_a_lone_broadcast_channel_is_not_called_ambiguous():
+    r = parse_components(
+        'schema = 3\n[modes.a]\nkind = "flux_transmon"\n'
+        '[modes.b]\nkind = "flux_transmon"\n[lines.coil]\n'
+        '[channels.coil_z]\nkind = "flux"\ntarget = ["a", "b"]\nline = "coil"\n')
+    with pytest.raises(RosterError, match=r"'coil\.a' is a broadcast channel, "
+                                          r"which never answers the shorthand "
+                                          r"- address coil\.idle_flux"):
+        r.resolve_field("a", "idle_flux")
+    with pytest.raises(RosterError, match=r"address coil\.a\.flux_per_phi0"):
+        r.resolve_field("a", "flux_per_phi0")
+
+
+def test_the_borrowed_routes_in_use_are_listed_first(roster):
+    with pytest.raises(RosterError) as plain:
+        roster.resolve_field("q1_q2_c", "pi_amp")
+    text = str(plain.value)
+    assert text.index("xy1.q1_q2_c") < text.index("xyz2.q1_q2_c")  # by name
+    with pytest.raises(RosterError) as used:
+        roster.resolve_field("q1_q2_c", "pi_amp",
+                             valued=lambda e, f: e == "xyz2.q1_q2_c")
+    text = str(used.value)
+    assert text.index("xyz2.q1_q2_c") < text.index("xy1.q1_q2_c")

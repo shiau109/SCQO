@@ -40,6 +40,12 @@ def normalize_target_name(target: str) -> str:
     instead — which is what this did originally — filed every two-qubit result
     (``qc_n_swap_amp``, ``qc_n_stark_amp``, ``pair_zz_coupler`` and the rest)
     under ``q1``, where it could also shadow that qubit's own value.
+
+    A 4.0.0 dotted name is NOT folded: statistics are keyed by the experiment's
+    TARGET (a mode or a composite), and without the roster ``xy1.q1`` (a
+    channel, target ``q1``) and ``q1_q2.iswap`` (an operation, composite
+    ``q1_q2``) cannot be told apart. Pass the target; a caller holding channel
+    names maps them itself (the lab report takes the channel's target).
     """
     if not target:
         return ""

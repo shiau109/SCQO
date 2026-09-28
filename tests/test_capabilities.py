@@ -471,7 +471,7 @@ def test_relaxation_proposes_the_reset_wait():
     proposed = {(s["entity"], s["field"]): s["after"] for s in out["suggestions"]}
     t1 = out["fit"]["q0"]["t1_s"]
     assert proposed[("q0", "t1_s")] == pytest.approx(t1)
-    assert proposed[("q0_xy", "thermalization_time_s")] == pytest.approx(8.0 * t1)
+    assert proposed[("xy_q0.q0", "thermalization_time_s")] == pytest.approx(8.0 * t1)
 
 
 def test_resonator_spectroscopy_proposes_the_depletion_wait():
@@ -490,10 +490,10 @@ def test_resonator_spectroscopy_proposes_the_depletion_wait():
     kappa = out["fit"]["q0"]["kappa_tot_hz"]
 
     assert proposed[("q0_res", "kappa_tot_hz")] == pytest.approx(kappa)
-    assert proposed[("q0_ro", "readout_depletion_s")] == pytest.approx(
+    assert proposed[("fl.q0", "readout_depletion_s")] == pytest.approx(
         depletion_time_s(kappa, 4.0))
     # the factor is a choice, the linewidth is a fact: the knob must MOVE with it
-    assert proposed[("q0_ro", "readout_depletion_s")] == pytest.approx(
+    assert proposed[("fl.q0", "readout_depletion_s")] == pytest.approx(
         4.0 / (2 * math.pi * kappa))
 
 
@@ -565,7 +565,7 @@ def test_amplitude_carriers_attach_the_absolute_axis(name, params, knob, tmp_pat
 
     ensure_demo_experiments()
     roster, design, vendor = demo_device()
-    channel = "q0_ro" if knob == "readout_amp" else "q0_xy"
+    channel = "fl.q0" if knob == "readout_amp" else "xy_q0.q0"
     base = float(getattr(vendor.component(channel), knob))
     sess = Session(SimulatedBackend(vendor), roster, design=design,
                    scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data")
@@ -591,7 +591,7 @@ def test_absolute_axis_is_per_target_which_is_why_the_input_stays_a_ratio(tmp_pa
     roster, design, vendor = demo_device()
     sess = Session(SimulatedBackend(vendor), roster, design=design,
                    scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data")
-    sess.set_values({"q0_xy.pi_amp": 0.15, "q1_xy.pi_amp": 0.35})
+    sess.set_values({"xy_q0.q0.pi_amp": 0.15, "xy_q1.q1.pi_amp": 0.35})
     out = sess.run("qubit_power_rabi", {"targets": ["q0", "q1"], "num_amp_points": 21})
 
     with xr.open_dataset(f"{out['data_path']}/dataset.nc") as ds:

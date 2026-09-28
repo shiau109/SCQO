@@ -5,15 +5,18 @@ docs/greenfield-schema.md section 1: per (cooldown, setup) the device has
 (knobs + monitors — the operating state), both machine-written JSON. Since
 4.0.0 (docs/store-by-line-plan.md) every value belongs to one OWNER entity - a
 mode, a composite, an operation ``<composite>.<op>``, a line, or a channel
-``<line>.<target>`` - and the file nests an owner with a dot under its first
-name, so a line holds its own fields beside its channels and a composite its
-facts beside its operations::
+``<line>.<target>`` - and each file nests an owner with a dot under its first
+name, so a line's own fields sit beside its channels (ROLE still picks the
+file: the line's knobs in the state file, its facts in the physical one)::
 
-    {"schema": 4, "values": {
-        "q1":  {"f_01_hz": 5.1e9, ...},
+    scqo_state.json  {"schema": 4, "values": {
         "xy2": {"q2": {"pi_amp": 0.21, ...}, "q1_q2_c": {"pi_amp": 0.12}},
-        "z1":  {"idle_flux": 0.26, "q1": {"flux_per_phi0": 0.96}},
+        "z1":  {"idle_flux": 0.26, "flux_delay_s": 4e-09},
         "q1_q2": {"iswap": {"coupler_flux": 0.0}}}}
+    physical.json    {"schema": 4, "values": {
+        "q1":  {"f_01_hz": 5.1e9, ...},
+        "z1":  {"distortion_amp": [...], "q1": {"flux_per_phi0": 0.96}},
+        "q1_q2": {"zz_hz": 1.2e5}}}
 
 In memory the store is FLAT, ``{owner: {field: float | [float, ...]}}`` with
 dotted owner names (``flatten_values`` / ``nest_values``). A key under an owner

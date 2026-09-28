@@ -50,8 +50,9 @@ A carrier declares ONE thing and inherits the rest::
 ``amp_reference_field`` returns a BARE FIELD NAME, never a (channel kind, field)
 pair: :meth:`Experiment.anchor` resolves it through ``Roster.resolve_field``
 (qubit-closure addressing), and ``catalog.py`` asserts that no field name appears
-in two channel-kind catalogs — so ``"pi_amp"`` already means ``q1_xy`` and
-``"readout_amp"`` already means ``q1_ro``. Passing the kind as well would be a
+in two channel-kind catalogs — so ``"pi_amp"`` already means q1's designed
+drive channel (``xy1.q1``) and ``"readout_amp"`` its readout channel
+(``feedline.q1``). Passing the kind as well would be a
 second, unchecked source of truth. It is a METHOD rather than a ClassVar because
 ``qubit_deterministic_benchmarking`` picks its knob from ``target_gate``.
 

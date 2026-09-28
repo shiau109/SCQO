@@ -9,7 +9,7 @@ driver stub ``probe()`` was added.
 
 FRAME (``_pulse`` in the name, ``FluxPulseSweepParameters`` in the schema):
 the z bias is a PULSE played during the idle delay and the DAC adds it to the
-standing bias, so the window is measured from the channel's ``idle_flux`` and
+standing bias, so the window is measured from the flux line's ``idle_flux`` and
 0 means "sit at the operating point". A T1 spectrum is therefore read as
 "coherence this far off the parked bias", which is the only reading that makes
 the T1 minimum at 0 meaningful. See :mod:`._capabilities.flux`.
@@ -76,7 +76,7 @@ class QubitRelaxationFluxPulse(Experiment):
 
     name: ClassVar[str] = "qubit_relaxation_flux_pulse"
     description: ClassVar[str] = (
-        "Sweep a Z PULSE amplitude — RELATIVE to the flux channel's idle_flux, "
+        "Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, "
         "0 = stay parked — and a wait delay after excitation, fitting T1 decay "
         "at each flux point to map out the T1 spectrum. Record-only: the fits "
         "are saved, nothing is proposed."

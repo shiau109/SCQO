@@ -111,7 +111,7 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     if issubclass(cls.Parameters, QubitResetParameters):
         caps.append("qubit_reset")
     # A REFINEMENT of "flux", not a sibling: the window is measured from the
-    # channel's idle_flux rather than from the DAC zero. Carriers must also end
+    # flux line's idle_flux rather than from the DAC zero. Carriers must also end
     # their name in "_pulse" (test_capabilities pins it).
     if issubclass(cls.Parameters, FluxPulseSweepParameters):
         caps.append("flux_pulse")

@@ -297,7 +297,9 @@ def entity_view(parent, name: str) -> EntityView:
     if isinstance(e, Operation):
         return _RecordingOperationView(parent, name)
     if e is None:
-        raise roster._unknown(name)
+        # KeyError, as for every entity a view cannot serve; the message names
+        # the exact cause (an undeclared operation, a line not reaching a mode)
+        raise KeyError(str(roster._unknown(name)))
     if isinstance(e, Line):
         kinds = tuple(dict.fromkeys(k for c in roster.channels_on(name)
                                     for k in c.kinds))

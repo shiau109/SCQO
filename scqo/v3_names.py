@@ -106,3 +106,16 @@ def translate_values(values: Mapping[str, Mapping[str, Any]], roster: Roster
                 continue
             slot[field] = value
     return out, unmapped
+
+
+def convert_store_payload(data: Mapping[str, Any], roster: Roster
+                          ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """A 3.x store FILE (``{"schema": 3, "values": {entity: {field: v}}}``) as
+    its 4.0.0 file (schema 4, nested by owner), plus what did not map. The
+    values are carried unchanged - only their addresses move."""
+    from .stores import STATE_SCHEMA, nest_values
+
+    values = data.get("values") if isinstance(data, Mapping) else None
+    flat, unmapped = translate_values(values or {}, roster)
+    return {"schema": STATE_SCHEMA, "values": nest_values(flat)}, unmapped
+

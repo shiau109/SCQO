@@ -49,6 +49,7 @@ except ModuleNotFoundError:  # pragma: no cover - py<3.11 envs
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Callable
 
 from .catalog import (
     ALL_FIELD_NAMES,
@@ -711,6 +712,9 @@ class Roster:
 
     def _unknown(self, name: str) -> RosterError:
         """An exact-cause error for a name that is no entity."""
+        v3 = self._v3_hint(name)
+        if v3:
+            return RosterError(f"unknown entity {name!r}: {v3}")
         head, dot, tail = name.partition(".")
         e = self.entities.get(head) if dot else None
         if isinstance(e, Composite):
@@ -724,6 +728,24 @@ class Roster:
                 f"unknown entity {name!r}: line {head!r} has no channel to "
                 f"{tail!r} (it reaches: {here or '(nothing)'})")
         return RosterError(f"unknown entity {name!r}")
+
+    def _v3_hint(self, name: str) -> str:
+        """Where a 3.x channel NAME went (``q1_z`` -> the line ``z1`` and its
+        channel ``z1.q1``) - an error hint only: 4.0.0 never accepts the old
+        name, it just says what to write instead."""
+        from .v3_names import v3_channel_names  # lazy: v3_names imports roster
+
+        for ch in self.channels().values():
+            for kind, old in v3_channel_names(ch).items():
+                if old != name:
+                    continue
+                line_fields = sorted(CHANNELS[kind].line_fields)
+                where = (f"{ch.name}, with {', '.join(line_fields)} on its "
+                         f"line {ch.line}" if line_fields else ch.name)
+                return (f"that is the 3.x name of {where} - since 4.0.0 a "
+                        f"value is addressed by line and channel "
+                        f"(docs/store-by-line-plan.md)")
+        return ""
 
     def fields_of(self, name: str, *, design: bool = False
                   ) -> dict[str, FieldSpec]:
@@ -764,7 +786,9 @@ class Roster:
             f"{name}.{field}: unknown field for this entity "
             f"(kind {e.kind!r}; legal: {sorted(self.fields_of(name))})")
 
-    def resolve_field(self, name: str, field: str) -> tuple[str, FieldSpec]:
+    def resolve_field(self, name: str, field: str, *,
+                      valued: Callable[[str, str], bool] | None = None
+                      ) -> tuple[str, FieldSpec]:
         """Qubit-closure addressing: route ``q1.pi_amp`` to the entity that
         owns the field. Search order — SELF first, then the target's DESIGNED
         default channels, then the LINE such a channel rides (only when the
@@ -772,7 +796,10 @@ class Roster:
         -> ``z1.idle_flux``), then the attached resonator; first hit wins.
         A borrowed channel is never reached this way - it must be named with
         its line (``xy2.q1_q2_c.pi_amp``). Explicit entity names hit on self and
-        pass straight through."""
+        pass straight through.
+
+        ``valued(entity, field)``, when the caller has the stores, orders the
+        routes that refusal lists: the ones already holding a value first."""
         if name not in self._legal:
             raise self._unknown(name)
         fields = self.fields_of(name)
@@ -803,14 +830,29 @@ class Roster:
                     # DEFAULT channel of it — several declared, or none.
                     extras = sorted(c.name for c in self.channels_of(name)
                                     if kind in c.kinds)
-                    if extras:
+                    if len(extras) > 1:
                         raise RosterError(
                             f"{name}.{field}: ambiguous — several {kind} "
                             f"channels on {name!r}: {extras}; address one "
                             f"explicitly")
+                    if extras:
+                        # one channel of the kind, and not a default: it is
+                        # shared (a broadcast coil, a joint readout)
+                        only = self.entities[extras[0]]
+                        why = ("a broadcast channel" if only.broadcast else
+                               f"a multi-target channel {list(only.target)}")
+                        where = (f"{only.line}.{field}"
+                                 if field in chspec.line_fields
+                                 else f"{only.name}.{field}")
+                        raise RosterError(
+                            f"{name}.{field}: {name!r}'s only {kind} channel "
+                            f"{only.name!r} is {why}, which never answers the "
+                            f"shorthand - address {where}")
                     borrowed = sorted(
                         c.name for c in self.borrowed_channels().values()
                         if c.target == (name,) and kind in c.kinds)
+                    if valued is not None:  # stable: valued routes first
+                        borrowed.sort(key=lambda b: not valued(b, field))
                     if borrowed and field in chspec.fields:
                         raise RosterError(
                             f"{name}.{field}: {name!r} has no designed {kind} "
@@ -832,6 +874,16 @@ class Roster:
             raise RosterError(
                 f"{name}.{field}: a gate knob lives on an operation - "
                 f"{', '.join(f'{name}.{op}.{field}' for op in e.operations) or 'no operation is declared on ' + repr(name)}")
+        if isinstance(e, Composite):
+            for op in e.operations:  # the 3.x flattening <op>_<suffix>
+                suffix = field[len(op) + 1:]
+                if field.startswith(op + "_") and suffix in OPERATION_FIELDS:
+                    raise RosterError(
+                        f"{name}.{field}: that is the 3.x spelling of "
+                        f"{name}.{op}.{suffix} - since 4.0.0 a gate knob "
+                        f"lives on the operation")
+        if isinstance(e, Channel) and e.borrowed:
+            self.spec(name, field)  # the exact cause (a target-owned field)
         owners = sorted(f"{n}.{field}" for n in self.entities
                         if not (isinstance(self.entities[n], Channel)
                                 and self.entities[n].borrowed)
@@ -841,6 +893,30 @@ class Roster:
         raise RosterError(
             f"{name}.{field}: no entity in {name!r}'s closure carries this "
             f"field{hint}")
+
+    def closure(self, mode: str) -> tuple[tuple[str, str], ...]:
+        """The qubit-closure members of one mode, each with the ROLE it plays:
+        the mode itself, its DESIGNED default channels, the line such a
+        channel rides when the kind puts fields on its wire (the flux bias),
+        and the attached resonator(s) - the owners :meth:`resolve_field`
+        searches. Borrowed channels are never members; grouping derives from
+        the wiring and refs, never from a declaration."""
+        members: list[tuple[str, str]] = [(mode, "mode")]
+        seen = {mode}
+        for kind, spec in CHANNELS.items():
+            ch = self.defaults.get((mode, kind))
+            if ch is None:
+                continue
+            if ch not in seen:
+                members.append((ch, f"{kind} channel"))
+                seen.add(ch)
+            line = self.entities[ch].line
+            if spec.line_fields and line not in seen:
+                members.append((line, f"{kind} line"))
+                seen.add(line)
+        members += [(m.name, "resonator") for m in self.modes().values()
+                    if m.refs.get("qubit") == mode]
+        return tuple(members)
 
     def default_channel(self, target: str, kind: str) -> str:
         """Default addressing: the ONE designed channel of this kind on this

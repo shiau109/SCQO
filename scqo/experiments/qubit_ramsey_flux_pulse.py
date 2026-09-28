@@ -8,7 +8,7 @@ per amplitude is the qubit frequency there, to a few kHz, and a local quadratic
 gives either the apex or the amplitude that puts the qubit at ``park_frequency_hz``.
 
 FRAME (``_pulse`` in the name, ``FluxPulseSweepParameters`` in the schema): the
-window is an excursion from the swept channel's ``idle_flux``. Every written flux
+window is an excursion from the swept flux line's ``idle_flux``. Every written flux
 value is re-referenced to ABSOLUTE (``old_idle_flux + fitted``). A pulse moves the
 qubit by ``g`` times the same DC step (5Q4C q1 2026-09-26: g ~ 0.96, no offset), so
 a park found from far away lands within ~4 % of the move; re-run to converge.

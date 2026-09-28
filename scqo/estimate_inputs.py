@@ -288,7 +288,7 @@ class FrozenDevice:
     :func:`scqo.device.entity_view` hands out the very same view classes the
     live device uses: knob reads are strict (``KeyError`` when unset, which is
     how ``anchor()`` falls through to the design seed), monitor reads return
-    ``None`` when absent, composites route through ``read_knob``, facts are
+    ``None`` when absent, operations route through ``read_knob``, facts are
     refused with the physical-store pointer — none of it reimplemented here.
     """
 

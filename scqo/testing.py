@@ -201,7 +201,15 @@ class InMemoryDevice(DeviceModel):
         self._state = {name: dict(fields) for name, fields in state.items()}
 
     def component(self, name: str) -> EntityView:
-        state = self._state[name]  # KeyError = vendor does not realize it
+        if name not in self._state:  # KeyError = vendor does not realize it
+            e = self._roster.entities.get(name)
+            if getattr(e, "borrowed", False):
+                raise KeyError(
+                    f"{name!r} is a BORROWED channel this vendor has not "
+                    f"adopted (the demo stand-in adopts one with "
+                    f"InMemoryDevice.adopt)")
+            raise KeyError(f"{name!r} is not realized by this vendor")
+        state = self._state[name]
         e = self._roster.entities[name]
         if isinstance(e, Operation):
             return _InMemoryOperation(name, e.kind, state)

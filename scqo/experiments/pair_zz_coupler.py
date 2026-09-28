@@ -4,8 +4,9 @@ Port of :mod:`scqo.experiments.pair_zz_coupler`. The physics half is
 byte-for-byte; what moved is the device surface: the target gate is
 ``target_kinds = ("qubit_pair",)`` (the coupler's flux channel existence
 gates it — no ``coupler_bias`` operation), the decouple point lands as
-``idle_flux`` on the COUPLER mode's flux channel (``coupler_decouple_v``
-is gone), and the residual ``zz_hz`` stays a fact on the pair itself.
+``idle_flux`` on the COUPLER's flux LINE (``zc12.idle_flux``;
+``coupler_decouple_v`` is gone), and the residual ``zz_hz`` stays a fact on
+the pair itself.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ class PairZZCouplerResult(Result):
     """``fit[pair]``: ``coupler_zero_v`` (interpolated ZZ zero crossing),
     ``zz_hz`` (residual at that point), ``zz_min_hz``/``zz_max_hz`` (map range),
     ``old_coupler_idle_flux``. ``update()`` writes the zero crossing as
-    ``idle_flux`` on the coupler's flux channel + ``zz_hz`` (pair fact)."""
+    ``idle_flux`` on the coupler's flux line + ``zz_hz`` (pair fact)."""
 
 
 @register
@@ -58,7 +59,7 @@ class PairZZCoupler(Experiment):
     description: ClassVar[str] = (
         "Residual-ZZ vs coupler standing bias (echo fringe under a virtual detuning, "
         "one pair member measured): finds the signed ZZ zero crossing and proposes it "
-        "as idle_flux on the coupler's flux channel (the interaction-OFF standing "
+        "as idle_flux on the coupler's flux line (the interaction-OFF standing "
         "bias); the residual zz_hz at the new point lands on the pair as a physical "
         "fact."
     )
