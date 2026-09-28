@@ -589,6 +589,23 @@ provenance or a trap a user can walk into, **low** = hygiene.
   That touches the knob write path and both drivers - its own feature, when wanted.
 - Done when: decided and built, or dropped.
 
+### F30 An operation's full definition in scqo_state: z amplitude, duration, pulse shape (medium)
+- Deferred 2026-09-29 by the user's scoping of the operation-angle feature (step 1 landed:
+  the `theta_rad` MONITOR on `<pair>.<op>`, proposed by `qc_n_stark_amp`, read by
+  `qc_unidirectional_trotter`'s ideal curves). What an operation still cannot say in SCQO:
+  - the control qubit's z-pulse amplitude (the RESONANCE) - no `OPERATION_FIELDS` entry at all;
+    today it lives only in QUAM, set by `scqo-qm register-partial-swap --z-amp`;
+  - `duration_s` - Unrealized on QM because two pulses (z + coupler) carry it and a
+    one-sided write would desync them (`scqo-qm/scqo_qm/backend/fieldmap.py`
+    OPERATION_UNREALIZED);
+  - the pulse SHAPE (square / flattop cosine / DRAG cosine): the catalog has only `float` and
+    `float[]` field shapes, so no shape name fits - the same gap leaves the drive channel's
+    x gate described by `pi_amp` / `pi_duration_s` / `drag_beta` without its envelope.
+- Traps: a new operation knob needs a real vendor home on EVERY backend (Qblox realizes no
+  operation knob today); a shape field is a catalog-machinery change, not a field addition.
+- Done when: the z amplitude and duration are operation knobs with a coupled QM binding, and
+  a decision on how (or whether) the catalog carries a pulse shape.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)

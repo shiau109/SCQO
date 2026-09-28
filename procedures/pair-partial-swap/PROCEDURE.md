@@ -10,7 +10,7 @@ outputs:
   operation: macro partial_swap_<t> playing partial_swap_square_<t> (t = theta x 100, three digits; 0.30 -> 030)
   z_amp_v: control-qubit z pulse amplitude (the resonance)
   coupler_amp_v: coupler pulse amplitude (sets the angle)
-  theta_rad: period-based angle actually reached
+  theta_rad: period-based angle actually reached, stored as the <pair>.partial_swap_<t>.theta_rad monitor
   compensating_stark_amp: per-round compensation at the round length used, with that round length
 experiments: [single_shot_readout, pair_swap_flux_map, qc_swap_flux_stark, qc_n_stark_amp]
 backends: [qm]
@@ -82,6 +82,10 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
 - The tool replaces the live `state.json` only after a staged save shows that nothing else
   changes. It refuses an amplitude the port would clip. Run it between measurements: an edit
   made during a run shows up as setup-snapshot drift in that run's record.
+- Declare a NEW operation in the device roster too (`components.toml`,
+  `[composites.<pair>] operations = [..., "partial_swap_<t>"]`). Only a declared operation
+  holds the angle Step 4 proposes; without it the run says so on stderr and keeps the angle
+  in its fit alone.
 
 ### Step 3: the resonance, and the compensation at this round length
 
@@ -117,7 +121,9 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
   - `osc_criteria_agree`
   - `min_osc_period`, which must stay ≥ 2: no stark row may swap by more than π/2 per count
 - **Decide**:
-  - **Done** if |θ − target| ≤ 0.01.
+  - **Done** if |θ − target| ≤ 0.01. Accept the run's `theta_rad` suggestion
+    (`scqo accept <run>`): the chain analysis draws its ideal curves from it. The run proposes
+    it only when `osc_criteria_agree` = 1 and `min_osc_period` ≥ 2.
   - **Otherwise** change the coupler amplitude by (target − θ)/slope
     (`scqo-qm register-partial-swap --update --coupler-amp`) and repeat Steps 3–4. The resonance
     moves by about 0.1–0.2 mV when the coupler changes.

@@ -341,10 +341,12 @@ and a designed one would merely restate the designed `f_q_max_hz`.
 | `qubit_pair` | facts `zz_hz`, `j_hz` ✎, `j_high_c_hz`, `j_low_c_hz` (per-leg couplings; legal only on single-coupler pairs) |
 | `cat_system` | facts `g2_hz`, `g_bs_hz`, `g_long_hz` (each read at the referencing pump channel's standing amplitude); roles `memory`/`buffer` |
 
-**Operations** — every declared operation `<composite>.<op>` owns `OPERATION_FIELDS`, all knobs,
-by plain name: flux-activated `coupler_flux`; microwave-activated `drive_freq_hz`, `amp`,
+**Operations** — every declared operation `<composite>.<op>` owns `OPERATION_FIELDS` by plain
+name. Knobs: flux-activated `coupler_flux`; microwave-activated `drive_freq_hz`, `amp`,
 `rel_phase_rad`, `amp_ratio`; generic `duration_s`, `vz_high_rad`, `vz_low_rad`,
-`waveform_dt_s` + `waveform[]` (`q1_q2.iswap.coupler_flux`, `q1_q2.iswap.duration_s`).
+`waveform_dt_s` + `waveform[]` (`q1_q2.iswap.coupler_flux`, `q1_q2.iswap.duration_s`). One
+monitor: `theta_rad`, a swap-type operation's measured per-application angle
+(`q1_q2.partial_swap_040.theta_rad`, written by `qc_n_stark_amp`, read by the chain analysis).
 
 **Channels and lines** — `ChannelKind.fields` belong to the channel `<line>.<target>`,
 `ChannelKind.line_fields` to the line it rides (only flux has any), and
@@ -642,7 +644,7 @@ history.
 | scqo_state.json | xy1.q1, xyz2.q2, xy3.q3 | drive knobs + the parity_delta_f_hz monitor |
 | | fl1.q1, fl1.q2, fl1.q3 | readout knobs + monitors |
 | | z1, xyz2, zc12 (flux lines) | idle_flux, flux_delay_s |
-| | q1_q2.iswap | coupler_flux, drive_freq_hz, amp, …, waveform_dt_s, waveform[] |
+| | q1_q2.iswap | coupler_flux, drive_freq_hz, amp, …, waveform_dt_s, waveform[] + the theta_rad monitor |
 | | xy1.q2, xy1.q3, xy1.q1_q2_c, xyz2.q1, xyz2.q3, xyz2.q1_q2_c, xy3.q1, xy3.q2, xy3.q1_q2_c (borrowed; values once adopted) | drive knobs minus thermalization_time_s |
 
 ---

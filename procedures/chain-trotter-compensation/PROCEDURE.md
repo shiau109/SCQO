@@ -125,9 +125,16 @@ after changing either operation.
 - Write `"compensation_amps": {"<sink>": a}` into the chain file.
 - **Run** `scqo run qc_unidirectional_trotter --params chain.json` (about 15 s).
 - **Read** `sink_p_max` and `n_at_max`, and each qubit's population against round count.
-- **Check** against the ideal curve of Physics in brief times a decay, c + A·P(M)·e^(−M/τ).
-  With the ideal peak beyond `max_rounds` (030/030), A and τ trade off, so fix A at the
-  readout contrast (0.9 on 5Q4C) to compare runs.
+- **Check** against the ideal curves the figure draws dashed beside the source and the sink
+  (Physics in brief, with each operation's `theta_rad`; `ideal_sink_p_max` in the fit).
+  - They need both operations declared in the roster with an accepted `theta_rad`
+    (`pair-partial-swap` Step 4); otherwise stderr names what is missing.
+  - The SOURCE curve is the clean probe: it depends on the first angle alone, so a source
+    that falls faster than cos^(2N)θ₁ is loss outside the swaps (5Q4C 2026-09-28: q1's T1
+    had halved), not a swap error.
+  - For a decay, fit c + A·P(M)·e^(−M/τ) by hand. With the ideal peak beyond `max_rounds`
+    (030/030), A and τ trade off, so fix A at the readout contrast (0.9 on 5Q4C) to compare
+    runs.
 
 ## Predicting the compensation from the pair calibrations
 

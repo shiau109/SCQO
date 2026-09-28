@@ -28,7 +28,7 @@ from scqo.testing import (
 #: zero suggestions is their CORRECT outcome.
 RECORD_ONLY = {"qubit_sqrb", "qubit_tomography", "qubit_echo_flux_pulse",
                "qubit_relaxation_flux_pulse", "pair_swap_chevron", "pair_swap_flux_map",
-               "qc_n_swap_amp", "qc_n_stark_amp", "qc_swap_flux_stark",
+               "qc_n_swap_amp", "qc_swap_flux_stark",
                "qc_unidirectional_trotter",
                "pair_swap_angle", "qc_trotter_compensation",
                "qubit_t1_ade", "qubit_t1_bayesian",
@@ -1293,6 +1293,112 @@ def test_unidirectional_trotter_idle_step_stops_the_transport(session):
     assert out["fit"][source]["p_final"] > 0.5
     # ...against the swapping run, which drains it
     assert _trotter(session, max_rounds=12)["fit"][source]["p_final"] < 0.1
+
+
+def _ideal_sink_peak(rounds, theta_first, theta_second):
+    """The closed-form ideal sink maximum over ``rounds`` — computed here, not
+    imported, so the experiment and this check are two implementations."""
+    c1, c2 = math.cos(theta_first), math.cos(theta_second)
+    best = 0.0
+    for m in rounds:
+        amp = (math.sin(theta_first) * math.sin(theta_second)
+               * sum(c2 ** (m - 1 - j) * c1 ** j for j in range(m)))
+        best = max(best, amp ** 2)
+    return best
+
+
+def test_n_stark_amp_proposes_the_swap_angle_on_its_operation(session):
+    """The period angle is the swap operation's theta_rad MONITOR: proposed on
+    <pair>.<swap_operation>, the value the fit reports, never a knob push."""
+    out = session.run("qc_n_stark_amp",
+                      {"targets": ["q0_q1"], "swap_operation": "iswap"})
+    assert out.get("error") is None, out.get("error")
+    fit = out["fit"]["q0_q1"]
+    assert fit["osc_criteria_agree"] == 1.0 and fit["min_osc_period"] >= 2.0
+    rows = [s for s in out["suggestions"] if s["entity"] == "q0_q1.iswap"]
+    assert [(s["field"], s["role"]) for s in rows] == [("theta_rad", "monitor")]
+    assert rows[0]["after"] == pytest.approx(fit["compensating_theta_rad"])
+
+
+def test_n_stark_amp_proposes_nothing_for_an_undeclared_operation(session, capsys):
+    """An operation the roster does not declare has no entity to hold the angle:
+    the run succeeds, proposes nothing, and says how to declare it."""
+    out = session.run("qc_n_stark_amp",
+                      {"targets": ["q0_q1"], "swap_operation": "partial_swap"})
+    assert out.get("error") is None, out.get("error")
+    assert math.isfinite(out["fit"]["q0_q1"]["compensating_theta_rad"])
+    assert out["suggestions"] == []
+    assert "q0_q1.partial_swap is not declared" in capsys.readouterr().err
+
+
+#: the declared operation both steps play in the ideal-curve tests, and the
+#: angles recorded on it (distinct, so a swapped pair would be caught).
+IDEAL_ANGLES = {"q0_q1": 0.35, "q1_q2": 0.55}
+
+
+def _trotter_on_iswap(session, **params):
+    session.set_values({f"{pair}.iswap.theta_rad": theta
+                        for pair, theta in IDEAL_ANGLES.items()})
+    steps = {"first_pair": _step("q0_q1", "iswap"),
+             "second_pair": _step("q1_q2", "iswap")}
+    return _trotter(session, max_rounds=20, **{**steps, **params})
+
+
+def test_unidirectional_trotter_draws_the_ideal_from_the_operation_angles(session):
+    """Each step's angle is its operation's theta_rad monitor, and the ideal
+    sink peak is the closed form over the run's own round axis."""
+    out = _trotter_on_iswap(session)
+    fit = out["fit"][CHAIN_QUBITS[0]]
+    assert fit["theta_first_rad"] == IDEAL_ANGLES["q0_q1"]
+    assert fit["theta_second_rad"] == IDEAL_ANGLES["q1_q2"]
+    assert fit["ideal_sink_p_max"] == pytest.approx(
+        _ideal_sink_peak(range(21), *IDEAL_ANGLES.values()))
+    figure = next(Path(p) for p in session.load_run(out["run_id"])["figures"]
+                  if Path(p).name == "qc_unidirectional_trotter.png")
+    import xarray as xr
+    with xr.open_dataset(figure.parent
+                         / "qc_unidirectional_trotter_plotdata.nc") as plot:
+        ideal = plot["ideal_population"]
+        assert np.isfinite(ideal.sel(qubit=CHAIN_QUBITS[0]).values).all()
+        assert np.isfinite(ideal.sel(qubit=CHAIN_QUBITS[2]).values).all()
+
+
+def test_unidirectional_trotter_ideal_needs_a_declared_measured_angle(session, capsys):
+    """The default chain plays 'partial_swap', which the demo roster does not
+    declare: no angle, no ideal curve, and stderr says which operation."""
+    fit = _trotter(session, max_rounds=6)["fit"][CHAIN_QUBITS[0]]
+    assert math.isnan(fit["theta_first_rad"]) and math.isnan(fit["ideal_sink_p_max"])
+    assert "q0_q1.partial_swap is not declared" in capsys.readouterr().err
+
+
+def test_unidirectional_trotter_idle_step_is_angle_zero(session):
+    """An idle step plays no swap, so its angle is 0 by definition — no monitor
+    needed — and an idle second step leaves the ideal sink empty."""
+    out = _trotter_on_iswap(session, second_pair=_step("q1_q2", "idle"))
+    fit = out["fit"][CHAIN_QUBITS[0]]
+    assert fit["theta_first_rad"] == IDEAL_ANGLES["q0_q1"]
+    assert fit["theta_second_rad"] == 0.0
+    assert fit["ideal_sink_p_max"] == 0.0
+
+
+def test_unidirectional_trotter_coupler_override_drops_that_angle(session, capsys):
+    """swap_coupler_flux moves the coupler off the amplitude the stored angle
+    was measured at, so that step's angle no longer applies."""
+    out = _trotter_on_iswap(session, swap_coupler_flux={"q1_q2": 0.04})
+    fit = out["fit"][CHAIN_QUBITS[0]]
+    assert fit["theta_first_rad"] == IDEAL_ANGLES["q0_q1"]
+    assert math.isnan(fit["theta_second_rad"])
+    assert math.isnan(fit["ideal_sink_p_max"])
+    assert "q1_q2.iswap: swap_coupler_flux overrides" in capsys.readouterr().err
+
+
+def test_unidirectional_trotter_no_ideal_when_not_prepping_the_source(session, capsys):
+    """The closed form starts with the excitation on the source; a run that
+    preps another qubit gets no ideal curve at all."""
+    out = _trotter_on_iswap(session, prep_qubit=CHAIN_QUBITS[2])
+    fit = out["fit"][CHAIN_QUBITS[0]]
+    assert math.isnan(fit["theta_first_rad"]) and math.isnan(fit["theta_second_rad"])
+    assert "the closed form starts on the source" in capsys.readouterr().err
 
 
 READOUT_SWEEPS = [

@@ -35,7 +35,10 @@ def test_role_routes_every_field_to_exactly_one_store():
     for kind, spec in CHANNELS.items():
         for name, fs in spec.line_fields.items():
             assert fs.role in ("fact", "knob", "monitor"), (kind, name)
-    assert all(fs.role == "knob" for fs in OPERATION_FIELDS.values())
+    # gate knobs, plus the one measured read-back the chain analysis consults
+    assert {f for f, fs in OPERATION_FIELDS.items() if fs.role != "knob"} == {
+        "theta_rad"}
+    assert OPERATION_FIELDS["theta_rad"].role == "monitor"
 
 
 def test_modes_and_composites_carry_no_knobs():

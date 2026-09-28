@@ -401,6 +401,16 @@ OPERATION_FIELDS: dict[str, FieldSpec] = {
     "waveform": FieldSpec(
         "", "Optimized pulse samples (dimensionless DAC fraction).",
         role="knob", portable=False, shape="float[]"),
+    # A MONITOR, not a knob: the angle is what the gate's knobs (coupler
+    # amplitude, duration) produce, read back from a measurement - and it
+    # moves when the coupler drifts, so it is operating state, not a fact of
+    # the chip in the dark.
+    "theta_rad": FieldSpec(
+        "rad", "Per-application exchange angle of a swap-type operation, read "
+               "off the N-swap oscillation period at the compensating stark "
+               "amplitude (qc_n_stark_amp). Consulted by the chain analysis "
+               "for its ideal curves; never pushed.",
+        role="monitor"),
 }
 
 # ------------------------------------------------------------------ channels

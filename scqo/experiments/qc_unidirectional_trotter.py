@@ -59,6 +59,17 @@ device surface; the per-qubit summary lives in ``result.fit``. A scqat estimator
 (``qc_unidirectional_trotter``) draws the transport curves and the joint map
 under ``analysis/chain/``, but it only VISUALIZES them and proposes nothing.
 
+IDEAL CURVES beside the measured ones: each step's angle is the ``theta_rad``
+monitor of the operation it plays (``<pair>.<op>``, written by
+``qc_n_stark_amp``), read from the acquisition-time snapshot, and an ``"idle"``
+step is angle 0. The estimator overlays the closed form of a perfect round —
+source ``cos(theta1)^(2N)``, sink as in its docstring — computed, never fitted.
+A step without a usable angle leaves its curve out, and the run says why on
+stderr: the operation is undeclared or has no ``theta_rad`` yet, or
+``swap_coupler_flux`` overrode the coupler amplitude that angle was measured at.
+A run that preps anything but the source draws no ideal at all — the closed form
+starts on the source.
+
 There is deliberately NO transport verdict. A run reports SUCCESSFUL when it
 produced a usable trace for that qubit, and nothing more: the sequence has an
 ``"idle"`` control arm whose chain is broken ON PURPOSE, so any fixed floor on
@@ -350,7 +361,9 @@ class QcUnidirectionalTrotterResult(Result):
     ``p_initial`` / ``p_final`` / ``p_max`` / ``p_min`` and ``n_at_max`` (the
     Trotter-step count where it peaks) — plus the run-wide ``sink_p_max`` and
     ``n_round_count``, repeated on every row so one target's record is readable
-    on its own.
+    on its own. So are the ideal curves' inputs ``theta_first_rad`` /
+    ``theta_second_rad`` and the ideal sink's ``ideal_sink_p_max`` /
+    ``ideal_sink_n_at_max`` (NaN where an angle is unknown).
 
     The OUTCOME is ACQUISITION, not physics: SUCCESSFUL means this qubit came
     back with a finite trace. There is no transport threshold — an ``"idle"``
@@ -545,9 +558,45 @@ class QcUnidirectionalTrotter(Experiment):
             rows.append(np.clip(row + rng.normal(0.0, 0.01, n.size), 0.0, 1.0))
         return {"population": (("target", "round_count"), np.stack(rows))}
 
+    def _swap_angles(self, source: str, prep: str) -> dict[str, float]:
+        """``{theta_first_rad, theta_second_rad}`` for the ideal curves — NaN
+        where no angle applies, with the reason printed to stderr once."""
+        import sys
+
+        angles = {"theta_first_rad": float("nan"),
+                  "theta_second_rad": float("nan")}
+        if prep != source:
+            print(f"scqo: no ideal curves - the run preps {prep!r}, and the "
+                  f"closed form starts on the source {source!r}", file=sys.stderr)
+            return angles
+        overridden = getattr(self.params, "swap_coupler_flux", {}) or {}
+        why: list[str] = []
+        for key, (pair, op) in zip(angles, pair_specs(self.params)):
+            if op == IDLE:
+                angles[key] = 0.0
+                continue
+            entity = f"{pair}.{op}"
+            if pair in overridden:
+                why.append(f"{entity}: swap_coupler_flux overrides the coupler "
+                           f"amplitude its theta_rad was measured at")
+                continue
+            if entity not in self.device.roster:
+                why.append(f"{entity} is not declared in the roster")
+                continue
+            theta = self.device.operation(pair, op).read_knob("theta_rad")
+            if theta is None:
+                why.append(f"{entity} has no theta_rad yet (qc_n_stark_amp "
+                           f"proposes it)")
+                continue
+            angles[key] = float(theta)
+        if why:
+            print("scqo: ideal curves incomplete - " + "; ".join(why),
+                  file=sys.stderr)
+        return angles
+
     def estimate(self) -> QcUnidirectionalTrotterResult:
         assert self.dataset is not None, "run() populates self.dataset before estimate()"
-        source, relay, sink, _prep = chain_roles(self.device.roster, self.params)
+        source, relay, sink, prep = chain_roles(self.device.roster, self.params)
         targets = [str(t) for t in np.atleast_1d(self.dataset["target"].values)]
 
         if "state" in self.dataset.data_vars:
@@ -572,10 +621,11 @@ class QcUnidirectionalTrotter(Experiment):
         )
         from .._scqat import whole_dataset_results
 
+        angles = self._swap_angles(source, prep)
         analysis = whole_dataset_results(
             prepared, QcUnidirectionalTrotterEstimator(),
             artifact_dir=self.artifact_dir, label=CHAIN_LABEL,
-            source=source, relay=relay, sink=sink)
+            source=source, relay=relay, sink=sink, **angles)
 
         per_qubit = analysis.get("per_qubit", {})
         # DATA, not a verdict: the sink's peak is reported on every row and
@@ -587,6 +637,11 @@ class QcUnidirectionalTrotter(Experiment):
             fit = {k: float(v) for k, v in per_qubit.get(name, {}).items()}
             fit["sink_p_max"] = sink_peak
             fit["n_round_count"] = float(analysis.get("n_round_count", 0))
+            # the ideal curves' inputs and the ideal sink peak, repeated on
+            # every row like sink_p_max — the number it is read against
+            for key in ("theta_first_rad", "theta_second_rad",
+                        "ideal_sink_p_max", "ideal_sink_n_at_max"):
+                fit[key] = float(analysis.get(key, float("nan")))
             result.fit[name] = fit
             own_ok = bool(np.isfinite(fit.get("p_max", float("nan"))))
             result.outcomes[name] = (Outcome.SUCCESSFUL if own_ok
