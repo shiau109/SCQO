@@ -1040,6 +1040,18 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: `apply()` restores the element's IF after the play (or refuses a z line without
   an oscillator), pinned by a test over the compiled program.
 
+### I34 `qc_unidirectional_trotter`'s transport summary is meaningless for a multi-qubit prep (low)
+- Found 2026-09-30 with the new `prep_operations` map (hardware 5Q4C, tag `prep-map`, e.g.
+  `20260930-002542-364`). With the sink prepared too (`{"q1": "x180", "q3": "x180"}`),
+  `sink_p_max` / `n_at_max` report the N=0 prep (0.92, N=0), not transport, and the scqat
+  estimator's figure has no ideal to draw (the closed form is single-excitation), so the
+  run's own artifacts say nothing about the two-excitation dynamics. The analysis was done
+  by hand against a coherent 8-state model (two partial swaps + a full relay reset), which
+  tracked the joint populations within the readout contrast on all three 040/0x0 chains.
+- Done when: either the estimator carries that coherent model for any computational-basis
+  prep (and the joint panel overlays it), or the summary keys are withheld / renamed when
+  the prep is not the source alone. Decide which before building.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
   QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run

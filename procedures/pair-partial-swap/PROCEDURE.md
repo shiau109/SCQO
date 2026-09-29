@@ -162,6 +162,18 @@ validated: hardware 5Q4C q1_q2 + q2_q3, 2026-09-22 (theta = 0.30, 0.60)
    the other, as q2_q3 did at gap 252 (1.000 and 0.018). Both are the same phase.
 5. **Drift.** The resonance moved about 0.7 mV overnight. Rerun Step 3 before relying on an
    old z amplitude.
+   - *Large jump:* 5Q4C 2026-09-29, between 11:03 and 23:31, with the vendor config
+     unchanged (same setup snapshot) and no run in between. The q1_q2 resonance moved from
+     −0.149 to −0.165 V and q2_q3's from −0.154 to −0.164 V, and the same coupler
+     amplitude gave about twice the angle (q1_q2 at 0.0959 V: θ 0.40 → 0.86). Readout and
+     x180 were unaffected.
+   - *Symptom in the chain:* the source decays at about its T1 rate and the sink stays flat.
+     Step 3 is flat across its ±3.5 mV window (`resonance_unresolved` = 1).
+   - *Cure:* a wide Step 1 survey (qubit flux from 0 to beyond the old point, coupler from
+     0 to the working amplitude, about 40 s) finds the new resonance. Then run Steps 1–4 again
+     from scratch; old coupler amplitudes do not carry over. Evidence: survey
+     `20260929-234245-691`, maps `234615-004` / `234735-222`, final angles
+     `20260930-001012-833`, `001057-903`, `000545-538`, `000622-011`.
 6. **A stark window wider than one turn.**
    - *Symptom:* two compensations one turn apart inside the window, and
      `osc_criteria_agree` = 0 because the contrast and period criteria each pick a different
