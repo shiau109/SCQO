@@ -1009,6 +1009,37 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   and names the `qubit_xyz_delay` re-check for every qubit on the port pair), and the XY-XY,
   XY-Z and XY-readout alignment across band-1 and band-2 ports is written down per setup.
 
+### I32 The parametric-drive family's reported outputs mislead a reset calibration (medium)
+- Found 2026-09-29 writing the q2 parametric-reset report from the 38 saved 5Q4C runs
+  (`qubit_parametric_drive[_amp]` 20260821 .. 20260921, `qubit_parametric_drive_time`
+  20260826-014448 .. 20260921-211249). Both experiments are now exercised on QM hardware.
+- (a) scqat `parametric_drive_decoherence/visualization.py::plot_decoherence_params` draws
+  the EP reference at 8*lambda^2/gamma^2 = 1, but the model's EP (d^2 = (gamma/2)^2 -
+  4*lambda^2 = 0, which `ep_pipeline._decoh_result_dict`'s `regime` also uses) is at 1/2.
+- (b) SCQO `qubit_parametric_drive_time.estimate()` reports `best_parametric_freq_hz` as the
+  argmax of 8*lambda^2/gamma^2, which is not the resonance: run 20260921-211249-852 gives
+  372.1 MHz against a global-fit f0 of 372.59 MHz (12.8 % residual there at 140 ns vs ~2 %
+  on resonance), and early runs pick degenerate gamma -> 0 fits (metric ~1e19).
+  `best_gamma_hz` / `best_lambda_hz` / `best_delta_hz` are angular rates in 1/s (1/ns x 1e9),
+  not Hz.
+- (c) The per-frequency fit has no readout floor and no shared detuning line. A global 2-D fit
+  P = B + C*|c_e(t + t0)|^2 with Delta = 2*pi*k*(f - f0) reproduces all 13 usable runs
+  (kappa/2pi 3.79 +- 0.23 MHz, k 4.5 +- 0.4, i.e. the 4th-harmonic sideband with q2_res).
+- Done when: the EP line and `regime` agree; `_time` reports a resonance f0 (and the first
+  zero t*) from a fit that ties Delta across frequencies; rate fields are named for their unit.
+
+### I33 `ParametricReset.apply()` leaves the z-line oscillator at the reset frequency (medium)
+- Found 2026-09-29 (same report). `scqo_qm/components/macros/parametric_reset_macro.py`
+  calls `update_frequency(drive_frequency)` and never restores it, so every later pulse on
+  that `q.z` in the same program plays modulated at 372.5 MHz. Harmless today: in
+  `qc_unidirectional_trotter` / `qc_trotter_compensation` q2 is the TARGET of both pairs
+  (controls q1, q3), so the swap flux pulses play on `q1.z` / `q3.z`.
+- It also relies on `q2.z.intermediate_frequency` being 0, not None, in the 5Q4C state.json:
+  with None the generated config has no z oscillator and the macro fails at compile (the
+  chain shells do not apply the probes' `ensure_flux_oscillators` patch).
+- Done when: `apply()` restores the element's IF after the play (or refuses a z line without
+  an oscillator), pinned by a test over the compiled program.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
   QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run
@@ -1016,7 +1047,7 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   `IdlePulse(tau)`, and measure its pulse/DC ratio g against a same-hour DC reference as
   `procedures/qubit-frequency-park` does. Active reset and `flux_component` stay refused
   there until then.
-- Ramsey phasor family; parametric-drive family (`_amp` + `_time`); cryoscope Qblox port;
+- Ramsey phasor family; cryoscope Qblox port;
   `qubit_tomography` interleaved noise; XY-Z delay (`qubit_xyz_delay`); readout average mode;
   broadband RESONATOR variant (offline-only on both
   backends); scqo-agent Phase C; `qm-session-hardening` fa1ba06 reverted, QPX1000_4 restart
