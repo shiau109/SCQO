@@ -77,6 +77,16 @@ module-level `pytest.importorskip("fastapi")` takes 54 tests with it while
 (917 against 984); a machine that once ran `uv pip install -e ".[viewer]"` has them lying around
 and will NOT reproduce it, which is exactly what kept this hidden.
 
+## Outside the combo: scq-reports
+
+`scq-reports` (report-scale models and report builds) sits beside these repos but is not part
+of the combo: never released, never installed into a shared venv, and nothing imports it. Its
+one environment is its own `scq-reports/.venv`: `uv run pytest -q` from its root, built from
+its **tracked** `uv.lock` (an application, so a report's figures must reproduce), Python 3.12,
+with `scqat` and `scqo` editable from the siblings and **no driver**. Theory-vs-data work and
+offline re-estimates of saved runs belong there too (it has qutip and h5netcdf): do not borrow
+`.venv-qm` for them.
+
 ## The shared environments (operators)
 
 Three of them, named by role, each with its own shell prompt. **One rule: activate `view` for
