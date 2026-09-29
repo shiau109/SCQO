@@ -222,6 +222,17 @@ Outcome on 2026-09-22:
 5. **One file, two consumers.** Keep compensation-only keys out of the chain file, and add
    `--set "compensation_amps={}"` when rescanning a sink that is already compensated.
 6. **Stale readout,** as in `pair-partial-swap`.
+7. **The repetition period moves the operating point.**
+   - `reset_method="active"` shortens each shot to ~15 µs, so the chain's large z and
+     coupler pulses fill most of the time instead of ~4 % of it.
+   - *Case:* 5Q4C 2026-09-29, 040/040 at a compensation scanned with thermal (301 µs)
+     shots, tag `active-reset-ab`. Sink mean over N = 4–14: 0.30 thermal, 0.25 active; the
+     source kept 0.795 per round instead of 0.81. A thermal reset with a 10 µs wait gave
+     0.25 and 0.79, and 60 µs gave 0.28 and 0.81. So the loss follows the repetition
+     period, not the reset. Active reset itself did its job: the N=0 residual fell from
+     0.06 to 0.02 on q2 and from 0.07–0.09 to 0.05 on q3.
+   - *Cure:* run Steps 2–3 with the SAME `reset_method` (and wait) as the trotter run. Put
+     `reset_method` in the chain file, so both experiments read it.
 
 ## Typical values
 
