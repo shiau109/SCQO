@@ -1,6 +1,0 @@
-name = "operation-theta-monitor"
-repos = { scqat = "87badbd", scqo = "e207aed" }
-kind = "additive"
-coupling = "scqo needs scqat >= 87badbd: qc_unidirectional_trotter passes theta_first_rad / theta_second_rad to the estimator, and an older scqat ignores them SILENTLY (no ideal curves, NaN ideal_* in the fit)"
-validated = "hardware 5Q4C q1-q2-q3 2026-09-29 (run 20260929-003053-676, 040/040 chain)"
-notes = "OPERATION_FIELDS gains theta_rad, a MONITOR on <pair>.<op>: qc_n_stark_amp now proposes its period angle there (it is no longer record-only), and qc_unidirectional_trotter overlays the ideal source/sink curves from both steps' theta_rad. An operation must be DECLARED in the roster to hold it; 5Q4C's partial_swap_040 (q1_q2) and 020/040/060 (q2_q3) now are."

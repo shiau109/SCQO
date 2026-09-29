@@ -1,6 +1,6 @@
 [project]
 name = "scqo"
-version = "4.0.0"
+version = "4.1.0"
 description = "Superconducting Qubit Orchestration — instrument-agnostic experiment API shared by QM and Qblox backends"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -136,6 +136,15 @@ dependencies = [
                         # pass kwargs) an older scqat lacks - the error lands at
                         # analysis, after the instrument time is spent.
                         # See RELEASES.toml [v3-15-0].
+                        # As of v4.1.0 the floor is scqat v0.29.0, SILENT three
+                        # times. qc_unidirectional_trotter passes theta_first_rad /
+                        # theta_second_rad (87badbd) and round_duration_ns plus the
+                        # source/sink T1/T2* (201c99d) to an estimator that swallows
+                        # them below it: no ideal or decayed theory, NaN ideal_* /
+                        # model_sink_* in the fit, nothing raised. And a coupler's
+                        # coarse qubit_power_rabi (cea9ea8) below it takes the GLOBAL
+                        # argmax, so a window holding several Rabi periods returns
+                        # 3pi as SUCCESSFUL. See RELEASES.toml [v4-1-0].
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]
