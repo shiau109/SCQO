@@ -1392,6 +1392,64 @@ def test_unidirectional_trotter_coupler_override_drops_that_angle(session, capsy
     assert "q1_q2.iswap: swap_coupler_flux overrides" in capsys.readouterr().err
 
 
+#: measured decay of the chain's two ends, and the round period that converts it.
+CHAIN_DECAY = {"q0.t1_s": 20e-6, "q0.t2_star_s": 9e-6,
+               "q2.t1_s": 25e-6, "q2.t2_star_s": 11e-6}
+
+
+def _chain_session_with_decay(tmp_path, facts):
+    """A fresh chain session carrying T1/T2* FACTS — fresh, because a fact
+    written into the module fixture would leak into every later experiment that
+    reads t1_s (the T1 trackers seed their prior from it)."""
+    roster = demo_components(CHAIN_QUBITS, tunable=True, chain=True)
+    design = demo_design(roster, CHAIN_QUBITS)
+    vendor = InMemoryDevice(roster, demo_vendor_state(roster, design))
+    s = Session(SimulatedBackend(vendor), roster, design=design,
+                scqo_dir=tmp_path / "scqo", data_root=tmp_path / "data",
+                device_name="chipT", setup_name="sim", cooldown_id="cd1",
+                parameter_defaults=OFFLINE_DEFAULTS)
+    s.set_values({f"fl.{q}.{field}": value for q in CHAIN_QUBITS
+                  for field, value in REFERENCE_BLOBS.items()})
+    s.set_values({f"{pair}.iswap.theta_rad": theta
+                  for pair, theta in IDEAL_ANGLES.items()})
+    if facts:
+        s.set_values(facts)
+    return s
+
+
+def _decay_run(session, **params):
+    out = session.run("qc_unidirectional_trotter", {
+        "targets": list(CHAIN_QUBITS), "max_rounds": 20,
+        "first_pair": _step("q0_q1", "iswap"), "second_pair": _step("q1_q2", "iswap"),
+        **params}, update="none")
+    assert out.get("error") is None, out.get("error")
+    return out["fit"][CHAIN_QUBITS[0]]
+
+
+def test_unidirectional_trotter_draws_the_decayed_theory(tmp_path):
+    """With round_duration_ns and both ends' measured T1/T2*, the theory carries
+    decay: the model sink peak sits below the ideal one."""
+    fit = _decay_run(_chain_session_with_decay(tmp_path, CHAIN_DECAY),
+                     round_duration_ns=360)
+    assert math.isfinite(fit["model_sink_p_max"])
+    assert fit["model_sink_p_max"] < fit["ideal_sink_p_max"]
+
+
+def test_unidirectional_trotter_decay_needs_the_round_and_every_fact(tmp_path, capsys):
+    """No round period, or one missing fact: the theory stays ideal, and stderr
+    says which input is missing."""
+    s = _chain_session_with_decay(tmp_path, CHAIN_DECAY)
+    assert math.isnan(_decay_run(s)["model_sink_p_max"])
+    assert "round_duration_ns is not set" in capsys.readouterr().err
+
+    partial = {k: v for k, v in CHAIN_DECAY.items() if k != "q2.t2_star_s"}
+    s = _chain_session_with_decay(tmp_path / "partial", partial)
+    fit = _decay_run(s, round_duration_ns=360)
+    assert math.isnan(fit["model_sink_p_max"])
+    assert math.isfinite(fit["ideal_sink_p_max"])
+    assert "no measured q2.t2_star_s" in capsys.readouterr().err
+
+
 def test_unidirectional_trotter_no_ideal_when_not_prepping_the_source(session, capsys):
     """The closed form starts with the excitation on the source; a run that
     preps another qubit gets no ideal curve at all."""

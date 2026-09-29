@@ -129,6 +129,12 @@ after changing either operation.
   (Physics in brief, with each operation's `theta_rad`; `ideal_sink_p_max` in the fit).
   - They need both operations declared in the roster with an accepted `theta_rad`
     (`pair-partial-swap` Step 4); otherwise stderr names what is missing.
+  - Put `round_duration_ns` in the chain file (360 on 5Q4C at gap 20) and keep the source's
+    and sink's `t1_s` / `t2_star_s` measured: both theories then carry that decay — the
+    discrete Trotter model (hollow points) and the master equation (line), the ideal one
+    left as a faint ceiling; `model_sink_p_max` in the fit. On 5Q4C 2026-09-29 (040/040,
+    run `20260929-110252-157`) the decayed model's sink peak read 0.36 against 0.338
+    measured and 0.542 ideal.
   - The SOURCE curve is the clean probe: it depends on the first angle alone, so a source
     that falls faster than cos^(2N)θ₁ is loss outside the swaps (5Q4C 2026-09-28: q1's T1
     had halved), not a swap error.
