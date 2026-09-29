@@ -1,0 +1,6 @@
+name = "environments-scq-reports"
+repos = { scqo = "43b460c" }
+kind = "fix"
+coupling = ""
+validated = "offline"
+notes = "DOCS ONLY - nothing in the combo changes. ENVIRONMENTS.md gains a section for scq-reports, a sibling repo OUTSIDE the combo (report-scale models and report builds, created 2026-09-29; never released, never installed into a shared venv, nothing imports it): its one environment is its own scq-reports/.venv (uv run from a tracked uv.lock, Python 3.12, scqat + scqo editable, no driver), and theory-vs-data work plus offline re-estimates of saved runs belong there instead of borrowing .venv-qm. UPGRADE REQUIRES: nothing."
