@@ -17,11 +17,16 @@ stays near zero because it is emptied every round.
 THE PREP is a map ``prep_operations = {qubit: operation}``, all played at one
 instant before the first round; the default (None) is ``{<source>: "x180"}``,
 the one excitation the picture above describes. Naming more than one qubit —
-``{"q1": "x180", "q3": "x180"}`` excites both chain ends — leaves the
-single-excitation sector: an exchange cannot move an excitation into a partner
-that is already excited, so while the sink holds one it cannot take the
-source's. The marginals alone hide that; read such a run in shot mode, where
-the joint distribution shows which states the chain actually passes through.
+``{"q1": "x180", "q3": "x180"}`` excites both chain ends — starts the cascade
+with several emitters excited: the source's emission reaches an EXCITED sink,
+i.e. stimulated emission, which the cascaded master equation describes. The
+Trotter round reproduces it up to one discretization effect: the relay is a
+two-level ancilla, so one round cannot carry two excitations (a bosonic time
+bin could), which shrinks with the angles (5Q4C 2026-09-30, |101>: the data at
+N = 1-3 follow the circuit, not the continuum, at theta2 = 0.6). The phase
+compensation is a property of the ROUND — single-qubit Z phases — not of the
+prepared state, so the one calibrated with the single excitation carries over.
+Read such a run in shot mode: the joint distribution is where it shows.
 
 The angles are baked, not swept: each swap plays a named pair operation at its
 fixed amplitude (calibrate it with ``pair_swap_flux_map`` + ``qc_n_swap_amp`` —

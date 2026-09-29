@@ -21,11 +21,12 @@ qubit. Three consequences the Parameters enforce:
 * the sum peaks at ``dPhi = 0``, so the sweep has a single optimum, and sweeping
   the source or the sink covers opposite signs of ``dPhi`` (the Stark shift's
   sign is fixed by ``stark_detuning_hz``, which is shared);
-* the formula lives in the SINGLE-excitation sector, so ``prep_operations``
-  must name exactly one qubit. The chain experiment accepts a multi-qubit prep
-  (both ends excited, say), but there an exchange into an already-excited
-  partner does nothing and the optimum above is no longer the one the scan
-  would find — so the scan refuses it, and an empty prep, by name.
+* ``prep_operations`` must name exactly one qubit. The compensation itself does
+  NOT depend on the prepared state — it cancels the round's single-qubit Z
+  phases — but this scan READS it through the single-excitation formula above
+  (and simulates that sector alone), which a multi-qubit or empty prep does not
+  obey. So calibrate with one excitation, the cleanest probe of dPhi, and reuse
+  the result for any prep the chain experiment runs.
 
 WHY THE ROUND AXIS IS NOT OPTIONAL. When the rounds cancel, only the LAST one
 contributes and the sink peaks at ``N = 1``; when they add, the peak moves out to
@@ -196,12 +197,13 @@ class QcTrotterCompensation(Experiment):
         if len(prep) != 1:
             raise ValueError(
                 f"qc_trotter_compensation: prep_operations={prep!r} prepares "
-                f"{len(prep)} qubits — the scan must prepare exactly ONE. The phase "
-                f"it calibrates is defined for a single excitation; with more, an "
-                f"exchange into an already-excited partner does nothing, and with "
-                f"none there is no transport to optimize. Leave prep_operations at "
-                f"None (one excitation on the source {source!r}); run a multi-qubit "
-                f"prep through qc_unidirectional_trotter instead.")
+                f"{len(prep)} qubits — the scan must prepare exactly ONE. Its reading "
+                f"of the optimum (and its simulator) is the single-excitation "
+                f"transport formula, which another prep does not follow. The "
+                f"compensation it finds does not depend on the prepared state, so "
+                f"leave prep_operations at None (one excitation on the source "
+                f"{source!r}) and reuse the result in a qc_unidirectional_trotter run "
+                f"with the multi-qubit prep.")
         target = self.params.compensation_target
         if target not in (source, sink):
             raise ValueError(
