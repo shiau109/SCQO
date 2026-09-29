@@ -1,0 +1,6 @@
+name = "trotter-decay-theory"
+repos = { scqat = "201c99d", scqo = "4938dfc" }
+kind = "additive"
+coupling = "scqo needs scqat >= 201c99d: qc_unidirectional_trotter passes round_duration_ns and the source/sink T1/T2* to the estimator, and an older scqat ignores them SILENTLY (no decayed theory, NaN model_sink_* in the fit)"
+validated = "hardware 5Q4C q1-q2-q3 2026-09-29 (run 20260929-110252-157, 040/040 chain)"
+notes = "qc_unidirectional_trotter draws two computed theories - the discrete Trotter model (hollow points) and the cascaded master equation (line) - and, given the new analysis-only parameter round_duration_ns plus the source's and sink's measured t1_s / t2_star_s, both carry that decay (the ideal master equation stays as a faint ceiling). Data are now filled points."
