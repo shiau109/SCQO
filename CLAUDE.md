@@ -307,10 +307,10 @@ scqo/
                     #   reset_wait_ns; a backend that cannot realize a method must
                     #   REFUSE it by name, never downgrade. The opt-in set is NOT
                     #   symmetric across backends and must not be assumed: Qblox opts
-                    #   in 4 coherent-drive carriers, QM 7 (those four plus
-                    #   qubit_ramsey_phasor and both T1 trackers). Each driver's
-                    #   census test is the authority; every other experiment refuses
-                    #   by name,
+                    #   in 4 coherent-drive carriers, QM a wider set (the chain
+                    #   shells among them). Each driver's census test is the
+                    #   authority - no count here, it rots; every other experiment
+                    #   refuses by name,
                     #   amplitude.py = the swept amplitude window + the ABSOLUTE amplitude
                     #   behind it. AmplitudeSweepParameters owns start/end_amp_factor +
                     #   num_amp_points on ONE axis, AMP_AXIS = `amp_prefactor` (scqat and
