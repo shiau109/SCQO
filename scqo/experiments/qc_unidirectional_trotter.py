@@ -14,6 +14,15 @@ path, leaving a one-way (cascaded) coupling source -> sink. The picture to read
 off the figure is therefore: the source decays, the sink fills, and the relay
 stays near zero because it is emptied every round.
 
+THE PREP is a map ``prep_operations = {qubit: operation}``, all played at one
+instant before the first round; the default (None) is ``{<source>: "x180"}``,
+the one excitation the picture above describes. Naming more than one qubit —
+``{"q1": "x180", "q3": "x180"}`` excites both chain ends — leaves the
+single-excitation sector: an exchange cannot move an excitation into a partner
+that is already excited, so while the sink holds one it cannot take the
+source's. The marginals alone hide that; read such a run in shot mode, where
+the joint distribution shows which states the chain actually passes through.
+
 The angles are baked, not swept: each swap plays a named pair operation at its
 fixed amplitude (calibrate it with ``pair_swap_flux_map`` + ``qc_n_swap_amp`` —
 TUTORIAL section 12), and each qubit's Stark compensation is a fixed amplitude
@@ -67,8 +76,8 @@ source ``cos(theta1)^(2N)``, sink as in its docstring — computed, never fitted
 A step without a usable angle leaves its curve out, and the run says why on
 stderr: the operation is undeclared or has no ``theta_rad`` yet, or
 ``swap_coupler_flux`` overrode the coupler amplitude that angle was measured at.
-A run that preps anything but the source draws no ideal at all — the closed form
-starts on the source.
+A run whose prep is anything but the source alone draws no ideal at all — the
+closed form is one excitation, starting on the source.
 
 With ``round_duration_ns`` set and the source's and sink's T1 and T2* MEASURED
 (physical facts, from the same snapshot), both theories also carry decay: the
@@ -121,6 +130,10 @@ IDLE = "idle"
 #: operation played on it. Two, both required.
 PAIR_SPEC_KEYS = ("pair", "operation")
 
+#: what ``prep_operations=None`` plays on the chain source: the single
+#: excitation the whole sequence is designed around.
+DEFAULT_PREP_OPERATION = "x180"
+
 
 def pair_specs(params) -> tuple[tuple[str, str], tuple[str, str]]:
     """``((pair, operation), (pair, operation))`` for the two round steps.
@@ -161,8 +174,10 @@ def pair_specs(params) -> tuple[tuple[str, str], tuple[str, str]]:
     return out[0], out[1]
 
 
-def chain_roles(roster, params) -> tuple[str, str, str, str]:
-    """``(source, relay, sink, prep)`` — the chain topology, from the two pairs.
+def chain_roles(roster, params) -> tuple[str, str, str, dict[str, str]]:
+    """``(source, relay, sink, prep)`` — the chain topology, from the two pairs,
+    and the RESOLVED prep ``{qubit: operation}`` (``prep_operations=None``
+    becomes ``{source: "x180"}`` here, the one place that knows the source).
 
     The RELAY is the one member the two swap pairs share; the source and the
     sink are their remaining members. Everything else is derived or checked
@@ -210,7 +225,8 @@ def chain_roles(roster, params) -> tuple[str, str, str, str]:
     relay = shared[0]
     source = next(m for m in first if m != relay)
     sink = next(m for m in second if m != relay)
-    prep = params.prep_qubit or source
+    prep = (dict(params.prep_operations) if params.prep_operations is not None
+            else {source: DEFAULT_PREP_OPERATION})
 
     # The parametric reset rides the reset qubit's own z line, and every Stark
     # tone rides its qubit's drive line — both are channel-existence questions,
@@ -219,10 +235,15 @@ def chain_roles(roster, params) -> tuple[str, str, str, str]:
         problems.append(
             f"reset_qubit={params.reset_qubit!r} has no flux channel — the "
             f"parametric reset is played on the qubit's own z line")
-    if (prep, "drive") not in roster.defaults:
-        problems.append(
-            f"prep_qubit={prep!r} has no drive channel — nothing to play "
-            f"{params.prep_operation!r} on")
+    for qubit in sorted(prep):
+        if not prep[qubit]:
+            problems.append(
+                f"prep_operations names {qubit!r} with an empty operation — "
+                f"leave the qubit out to prepare nothing on it")
+        elif (qubit, "drive") not in roster.defaults:
+            problems.append(
+                f"prep_operations names {qubit!r}, which has no drive channel — "
+                f"nothing to play {prep[qubit]!r} on")
     for qubit in sorted(params.compensation_amps):
         if (qubit, "drive") not in roster.defaults:
             problems.append(
@@ -347,14 +368,19 @@ class QcUnidirectionalTrotterParameters(TargetSelection, AveragingParameters,
                     "qubit's drive frequency. Must be off-resonant for a genuine Stark "
                     "shift (a resonant tone drives Rabi rotations instead); tune per chip. "
                     "Not a sweep axis, and shared by every compensated qubit.")
-    prep_qubit: str | None = Field(
+    prep_operations: dict[str, str] | None = Field(
         None,
-        description="Which qubit is excited ONCE before the rounds begin. None = the "
-                    "chain source (the first_pair member that is not the relay), which is "
-                    "the normal case; set it to watch the chain from somewhere else.")
-    prep_operation: str = Field(
-        "x180",
-        description="The named XY operation that prepares the excitation on prep_qubit.")
+        description="The state preparation, played ONCE before the rounds begin, as "
+                    "{qubit name: named XY operation} — e.g. {'q1': 'x180', 'q3': 'x180'} "
+                    "excites both chain ends. Every entry plays at the same instant, each "
+                    "on its own drive line, so the map has no order. None = {<chain "
+                    "source>: 'x180'}: one excitation on the first_pair member that is not "
+                    "the relay, the normal case. {} prepares nothing (the chain starts in "
+                    "its between-shots state). The ideal and decayed theory curves are the "
+                    "single-excitation closed form from the source, so they are drawn only "
+                    "when the source is the ONE qubit prepared. A multi-qubit prep leaves "
+                    "the single-excitation sector; readout_mode='shot' is how to see the "
+                    "joint states it passes through.")
     operation_gap_ns: int = Field(
         0, ge=0,
         description="Idle gap (ns) inserted between the operations of a round, so each "
@@ -434,7 +460,8 @@ class QcUnidirectionalTrotter(Experiment):
     name: ClassVar[str] = "qc_unidirectional_trotter"
     description: ClassVar[str] = (
         "Unidirectional (cascaded) coupling by Trotterization on a three-qubit chain: "
-        "excite the chain source once, then repeat N times a partial swap source->relay, "
+        "excite the chain source once (prep_operations can prepare other qubits too, "
+        "e.g. both chain ends), then repeat N times a partial swap source->relay, "
         "a partial swap relay->sink, a parametric reset of the relay and a per-qubit "
         "off-resonant AC-Stark phase compensation, reading every chain qubit out at the "
         "end. Dumping the relay each round destroys the sink's return path, so the "
@@ -527,14 +554,16 @@ class QcUnidirectionalTrotter(Experiment):
         rng = np.random.default_rng(stable_seed("qc_unidirectional_trotter", *targets))
         step = self._round_map(rng)
 
-        # The prep: |100> in chain order (source excited), up to pi-pulse
-        # fidelity. A prep_qubit off the chain leaves the chain in |000>.
-        dist = np.zeros(8)
+        # The prep: every prepared chain member excited up to pi-pulse fidelity,
+        # independently — |100> by default, |101> for both ends. Each entry is
+        # modelled as a pi pulse whatever its name; a prepared qubit off the
+        # chain touches none of the chain's bits.
         prep_fidelity = float(rng.uniform(0.94, 0.99))
-        excited = chain.index(prep) if prep in chain else None
-        dist[0] = 1.0 if excited is None else 1.0 - prep_fidelity
-        if excited is not None:
-            dist[1 << (2 - excited)] = prep_fidelity
+        p_excited = np.array([prep_fidelity if m in prep else 0.0 for m in chain])
+        codes = np.arange(8)
+        bits = np.stack([(codes >> (2 - k)) & 1 for k in range(3)])   # (3, 8)
+        dist = np.prod(np.where(bits == 1, p_excited[:, None],
+                                1.0 - p_excited[:, None]), axis=0)
 
         history = [dist]
         for _ in range(int(n.max()) if n.size else 0):
@@ -543,8 +572,6 @@ class QcUnidirectionalTrotter(Experiment):
         # would still line up.
         joint = np.stack([history[int(v)] for v in n])
 
-        codes = np.arange(8)
-        bits = np.stack([(codes >> (2 - k)) & 1 for k in range(3)])   # (3, 8)
         shot_mode = self.params.readout_mode == "shot"
         num_shots = int(self.params.num_averages)
 
@@ -575,16 +602,17 @@ class QcUnidirectionalTrotter(Experiment):
             rows.append(np.clip(row + rng.normal(0.0, 0.01, n.size), 0.0, 1.0))
         return {"population": (("target", "round_count"), np.stack(rows))}
 
-    def _swap_angles(self, source: str, prep: str) -> dict[str, float]:
+    def _swap_angles(self, source: str, prep: dict[str, str]) -> dict[str, float]:
         """``{theta_first_rad, theta_second_rad}`` for the ideal curves — NaN
         where no angle applies, with the reason printed to stderr once."""
         import sys
 
         angles = {"theta_first_rad": float("nan"),
                   "theta_second_rad": float("nan")}
-        if prep != source:
-            print(f"scqo: no ideal curves - the run preps {prep!r}, and the "
-                  f"closed form starts on the source {source!r}", file=sys.stderr)
+        if set(prep) != {source}:
+            print(f"scqo: no ideal curves - the run preps {sorted(prep)}, and the "
+                  f"closed form starts on the source {source!r} alone",
+                  file=sys.stderr)
             return angles
         overridden = getattr(self.params, "swap_coupler_flux", {}) or {}
         why: list[str] = []

@@ -50,6 +50,10 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and 
      a compensation-only key in the file makes `qc_unidirectional_trotter` refuse it.
    - Compensation-only keys go on the command line: `compensation_target`,
      `min_compensation_amp`, `max_compensation_amp`, `num_amp_points`.
+   - Keep `prep_operations` at `null` (one excitation on the source). The scan refuses a
+     prep of more than one qubit, since the phase it calibrates is single-excitation. A
+     multi-qubit prep such as `{"q1": "x180", "q3": "x180"}` belongs in a separate
+     `qc_unidirectional_trotter` run.
    - Set every key explicitly so `~/.scqo/parameters.toml` cannot leak in. The stderr line
      `# parameter defaults from ...` lists anything that did.
 
@@ -65,8 +69,7 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and 
      "stark_operation": "stark",
      "stark_detuning_hz": 50000000.0,
      "compensation_amps": {"q3": 0.33},
-     "prep_qubit": null,
-     "prep_operation": "x180",
+     "prep_operations": null,
      "operation_gap_ns": 20,
      "max_rounds": 20,
      "reset_method": "thermal",

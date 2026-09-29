@@ -14,13 +14,18 @@ relay, Stark tones) gives
 
 with ``dPhi = phi_source - phi_sink``. Only that DIFFERENCE survives: a
 common-mode phase factors out, so there is one number to calibrate, not one per
-qubit. Two consequences the Parameters enforce:
+qubit. Three consequences the Parameters enforce:
 
 * the tone on the RESET qubit is inert — it fires after the reset, onto a qubit
   that has just been emptied — so ``compensation_target`` refuses it by name;
 * the sum peaks at ``dPhi = 0``, so the sweep has a single optimum, and sweeping
   the source or the sink covers opposite signs of ``dPhi`` (the Stark shift's
-  sign is fixed by ``stark_detuning_hz``, which is shared).
+  sign is fixed by ``stark_detuning_hz``, which is shared);
+* the formula lives in the SINGLE-excitation sector, so ``prep_operations``
+  must name exactly one qubit. The chain experiment accepts a multi-qubit prep
+  (both ends excited, say), but there an exchange into an already-excited
+  partner does nothing and the optimum above is no longer the one the scan
+  would find — so the scan refuses it, and an empty prep, by name.
 
 WHY THE ROUND AXIS IS NOT OPTIONAL. When the rounds cancel, only the LAST one
 contributes and the sink peaks at ``N = 1``; when they add, the peak moves out to
@@ -187,7 +192,16 @@ class QcTrotterCompensation(Experiment):
         # The roster gate for the chain PARAMETERS lives here (validate_targets
         # cannot see params), and so does the compensation_target gate — both
         # before the backend is asked for anything.
-        source, _relay, sink, _prep = chain_roles(self.device.roster, self.params)
+        source, _relay, sink, prep = chain_roles(self.device.roster, self.params)
+        if len(prep) != 1:
+            raise ValueError(
+                f"qc_trotter_compensation: prep_operations={prep!r} prepares "
+                f"{len(prep)} qubits — the scan must prepare exactly ONE. The phase "
+                f"it calibrates is defined for a single excitation; with more, an "
+                f"exchange into an already-excited partner does nothing, and with "
+                f"none there is no transport to optimize. Leave prep_operations at "
+                f"None (one excitation on the source {source!r}); run a multi-qubit "
+                f"prep through qc_unidirectional_trotter instead.")
         target = self.params.compensation_target
         if target not in (source, sink):
             raise ValueError(
@@ -265,7 +279,9 @@ class QcTrotterCompensation(Experiment):
         a_opt = float(rng.uniform(0.35, 0.7)) * (amps.max() or 1.0)
         stark_k = -phi_err / (a_opt ** 2) if a_opt else 0.0
 
-        excited = chain.index(prep) if prep in chain else None
+        # define_sweep has already refused anything but ONE prepared qubit
+        (prep_qubit,) = prep
+        excited = chain.index(prep_qubit) if prep_qubit in chain else None
         n_max = int(n.max()) if n.size else 0
         source_map = np.zeros((amps.size, n.size))
         sink_map = np.zeros((amps.size, n.size))

@@ -1256,6 +1256,11 @@ BROKEN_CHAINS = [
     # a default), so it isolates the second gate alone.
     ({"reset_qubit": "q0_res"}, "no flux channel"),
     ({"compensation_amps": {"q0_q1_c": 0.2}}, "no drive channel"),
+    # the prep map gets the same channel gate per entry, and a blank operation
+    # is refused rather than read as "prepare nothing"
+    ({"prep_operations": {"q0": "x180", "q0_q1_c": "x180"}},
+     "prep_operations names 'q0_q1_c', which has no drive channel"),
+    ({"prep_operations": {"q0": ""}}, "with an empty operation"),
 ]
 
 
@@ -1453,10 +1458,41 @@ def test_unidirectional_trotter_decay_needs_the_round_and_every_fact(tmp_path, c
 def test_unidirectional_trotter_no_ideal_when_not_prepping_the_source(session, capsys):
     """The closed form starts with the excitation on the source; a run that
     preps another qubit gets no ideal curve at all."""
-    out = _trotter_on_iswap(session, prep_qubit=CHAIN_QUBITS[2])
+    out = _trotter_on_iswap(session, prep_operations={CHAIN_QUBITS[2]: "x180"})
     fit = out["fit"][CHAIN_QUBITS[0]]
     assert math.isnan(fit["theta_first_rad"]) and math.isnan(fit["theta_second_rad"])
-    assert "the closed form starts on the source" in capsys.readouterr().err
+    assert "the closed form starts on the source 'q0' alone" in capsys.readouterr().err
+    # the source PLUS another qubit is not the source alone either
+    both = _trotter_on_iswap(session, prep_operations={CHAIN_QUBITS[0]: "x180",
+                                                       CHAIN_QUBITS[2]: "x180"})
+    assert math.isnan(both["fit"][CHAIN_QUBITS[0]]["ideal_sink_p_max"])
+    assert "preps ['q0', 'q2']" in capsys.readouterr().err
+    # ...while naming the source alone explicitly IS the default, ideal and all
+    explicit = _trotter_on_iswap(session, prep_operations={CHAIN_QUBITS[0]: "x180"})
+    assert math.isfinite(explicit["fit"][CHAIN_QUBITS[0]]["ideal_sink_p_max"])
+
+
+def test_unidirectional_trotter_preps_both_chain_ends(session):
+    """{source: x180, sink: x180} starts the chain in |101>: both ends read
+    excited at N=0, the relay does not, and the joint map starts on '101'."""
+    source, relay, sink = CHAIN_QUBITS
+    out = _trotter(session, max_rounds=8, num_averages=400, readout_mode="shot",
+                   prep_operations={source: "x180", sink: "x180"})
+    fit = out["fit"]
+    assert fit[source]["p_initial"] > 0.9 and fit[sink]["p_initial"] > 0.9
+    assert fit[relay]["p_initial"] < 0.05
+    ds = session.datastore.open_dataset(out["run_id"])
+    first = ds["state"].sel(round_count=0).transpose("target", "shot_idx").values
+    joint = ["".join(str(int(level)) for level in shot) for shot in first.T]
+    assert joint.count("101") / len(joint) > 0.8
+
+
+def test_unidirectional_trotter_empty_prep_prepares_nothing(session):
+    """{} is not "the default": it plays no prep at all, so the chain starts
+    (and stays) empty — a baseline arm, drawn without an ideal curve."""
+    fit = _trotter(session, max_rounds=6, prep_operations={})["fit"]
+    for qubit in CHAIN_QUBITS:
+        assert fit[qubit]["p_max"] < 0.05, qubit
 
 
 READOUT_SWEEPS = [
@@ -2382,6 +2418,9 @@ COMPENSATION_REFUSALS = [
      "two sources of truth"),
     # a pair the chain does not declare
     ({"swap_coupler_flux": {"q0_q2": 0.05}}, "neither first_pair"),
+    # the phase formula is single-excitation: two preps, or none, are refused
+    ({"prep_operations": {"q0": "x180", "q2": "x180"}}, "prepares 2 qubits"),
+    ({"prep_operations": {}}, "prepares 0 qubits"),
 ]
 
 
