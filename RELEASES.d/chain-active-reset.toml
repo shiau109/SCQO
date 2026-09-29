@@ -1,0 +1,6 @@
+name = "chain-active-reset"
+repos = { scqo-qm = "c577c4e", scqo = "ebd168d" }
+kind = "additive"
+coupling = ""
+validated = "hardware 5Q4C q1-q2-q3 2026-09-29 (tag active-reset-ab, 040/040 chain)"
+notes = "qc_unidirectional_trotter and qc_trotter_compensation accept reset_method='active' on QM for the between-shots initialization (the relay's parametric reset is unchanged); the check covers every qubit a shot resets, and active_reset_rounds now reaches qubit.reset. BEHAVIOR NOTE: the shorter repetition period moves the chain's operating point - calibrate the compensation with the same reset_method you run (procedure chain-trotter-compensation, Trap 7)."
