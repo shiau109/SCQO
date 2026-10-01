@@ -606,6 +606,22 @@ provenance or a trap a user can walk into, **low** = hygiene.
 - Done when: the z amplitude and duration are operation knobs with a coupled QM binding, and
   a decision on how (or whether) the catalog carries a pulse shape.
 
+### F31 `qc_n_swap_tomography`: what v1 left out (low)
+- Deferred 2026-10-01 while landing the experiment (`docs/qc-n-swap-tomography-plan.md`,
+  user-approved; hardware validation is in *Hardware validation owed*). Each a separate step:
+  - a DETUNING check from the phase's z-amplitude dependence: the per-step phase is linear
+    in the control's z amplitude with slope t_p * df/dV (~1.1-1.2 rad/mV on 5Q4C) while
+    theta' is quadratic with its maximum on resonance - three runs at z0, z0 +- 0.5 mV;
+  - an operation MONITOR for the incoherent error per step (decision 3: v1 keeps it in
+    `result.fit` only; a monitor is a `catalog.py` OPERATION_FIELDS edit = shared core);
+  - the same tomography at CHAIN level, to measure the chain's source-sink phase per round
+    directly instead of scanning it (`qc_trotter_compensation`);
+  - `procedures/pair-partial-swap`: replace Step 4 (`qc_n_stark_amp`) once the hardware
+    comparison passes, and record the small-angle stark-window lesson (below 0.2 rad the
+    compensation peak is narrow: 0.35-0.60 x 26, not 0-1.0 x 21);
+  - a Qblox probe (the qc_* family is QM-only today).
+- Done when: each item is landed or explicitly dropped by the user.
+
 ## Known issues / potential problems (found in passing)
 
 ### I1 Qblox broadband probes swallow a failed clock restore (medium)
@@ -1061,6 +1077,17 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   the source alone. Decide which before building.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
+- `qc_n_swap_tomography` (landed 2026-10-01, offline-validated on all three repos). The plan
+  doc's section 10 is the checklist; on 5Q4C, AFTER re-parking the qubits and couplers at
+  their working frequencies (the 2026-09-30 22:30 Ramsey had q1/q3 MHz off their drives):
+  `--preview` (round 368 ns at gap 260, the nine pre-rotation cases), then q2_q3
+  `partial_swap_040` at gap 260 with `stark_amps` [0.40, 0.45, 0.50] beside a same-session
+  `qc_n_stark_amp`: theta' and the compensating amplitude must agree within 0.01 - the test
+  that the coherent IF restore leaves the control's frame intact for the tomography. Then
+  the N=0 dual-rail vector (~(0, 0, 1) after readout correction), the per-step T1 loss
+  against a same-session `qubit_relaxation`, and the small angle `partial_swap_013` against
+  `qc_n_stark_amp`'s 0.1223. After that the paused six-ratio |11> series resumes with the
+  new angles (session memory carries its state).
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
   QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run
   exists. Check that the sticky `VoltageOffset` pair really holds idle + a for the whole
