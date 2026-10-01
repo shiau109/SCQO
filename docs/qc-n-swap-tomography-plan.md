@@ -1,7 +1,9 @@
 # qc_n_swap_tomography：重複 swap 後做雙比特 tomography
 
-> 狀態：規格已核可（2026-10-01，使用者：§11 四點都照建議）。實作中，在三個 repo 的
-> `feature/swap-tomography`。實作時改動的地方已寫進本文（§3 的 `round_duration_ns`、§6 的一致性門檻）。
+> 狀態：規格已核可（2026-10-01，使用者：§11 四點都照建議），同日實作並合併到 main。
+> 硬體首測（同日）暴露兩個 frame 問題，修正後在 5Q4C 兩對 040 通過 §10 的比對，見 §12。
+> 實作與硬體修正時改動的地方已寫進本文：§2 的序列、§3 的 `round_duration_ns` 與 `stark_operation`、
+> §5 的 frame step、§6 的一致性門檻。
 > 範圍：只設計一個實驗。在一對 qubit 上重複 N 次 partial swap（swap 之間照舊有 gap 與 stark 補償），
 > 再對兩顆成員做雙比特 state tomography。從同一次 N 掃描讀出每步的交換角、每步的總相位與每步的
 > 非相干誤差。
@@ -76,16 +78,18 @@ Monte Carlo 證明，用「每步一個等向收縮因子」的簡化模型，�
 
 ## 2. 序列（每一發，QM）
 
-每一步都沿用 `qc_n_stark_amp` 的 round，只在最後加上 tomography：
+沿用 `qc_n_stark_amp` 的 round（物理上同一個 round），但 frame 的處理不同（§12）：
 
 1. `reset(reset_type)`，作用在所有相關的 qubit，然後 `align()`。
-2. control 成員做 `x180`，準備成 |10⟩ 或 |01⟩（看 control 是 high 還是 low），然後 `align()`。
-3. `ctrl.xy.update_frequency(stark_if)`。
+2. **每發重設兩顆成員的 frame：** `reset_frame`、`reset_if_phase`（兩顆的 xy），再
+   `reset_global_phase()`（含 upconverter），然後 `align()`。
+3. control 成員做 `x180`，準備成 |10⟩ 或 |01⟩（看 control 是 high 還是 low），然後 `align()`。
 4. 重複 N 次：swap macro `apply()`，接著 `wait(gap)`，接著
-   `ctrl.xy.play(stark_operation, amplitude_scale=a)`，然後 `align()`。
-5. `ctrl.xy.update_frequency(base_if)`，然後 `align()`。
-   - `keep_phase` 預設是 False，也就是 coherent 模式：切回 base IF 時，phase 就像一直用 base IF 在跑，
-     所以 idle frame 會完整恢復。§10 的硬體比對會再驗證一次。
+   `ctrl.xy.play("stark_detuned", amplitude_scale=a)`，然後 `align()`。
+   - **不切頻率。** `stark_detuned` 把 50 MHz 失諧直接做進波形（`DragGaussianPulse`，alpha 0，
+     包絡和 `stark` 相同，`quam_config/register_stark_detuned.py` 產生），和 `qc_n_stark_amp` 的
+     `stark` + `update_frequency` 是同一個 tone。
+   - `qc_n_stark_amp` 仍走原本的 `update_frequency` 路線、不重設相位，QUA 逐字不變。
 6. **tomography pre-rotation**：兩顆成員同時做，沿用 `qubit_tomography` 的慣例——z 不做事，x 做
    `-y90`，y 做 `x90`。然後 `align()`。
 7. 兩顆成員一起讀出（multiplexed），用 state discrimination。
@@ -101,6 +105,9 @@ Monte Carlo 證明，用「每步一個等向收縮因子」的簡化模型，�
 但程式實際上是 swap → gap → stark。抽出共用程式時一併把說明改對，程式行為不變。
 
 ## 3. Parameters（SCQO）
+
+> `stark_operation` 的預設是 `"stark_detuned"`：它必須把 `stark_detuning_hz` 做進自己的波形，否則 QM
+> 端按名稱拒絕（§2、§12）。
 
 `QcNSwapTomographyParameters(TargetSelection, AveragingParameters, QubitResetParameters, ReadoutModeParameters)`
 
@@ -265,3 +272,32 @@ Monte Carlo 證明，用「每步一個等向收縮因子」的簡化模型，�
    monitor，屬於 shared core，得跑 full suite。
 4. **讀出校正：** 建議在同一次 run 裡量 4×4 confusion matrix（§5 第 1 步）。它包含兩顆成員之間的讀出
    串擾，也不依賴已經過期的 single_shot_readout。代價是多 4 × 1000 發，約 1.2 秒。
+
+## 12. 硬體首測與修正（5Q4C，2026-10-01）
+
+**問題 1：每發的 frame 參考不同。** swap 產生的相干性在 lab frame 裡有固定相位，但 pre-rotation 用的是
+兩顆成員各自的 drive frame，兩者在 swap 時的相對相位是 (f_high − f_low) × 該發的絕對開始時間。每發開始
+時間都不同，橫向分量平均後只剩雜訊（|r⊥| 0.01–0.1），z 分量則乾淨。離線模擬每發用同一個 frame 偏移，
+所以沒抓到。
+
+**問題 2：相位重設和 `update_frequency` 不能混用。** 加上每發相位重設後，stark tone 變成共振打在 control
+上（stark 0.91 時一次 swap 後 P(00) 0.54–0.61），相干性也沒回來。拿掉頻率切換（stark 振幅 0）做對照：
+不重設時 |coh| 0.02–0.06，重設後 0.55–0.68。所以修法是 §2 的「每發重設 + 不切頻率 + `stark_detuned`」。
+
+**問題 3：drive frame 每 round 轉一個 frame step β。** 即使每發都參考好，兩個 drive frame 之間每 round 仍
+轉 β = 2π (f_high − f_low) T_round。量到的軌跡是 Rz(a + Nβ)·C^N·v₀，不是一個圓，原本的模型擬合不上
+（rms 0.17–0.26）。模型加上 `frame_step` 後 rms 0.02–0.04；φ 則是在每 round 都是同一個交換的 frame 裡讀，
+也就是 population 看到的那個，補償要歸零的就是它。β 也可以從 drive 頻率和 round 長度預測，當作 round
+長度的檢查。
+
+**驗證結果**（gap 260，N 0–8，每 setting 1000 發，run `20261001-200029-259`、`-200143-656`，以修正後的
+estimator 重新擬合）：
+
+| | θ′ | `qc_n_stark_amp` θ | 補償振幅 | `qc_n_stark_amp` 補償 | β 量測 / 預測 |
+|---|---|---|---|---|---|
+| q2_q3 040 | 0.4256 ± 0.0022 | 0.434 | 0.905 | 0.908 | −99.2° / −100.3° |
+| q1_q2 040 | 0.4353 ± 0.0019 | 0.437 | 0.487 | 0.496 | +110.7° / +108.6° |
+
+θ′ 與補償都在 §10 的 ±0.01 內。另外，q3 每步的 T1 損失 0.05–0.07，是它 T1 預測（0.017）的 3–4 倍，
+而且隨 stark 振幅變大；q1 在較弱的 stark（0.45–0.5）下則和 T1 一致。強 stark tone 會額外把 q3 的
+population 拉走，這是 population 型實驗看不到的資訊。

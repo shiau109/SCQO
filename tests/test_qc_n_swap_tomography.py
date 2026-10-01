@@ -91,6 +91,10 @@ def test_t1_t2_predictions_need_the_round_and_measured_facts(session):
     fit = _run(session, num_averages=200, round_duration_ns=368.0)["fit"][PAIR]
     assert fit["predicted_t1_loss_high"] == pytest.approx(1 - math.exp(-0.368 / 20))
     assert math.isfinite(fit["excess_dephasing_per_step"])
+    # the measurement frames' turn per round: fitted always, predicted from the
+    # members' drive frequencies once the round length is known
+    assert math.isfinite(fit["frame_step_rad"])
+    assert -math.pi <= fit["predicted_frame_step_rad"] <= math.pi
 
 
 def test_an_undeclared_operation_proposes_nothing(session, capsys):

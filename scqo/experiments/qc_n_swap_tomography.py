@@ -38,6 +38,18 @@ stored ``fidelity_g`` / ``fidelity_e`` (a product, no crosstalk).
 
 The phase belongs to the ROUND, so a compensation from here is valid only at the
 round length it was measured at — exactly as ``qc_n_stark_amp``'s.
+
+THE FRAMES. The swap makes its coherence with a fixed phase in the LAB frame; the
+pre-rotations use the two members' drive frames, whose relative phase at the swap is
+(f_high - f_low) x the shot's absolute start time. A probe must therefore
+re-reference both frames every shot, and must not switch a frequency in between
+(5Q4C 2026-10-01, BACKLOG I35: unreferenced, the coherence averaged to noise; with
+the reference but an ``update_frequency`` stark, the tone drove the control). The
+stark detuning lives in the operation's waveform instead (``stark_operation``).
+Even referenced, the two drive frames turn against each other by (f_high - f_low) x
+the round length per round; the fit carries that ``frame_step`` (5Q4C q2_q3:
+-99 deg measured, -100 deg predicted at 368 ns) and reads the per-round phase in
+the frame where every round is the same exchange - the one populations see.
 """
 
 from __future__ import annotations
@@ -78,7 +90,7 @@ FIT_KEYS = (
     "t1_loss_per_step_high", "t1_loss_per_step_low", "dephasing_per_step",
     "prep_error", "leak_to_11_per_step", "predicted_t1_loss_high",
     "predicted_t1_loss_low", "predicted_dephasing", "excess_dephasing_per_step",
-    "fit_rms", "n_fit_ok",
+    "frame_step_rad", "predicted_frame_step_rad", "fit_rms", "n_fit_ok",
 )
 
 #: the theta_rad proposal needs residuals under this (features are populations
@@ -113,12 +125,18 @@ class QcNSwapTomographyParameters(TargetSelection, AveragingParameters,
                     "where the per-step phase crosses zero (best bracketing it, e.g. the "
                     "expected value +-0.05).")
     stark_operation: str = Field(
-        "stark",
+        "stark_detuned",
         description="The off-resonant XY operation played on the control member in every "
-                    "round (as in qc_n_stark_amp).")
+                    "round. It must carry its detuning (stark_detuning_hz) IN its own "
+                    "waveform: the round re-references both members' frames every shot and "
+                    "switches no frequency, because a frequency switch does not mix with that "
+                    "reference (BACKLOG I35). Physically the same tone as qc_n_stark_amp's "
+                    "`stark` at the stark IF; on QM, quam_config/register_stark_detuned.py "
+                    "makes it from `stark`.")
     stark_detuning_hz: float = Field(
         50e6, description="FIXED detuning (Hz) of the stark tone from the control's drive "
-                          "frequency.")
+                          "frequency; the driver refuses a stark_operation that does not carry "
+                          "exactly this detuning.")
     operation_gap_ns: int = Field(
         0, ge=0,
         description="Idle (ns) on the pair's flux lines between each swap and its stark "
@@ -173,7 +191,10 @@ class QcNSwapTomographyResult(Result):
     incoherent error per step (``t1_loss_per_step_high/low``,
     ``dephasing_per_step``, ``prep_error``, ``leak_to_11_per_step``), the T1/T2*
     predictions and the excess dephasing (NaN without ``round_duration_ns`` and
-    measured T1/T2*), ``fit_rms``, ``n_fit_ok``, and ``readout_calibrated`` /
+    measured T1/T2*), ``frame_step_rad`` - how far the two members' measurement
+    frames turn per round - and its prediction (f_high - f_low) x
+    ``round_duration_ns`` (NaN without the round length), ``fit_rms``,
+    ``n_fit_ok``, and ``readout_calibrated`` /
     ``readout_corrected`` (1/0: in-run calibration used / any correction used).
     The per-amplitude columns stay in the scqat metadata."""
 
@@ -275,6 +296,7 @@ class QcNSwapTomography(Experiment):
             theta = self._planted_theta(pair, rng)
             phi0 = float(rng.uniform(-np.pi, np.pi))
             a_off = float(rng.uniform(-np.pi, np.pi))
+            frame_step = float(rng.uniform(-np.pi, np.pi))     # the drive frames' turn
             decay = (float(rng.uniform(0.012, 0.022)), float(rng.uniform(0.012, 0.022)),
                      float(rng.uniform(0.03, 0.07)), float(rng.uniform(0.01, 0.04)))
             high, low = self._members(pair)
@@ -283,7 +305,8 @@ class QcNSwapTomography(Experiment):
             probs = np.zeros((amps.size, counts.size, len(BASIS_LABELS), 4))
             for i, a in enumerate(amps):
                 states = _channel_states(theta, phi0 + 2 * np.pi * a ** 2, a_off,
-                                         *decay, int(counts.max()), excite_high)
+                                         *decay, int(counts.max()), excite_high,
+                                         frame_step=frame_step)
                 for k, label in enumerate(BASIS_LABELS):
                     u = np.kron(_PRE[label[0]], _PRE[label[1]])
                     for j, n in enumerate(counts):
@@ -326,9 +349,19 @@ class QcNSwapTomography(Experiment):
         return float(value) if value is not None and 0.0 < float(value) < np.pi / 2 else drawn
 
     # ------------------------------------------------------------ analysis
+    def _drive_freq(self, member: str) -> float | None:
+        try:
+            value = getattr(self.device.channel(member, "drive"), "drive_freq_hz")
+        except Exception:
+            return None
+        return None if value is None else float(value)
+
     def _decay_kwargs(self, pair: str) -> dict:
         high, low = self._members(pair)
         out = {"high_name": high, "low_name": low}
+        f_high, f_low = self._drive_freq(high), self._drive_freq(low)
+        if f_high is not None and f_low is not None:
+            out.update(drive_freq_high_hz=f_high, drive_freq_low_hz=f_low)
         fid_high, fid_low = self._readout_fidelities(high), self._readout_fidelities(low)
         if fid_high is not None and fid_low is not None:
             out.update(fid_high=fid_high, fid_low=fid_low)
@@ -423,7 +456,8 @@ def _confusion(fid_high: tuple[float, float], fid_low: tuple[float, float]) -> n
     return np.kron(one(*fid_high), one(*fid_low))
 
 
-def _channel_states(theta, phi, a_off, p_high, p_low, lam, eps, n_max, excite_high):
+def _channel_states(theta, phi, a_off, p_high, p_low, lam, eps, n_max, excite_high,
+                    frame_step=0.0):
     sm = np.array([[0.0, 1.0], [0.0, 0.0]])
     swap = np.eye(4, dtype=complex)
     swap[1, 1] = swap[2, 2] = np.cos(theta)
@@ -441,9 +475,9 @@ def _channel_states(theta, phi, a_off, p_high, p_low, lam, eps, n_max, excite_hi
     rho = np.zeros((4, 4), dtype=complex)
     rho[2 if excite_high else 1, 2 if excite_high else 1] = 1.0 - eps
     rho[0, 0] = eps
-    record = zhigh(a_off)
     out = []
-    for _ in range(n_max + 1):
+    for n in range(n_max + 1):
+        record = zhigh(a_off + n * frame_step)      # the measurement frames' turn
         out.append(record @ rho @ record.conj().T)
         rho = step @ rho @ step.conj().T
         for ks in kraus:

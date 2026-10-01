@@ -1076,46 +1076,27 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   (joint panel included), or the summary keys are withheld / renamed when the prep is not
   the source alone. Decide which before building.
 
-### I35 `qc_n_swap_tomography` cannot see the swap's coherence on QM: the two frames are not referenced per shot (high)
-- Found 2026-10-01, first hardware runs (5Q4C q2_q3 / q1_q2 `partial_swap_040`, gap 260, tag
-  `swaptomo-hw-1001`, runs `20261001-193501-107`, `-193641-358`). The dual-rail z component is
-  clean (0.98 -> -0.8 -> 0.83 over N, readout calibration fine), but the transverse part
-  |r_perp| sits at noise (0.01-0.1) for every N, where a coherent swap gives ~sin(2 theta) ~ 0.7.
-  The fit then reads "dephasing" 0.5-0.7 per step, rms 0.11-0.14, and correctly proposes nothing.
-- Cause: the coherence the swap creates has a fixed phase in the LAB frame at the swap time;
-  the analysis pulses use the two members' drive frames, whose relative phase at that time is
-  (f_high - f_low) * t_abs (IF and upconverter alike). Every shot starts at a different
-  absolute time, so the azimuth changes shot to shot and averages away. The offline model
-  gives every shot the same frame offset, which is why simulate -> estimate never saw it.
-- Tried (diagnostic scripts, nothing committed): `reset_frame` + `reset_if_phase` on both xy
-  elements per shot, with and without `reset_global_phase()`. Both made the STARK TONE drive q3
-  resonantly - P(00) 0.54-0.61 after ONE swap at stark 0.91, normal at stark 0 - and neither
-  brought the coherence back. Working hypothesis: the `update_frequency` round trip of the
-  round (stark IF, then back to the base IF in coherent mode, keep_phase=False) does not mix
-  with a per-shot phase reset - the frequency switch misbehaves, and the coherent switch back
-  re-references the control's frame to program time, undoing the reset.
-- The deciding diagnostic was cut off by a gateway error (DataFetchingError "UNKNOWN:
-  Unexpected error in RPC handling", 19:4x): stark amplitude 0 with NO update_frequency, global
-  reset on vs off. If the coherence appears with the reset, the fix is a stark tone that needs
-  no frequency switch - the 50 MHz detuning baked into its own waveform (a new xy operation,
-  registered like `stark`), or a separate element at the stark IF on the same port - plus the
-  per-shot global phase reset in the tomography only (qc_n_stark_amp reads populations and
-  must keep its QUA).
-- Done when: the transverse coherence is seen on hardware and the section-10 comparison with
-  `qc_n_stark_amp` passes.
+### I36 A strong stark tone on q3 adds population loss per round (medium)
+- Found 2026-10-01 by `qc_n_swap_tomography` (5Q4C q2_q3 `partial_swap_040`, gap 260, run
+  `20261001-200029-259`): q3's T1 loss per round is 0.047-0.073 at stark 0.86-0.96 (about 0.9
+  of a turn), against 0.017 from its T1 (22 us) - and it grows with the amplitude. q1 under a
+  0.45-0.5 tone (`20261001-200143-656`) loses 0.017, as its T1 predicts.
+- Why it matters: the Trotter chain's sink q3 carries a compensation tone of ~0.76-0.82 every
+  round; the 09-30 both-idle |100> runs already showed q3 creeping up under its own tone. A
+  leak through the 60 ns Gaussian's spectral tail at 50 MHz detuning, or |1>->|2>, are the
+  first suspects.
+- Done when: the loss is explained (e.g. vs stark amplitude and detuning with the swap off)
+  and the chain's sink model carries it, or the tone is reshaped so it vanishes.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
-- `qc_n_swap_tomography` (landed 2026-10-01, offline-validated on all three repos). The plan
-  doc's section 10 is the checklist; on 5Q4C, AFTER re-parking the qubits and couplers at
-  their working frequencies (the 2026-09-30 22:30 Ramsey had q1/q3 MHz off their drives):
-  `--preview` (round 368 ns at gap 260, the nine pre-rotation cases), then q2_q3
-  `partial_swap_040` at gap 260 with `stark_amps` [0.40, 0.45, 0.50] beside a same-session
-  `qc_n_stark_amp`: theta' and the compensating amplitude must agree within 0.01 - the test
-  that the coherent IF restore leaves the control's frame intact for the tomography. Then
-  the N=0 dual-rail vector (~(0, 0, 1) after readout correction), the per-step T1 loss
-  against a same-session `qubit_relaxation`, and the small angle `partial_swap_013` against
-  `qc_n_stark_amp`'s 0.1223. After that the paused six-ratio |11> series resumes with the
-  new angles (session memory carries its state).
+- `qc_n_swap_tomography` (landed 2026-10-01). DONE on 5Q4C the same day for both 040 swaps at
+  gap 260 after the re-park: theta' and the compensating amplitude agree with a same-session
+  `qc_n_stark_amp` within 0.01 (plan doc section 12; two frame fixes were needed - per-shot
+  frame reference with a baked-detuning `stark_detuned`, and the fitted `frame_step`).
+  STILL OWED: a small angle (`partial_swap_013`, whose 09-30 calibration is void after the
+  re-park) against `qc_n_stark_amp`; the per-step T1 loss against a same-session
+  `qubit_relaxation` with the stark off (see I36); a run that proposes `theta_rad` end to end.
+  After that the paused six-ratio |11> series resumes (session memory carries its state).
 - `qubit_ramsey_flux_pulse` on QBLOX (F23 landed 2026-09-26, fragment `qubit-ramsey-flux-pulse`;
   QM validated on 5Q4C q1). The probe compiles and is pinned structurally; no cluster run
   exists. Check that the sticky `VoltageOffset` pair really holds idle + a for the whole
