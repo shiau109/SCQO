@@ -1076,6 +1076,34 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   (joint panel included), or the summary keys are withheld / renamed when the prep is not
   the source alone. Decide which before building.
 
+### I35 `qc_n_swap_tomography` cannot see the swap's coherence on QM: the two frames are not referenced per shot (high)
+- Found 2026-10-01, first hardware runs (5Q4C q2_q3 / q1_q2 `partial_swap_040`, gap 260, tag
+  `swaptomo-hw-1001`, runs `20261001-193501-107`, `-193641-358`). The dual-rail z component is
+  clean (0.98 -> -0.8 -> 0.83 over N, readout calibration fine), but the transverse part
+  |r_perp| sits at noise (0.01-0.1) for every N, where a coherent swap gives ~sin(2 theta) ~ 0.7.
+  The fit then reads "dephasing" 0.5-0.7 per step, rms 0.11-0.14, and correctly proposes nothing.
+- Cause: the coherence the swap creates has a fixed phase in the LAB frame at the swap time;
+  the analysis pulses use the two members' drive frames, whose relative phase at that time is
+  (f_high - f_low) * t_abs (IF and upconverter alike). Every shot starts at a different
+  absolute time, so the azimuth changes shot to shot and averages away. The offline model
+  gives every shot the same frame offset, which is why simulate -> estimate never saw it.
+- Tried (diagnostic scripts, nothing committed): `reset_frame` + `reset_if_phase` on both xy
+  elements per shot, with and without `reset_global_phase()`. Both made the STARK TONE drive q3
+  resonantly - P(00) 0.54-0.61 after ONE swap at stark 0.91, normal at stark 0 - and neither
+  brought the coherence back. Working hypothesis: the `update_frequency` round trip of the
+  round (stark IF, then back to the base IF in coherent mode, keep_phase=False) does not mix
+  with a per-shot phase reset - the frequency switch misbehaves, and the coherent switch back
+  re-references the control's frame to program time, undoing the reset.
+- The deciding diagnostic was cut off by a gateway error (DataFetchingError "UNKNOWN:
+  Unexpected error in RPC handling", 19:4x): stark amplitude 0 with NO update_frequency, global
+  reset on vs off. If the coherence appears with the reset, the fix is a stark tone that needs
+  no frequency switch - the 50 MHz detuning baked into its own waveform (a new xy operation,
+  registered like `stark`), or a separate element at the stark IF on the same port - plus the
+  per-shot global phase reset in the tomography only (qc_n_stark_amp reads populations and
+  must keep its QUA).
+- Done when: the transverse coherence is seen on hardware and the section-10 comparison with
+  `qc_n_stark_amp` passes.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qc_n_swap_tomography` (landed 2026-10-01, offline-validated on all three repos). The plan
   doc's section 10 is the checklist; on 5Q4C, AFTER re-parking the qubits and couplers at
