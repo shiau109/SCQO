@@ -1563,21 +1563,22 @@ def test_single_shot_proposes_monitors_never_the_aggregate(session):
 def test_single_shot_reports_counted_and_fitted_populations(session):
     """Two DIFFERENT quantities, never one key with two meanings.
 
-    `p_e_given_g` counts shots hard-assigned to the nearest blob center, so it
+    `assign_e_prep_g` counts shots hard-assigned to the nearest blob center, so it
     folds the residual population together with the discrimination overlap error.
     `pop_e_prep_g` is the fitted blob WEIGHT, overlap removed. The fit can only
     remove overlap, never add any, so it can never exceed the count."""
     out = session.run("single_shot_readout", {"targets": ["q0"]}, update="none")
     fit = out["fit"]["q0"]
-    for key in ("p_e_given_g", "pop_e_prep_g", "p_g_given_e", "pop_g_prep_e"):
+    for key in ("assign_e_prep_g", "pop_e_prep_g", "assign_g_prep_e", "pop_g_prep_e"):
         assert math.isfinite(fit[key]), key
         assert 0.0 <= fit[key] <= 1.0, key
-    assert fit["pop_e_prep_g"] <= fit["p_e_given_g"]
-    assert fit["pop_g_prep_e"] <= fit["p_g_given_e"]
+    assert fit["pop_e_prep_g"] <= fit["assign_e_prep_g"]
+    assert fit["pop_g_prep_e"] <= fit["assign_g_prep_e"]
     # ...and they are reportable, so the progress line and /trends can offer them
     from scqo.report import MEASURED_QUANTITIES
 
-    assert {"pop_e_prep_g", "pop_g_prep_e"} <= set(MEASURED_QUANTITIES)
+    assert {"assign_e_prep_g", "assign_g_prep_e",
+            "pop_e_prep_g", "pop_g_prep_e"} <= set(MEASURED_QUANTITIES)
 
 
 def test_single_shot_populations_are_nan_when_the_blobs_degenerate(session, monkeypatch):
@@ -1600,7 +1601,7 @@ def test_single_shot_populations_are_nan_when_the_blobs_degenerate(session, monk
     assert out.get("error") is None
     # NaN, not None: model_dump(mode="json") keeps it: only the PERSISTED json is
     # scrubbed to null (datastore._scrub). Both roads count as missing downstream.
-    assert all(math.isnan(fit[k]) for k in ("p_e_given_g", "pop_e_prep_g", "pop_g_prep_e"))
+    assert all(math.isnan(fit[k]) for k in ("assign_e_prep_g", "pop_e_prep_g", "pop_g_prep_e"))
     assert out["outcomes"]["q0"] == "failed"  # NaN fidelity fails the gate
 
 
@@ -1775,7 +1776,7 @@ def test_thermal_population_recovers_the_planted_population(session):
     out = session.run("qubit_thermal_population", {"targets": ["q0"]}, update="none")
     fit = out["fit"]["q0"]
     assert fit["pop_e_prep_g"] == pytest.approx(planted, abs=0.015)
-    assert fit["pop_e_prep_g"] <= fit["p_e_given_g"]  # counted folds in the overlap
+    assert fit["pop_e_prep_g"] <= fit["assign_e_prep_g"]  # counted folds in the overlap
     assert fit["blob_std"] == pytest.approx(1.0, rel=0.3)
     assert out["outcomes"]["q0"] == "successful"
 

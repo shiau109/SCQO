@@ -14,7 +14,7 @@ center from a cloud that has only one. That reference is snapshotted into
 ``dataset.nc`` at acquisition time, so the analysis replays offline unchanged.
 
 Both readings are reported, and they are not one quantity by two methods:
-``p_e_given_g`` is COUNTED (nearest-center hard assignment — population PLUS the
+``assign_e_prep_g`` is COUNTED (nearest-center hard assignment — population PLUS the
 readout overlap error) and ``pop_e_prep_g`` is the FITTED mixture weight
 (population with the overlap removed). The fitted one is the chip fact ``n_th``.
 """
@@ -71,7 +71,7 @@ class QubitThermalPopulationParameters(TargetSelection, QubitResetParameters):
 class QubitThermalPopulationResult(Result):
     """``fit[qubit]``: ``pop_e_prep_g`` (the FITTED |e> mixture weight — the
     population with the readout overlap removed; this is what lands as the mode
-    fact ``n_th``), ``p_e_given_g`` (the COUNTED twin, population + overlap
+    fact ``n_th``), ``assign_e_prep_g`` (the COUNTED twin, population + overlap
     error, run-record-only), ``blob_std`` (the fitted blob width, in the same
     acquisition-frame units as the pinned centers) and
     ``outlier_probability``."""
@@ -88,7 +88,7 @@ class QubitThermalPopulation(Experiment):
         "residual excited-state population at idle — the chip's thermal population, "
         "written back as the mode fact n_th. Reported twice: pop_e_prep_g is the "
         "fitted mixture weight (readout overlap removed, the value stored) and "
-        "p_e_given_g is the counted fraction (population + overlap error, "
+        "assign_e_prep_g is the counted fraction (population + overlap error, "
         "run-record-only); their difference is the discrimination error. REQUIRES an "
         "accepted single_shot_readout on the same targets — with one prepared state "
         "the data cannot locate |e> on its own — and refuses active reset, which "
@@ -210,7 +210,7 @@ class QubitThermalPopulation(Experiment):
                 # COUNTED: every shot hard-assigned to its nearest center, so this
                 # folds the population together with the readout overlap error and
                 # reads high. Their difference is roughly that error.
-                "p_e_given_g": counted,
+                "assign_e_prep_g": counted,
                 "blob_std": float(np.mean(np.asarray(std, dtype=float))),
                 "outlier_probability": float(
                     np.mean(np.asarray(r["outlier_probability"], dtype=float))),

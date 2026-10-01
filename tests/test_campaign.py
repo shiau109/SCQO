@@ -302,7 +302,7 @@ def test_bundle_campaign_is_interleaved_not_grouped(session):
     assert stats["qubit_relaxation"]["q0"]["t1_s"]["n"] == 3
     assert stats["qubit_ramsey"]["q0"]["t2_star_s"]["n"] == 3
     assert stats["qubit_echo"]["q0"]["t2_echo_s"]["n"] == 3
-    assert stats["single_shot_readout"]["q0"]["p_e_given_g"]["n"] == 3
+    assert stats["single_shot_readout"]["q0"]["assign_e_prep_g"]["n"] == 3
 
 
 def test_campaign_persists_a_manifest_and_a_repeat_log(session, tmp_path):
@@ -754,9 +754,9 @@ def test_progress_line_headline_drops_knobs_and_keeps_physics():
     assert "t2_star_s=" in ramsey and "f_01_hz=" in ramsey
     assert "drive_freq_hz" not in ramsey and "detuning_error_hz" not in ramsey
 
-    ssro = _headline({"mean_e_i": 4.9, "mean_g_q": -0.1, "p_e_given_g": 0.0425,
+    ssro = _headline({"mean_e_i": 4.9, "mean_g_q": -0.1, "assign_e_prep_g": 0.0425,
                       "readout_fidelity": 0.936})
-    assert "p_e_given_g=0.0425" in ssro and "mean_e_i" not in ssro
+    assert "assign_e_prep_g=0.0425" in ssro and "mean_e_i" not in ssro
 
 
 def test_progress_line_falls_back_for_an_uncatalogued_fit():

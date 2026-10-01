@@ -36,8 +36,11 @@ class SingleShotReadoutParameters(TargetSelection, QubitResetParameters):
 class SingleShotReadoutResult(Result):
     """``fit[qubit]``: ``readout_fidelity`` (aggregate, run-record-only — the
     stored monitors are the per-state ``fidelity_g``/``fidelity_e`` on the
-    readout channel), ``p_e_given_g`` (thermal + error proxy), ``p_g_given_e``
-    (relaxation during readout + error), ``outlier_probability``, and the
+    readout channel), ``assign_e_prep_g`` / ``assign_g_prep_e`` (COUNTED: the
+    fraction of |g>-/|e>-prepared shots assigned the other state — population
+    plus overlap error, so 1 - fidelity_g / 1 - fidelity_e), ``pop_e_prep_g`` /
+    ``pop_g_prep_e`` (FITTED blob weights — the population with the overlap
+    removed), ``outlier_probability``, and the
     measured blob centers ``mean_g_i``/``mean_g_q``/``mean_e_i``/``mean_e_q``
     (acquisition-frame units; instrument-dependent run-record facts — the input a
     driver's discriminator calibration consumes)."""
@@ -124,10 +127,10 @@ class SingleShotReadout(Experiment):
                 direct = 0.5 * (counts[0, 0] + counts[1, 1])
                 swapped = 0.5 * (counts[0, 1] + counts[1, 0])
                 if direct >= swapped:
-                    fidelity, p_e_g, p_g_e = direct, counts[0, 1], counts[1, 0]
+                    fidelity, assign_e_g, assign_g_e = direct, counts[0, 1], counts[1, 0]
                     g_label, e_label = 0, 1
                 else:
-                    fidelity, p_e_g, p_g_e = swapped, counts[0, 0], counts[1, 1]
+                    fidelity, assign_e_g, assign_g_e = swapped, counts[0, 0], counts[1, 1]
                     g_label, e_label = 1, 0
                 if mean.shape == (2, 2):
                     g_i, g_q = float(mean[g_label, 0]), float(mean[g_label, 1])
@@ -136,18 +139,18 @@ class SingleShotReadout(Experiment):
                     pop_e_g = float(norms[0, e_label])
                     pop_g_e = float(norms[1, g_label])
             else:  # degenerate fit (blobs merged into one component)
-                fidelity, p_e_g, p_g_e = nan, nan, nan
+                fidelity, assign_e_g, assign_g_e = nan, nan, nan
             outlier_p = float(np.mean(np.asarray(r["outlier_probability"], dtype=float)))
             result.fit[qubit] = {
                 # COUNTED confusion: every shot hard-assigned to its nearest blob
                 # center, so these fold the residual population together with the
                 # discrimination overlap error.
                 "readout_fidelity": float(fidelity),
-                "p_e_given_g": float(p_e_g),
-                "p_g_given_e": float(p_g_e),
+                "assign_e_prep_g": float(assign_e_g),
+                "assign_g_prep_e": float(assign_g_e),
                 # FITTED blob weights: the residual population with the overlap
                 # removed (all Gaussians share one width, so amplitude ratio =
-                # area ratio = mixture weight). p_e_given_g - pop_e_prep_g is
+                # area ratio = mixture weight). assign_e_prep_g - pop_e_prep_g is
                 # roughly the discrimination error. NOT a free fit — the centers
                 # and widths are pinned to the MAD/mean-shift seeds and only the
                 # amplitudes float, so a bad seed makes a bad population.
@@ -166,13 +169,13 @@ class SingleShotReadout(Experiment):
         # Record the per-state assignment fidelities + the measured |g>/|e> blob
         # centers on the target's READOUT CHANNEL (monitor fields, never pushed).
         # fidelity_g/fidelity_e come from the confusion entries (rows sum to 1, so
-        # F_g = 1 - p_e_given_g and F_e = 1 - p_g_given_e); the aggregate
+        # F_g = 1 - assign_e_prep_g and F_e = 1 - assign_g_prep_e); the aggregate
         # (F_g+F_e)/2 is derivable and never stored (run-record-only in the fit).
         # The centers are the stored REFERENCE the IQ->1D reductions consume
         # (radial ref / axial positions) and the input of the volts->population
         # conversion; consumers must staleness-gate them (they drift with the
-        # readout condition). The confusion entries (p_e_given_g = thermal
-        # population etc.) deliberately stay run-record-only: they are
+        # readout condition). The confusion entries (assign_e_prep_g = thermal
+        # population + overlap error etc.) deliberately stay run-record-only: they are
         # instrument-dependent — compare across instruments by query, never as
         # device state. The run never mutates the readout frame, so the centers
         # are always in the frame the figure shows and are always safe to store.
@@ -189,8 +192,8 @@ class SingleShotReadout(Experiment):
         for qubit, fit in self.result.fit.items():
             if self.result.outcomes[qubit] is Outcome.SUCCESSFUL:
                 view = self.device.channel(qubit, "readout")
-                view.fidelity_g = 1.0 - fit["p_e_given_g"]
-                view.fidelity_e = 1.0 - fit["p_g_given_e"]
+                view.fidelity_g = 1.0 - fit["assign_e_prep_g"]
+                view.fidelity_e = 1.0 - fit["assign_g_prep_e"]
                 if np.all(np.isfinite([fit[key] for _, key in pos_fields])):
                     for field, key in pos_fields:
                         setattr(view, field, fit[key])

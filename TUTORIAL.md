@@ -471,7 +471,7 @@ While it runs you get a live log, so an overnight campaign is never a silent box
 #   qubit_relaxation      q1       ok     t1_s=4.13100e-05                          2.4s
 #   qubit_ramsey          q1       ok     f_01_hz=3.8e+09  t2_star_s=7.99580e-06     2.9s
 #   qubit_echo            q1       ok     t2_echo_s=3.05340e-05                      2.1s
-#   single_shot_readout   q1       ok     p_e_given_g=0.0425                         3.1s
+#   single_shot_readout   q1       ok     assign_e_prep_g=0.0425                     3.1s
 # waiting 4m47s for the next repeat (period_s=300)
 # repeat    2/100  started 20:20:03   eta 04:22 (+8h02m)
 #   qubit_relaxation      q1       ok     t1_s=4.09800e-05                           2.4s
@@ -491,7 +491,7 @@ are not the same quantity:
 
 | | how | what it contains |
 |---|---|---|
-| `p_e_given_g` | **counted** — every shot assigned to its nearest blob centre | residual population **+ discrimination error** |
+| `assign_e_prep_g` | **counted** — every shot assigned to its nearest blob centre | residual population **+ discrimination error** |
 | `pop_e_prep_g` | **fitted** — the weight of the excited blob in the fit | residual population **alone** |
 
 So the *gap between them* is roughly your discrimination error, and that is what
@@ -1137,7 +1137,7 @@ same dip — two roles, two homes, on purpose).
    the next step → **role `monitor` → scqo_state.json, never pushed**
    (`fidelity_g`/`fidelity_e`, the blob positions — performance OF the current
    knobs, invalidated when they move). Only compared across runs → **run record
-   only** (`p_e_given_g`, `pop_e_prep_g`, `power_context`) — compare across
+   only** (`assign_e_prep_g`, `pop_e_prep_g`, `power_context`) — compare across
    instruments by query, with backend provenance, never as state.
 6. **Everything else is the instrument's** → vendor config, vendor-native
    units, catalogued (`scqo state --fields`) when relevant, with a kind:

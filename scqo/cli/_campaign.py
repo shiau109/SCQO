@@ -113,7 +113,7 @@ def _headline(fit: dict, limit: int = 3) -> str:
     Chosen from :data:`scqo.report.MEASURED_QUANTITIES` — catalogued facts and
     monitors plus the fit-only quantities — so an experiment writing catalogued
     fields gets a good line for free and this never becomes a per-experiment
-    allow-list. That picks t1_s / t2_star_s / t2_echo_s / p_e_given_g, drops the
+    allow-list. That picks t1_s / t2_star_s / t2_echo_s / assign_e_prep_g, drops the
     uncatalogued amplitude / offset / mean_e_i, and drops KNOBS like
     drive_freq_hz, which are the run's standing settings and cannot drift.
 

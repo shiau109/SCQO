@@ -43,9 +43,9 @@ INSTRUMENT_FIELD_ORDER = catalog_fields("knob", "monitor")
 
 #: Quantities never tracked as device state (instrument-dependent; a recorded
 #: decision), but still worth reporting from a run's fit.
-#: `p_*_given_*` are COUNTED (nearest-center assignment: population + overlap
+#: `assign_*_prep_*` are COUNTED (nearest-center assignment: population + overlap
 #: error); `pop_*_prep_*` are the FITTED blob weights (population alone).
-FIT_ONLY_QUANTITIES = ("p_e_given_g", "p_g_given_e", "pop_e_prep_g", "pop_g_prep_e")
+FIT_ONLY_QUANTITIES = ("assign_e_prep_g", "assign_g_prep_e", "pop_e_prep_g", "pop_g_prep_e")
 
 #: Catalog unit per field name (declaration order, first kind wins — a field
 #: name never carries two different units across kinds). Derived, never

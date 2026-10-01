@@ -56,7 +56,7 @@ quantity; ask in order, first match wins:
       consulted as standing state before the next step?
                                       -> role MONITOR (fidelity_g/fidelity_e):
                                          stored, never pushed
-      only compared across runs?      -> run record only (p_e_given_g)
+      only compared across runs?      -> run record only (assign_e_prep_g)
  6. Everything else is the instrument's -> vendor config; catalogued when:
       [realizer]  realizes a neutral field - change THAT field via scqo set
       [candidate] shared concept awaiting promotion (the visible backlog)
