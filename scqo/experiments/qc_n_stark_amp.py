@@ -152,9 +152,10 @@ class QcNStarkAmpParameters(TargetSelection, AveragingParameters,
                     "a transition, near enough for a usable shift. Not a sweep axis.")
     operation_gap_ns: int = Field(
         0, ge=0,
-        description="Idle gap (ns) on the swap pair's flux lines after each swap+stark, so the "
-                    "pulses settle before the next swap fires. 0 disables; the QM backend "
-                    "requires a multiple of 4 ns.")
+        description="Idle gap (ns) on the swap pair's flux lines between each swap and its "
+                    "stark tone (swap -> gap -> stark), so the flux pulses settle before the "
+                    "tone plays. 0 disables; the QM backend requires a multiple of 4 ns. Part "
+                    "of the round length, so of the compensating phase.")
     drive_side: Literal["high", "low"] = Field("low", description=DRIVE_SIDE_DESC)
     flux_side: Literal["high", "low"] = Field("low", description=FLUX_SIDE_DESC)
     min_transfer: float = Field(0.3, ge=0.0, le=1.0, description=MIN_TRANSFER_DESC)
