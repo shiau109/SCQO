@@ -178,9 +178,13 @@ Monte Carlo 證明，用「每步一個等向收縮因子」的簡化模型，�
 - 其他：`readout_correction`、`fit_rms`、`success`。
 
 **圖：**
-1. 雙軌 Bloch 軌跡（xy 與 xz 投影），每個 stark 值畫資料點與擬合線。
-2. 各分量、p_sub、p00、p11 對 N 的圖，附擬合。
-3. φ 與 θ′ 對 stark 值的圖，標出根。
+1. `bloch_swap_frame`：雙軌 Bloch 軌跡，扣掉每個 stark 值擬合出的 frame 轉動
+   `a_off + N·frame_step`（swap frame，每一輪都是同一個 Rz(φ)Rx(2θ′)）。正視（y–z）：補償時是
+   通過兩極的大圓；側視（x–z）：補償時是 x = 0 的鉛直線，φ 讓它往左或往右傾。資料點加擬合線。
+2. `bloch_drive_frame`：同樣的向量，照 drive frame 原樣畫（xy、xz 投影）。每一點都疊了 frame
+   轉動，所以是鋸齒狀；這是沒經過擬合的原始樣子。
+3. 各分量、p_sub、p00、p11 對 N 的圖，附擬合。
+4. φ 與 θ′ 對 stark 值的圖，標出根。
 
 ## 6. update()（寫回）
 
