@@ -13,7 +13,7 @@ outputs:
 experiments: [qc_trotter_compensation, qc_unidirectional_trotter]
 backends: [qm]
 depends_on: [pair-partial-swap]
-validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and both mixed combinations)
+validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and both mixed combinations); 2026-10-01..03 (twelve combinations, theta1 0.28-1.28, theta2 0.12-0.55)
 ---
 
 # chain-trotter-compensation
@@ -43,6 +43,14 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and 
 
 1. `pair-partial-swap` done for both pairs, with the readout freshly checked on all three
    qubits.
+   - **Calibrate each combination right before its own chain runs.** Check the couplers,
+     re-measure both operations' angles (`pair-partial-swap` Step 4, with Step 3 first when
+     the resonance may have moved), then run Steps 2–4 here. An absolute angle drifts by
+     3–4 % per hour (`pair-partial-swap` Trap 5), but the two angles drift together: on
+     5Q4C 2026-10-01..03, twelve combinations done this way held (θ1/θ2)² within about
+     4 % of its target.
+   - Accept the `theta_rad` those Step 4 runs propose. Each chain run then carries the
+     angles measured minutes before it.
 2. One parameter file per operation combination, shared by both experiments, so they cannot
    disagree about the round. 5Q4C uses `~/.scqo/chain.json` (030/030) and
    `~/.scqo/chain_060.json` (060/060); `--params` also reads TOML.
@@ -73,6 +81,7 @@ validated: hardware 5Q4C q1-q2-q3, 2026-09-22 (theta = 0.30/0.30, 0.60/0.60 and 
      "compensation_amps": {"q3": 0.33},
      "prep_operations": null,
      "operation_gap_ns": 20,
+     "round_duration_ns": 360,
      "max_rounds": 20,
      "reset_method": "thermal",
      "thermalization_time_ns": null,
@@ -93,10 +102,10 @@ after changing either operation.
 ### Step 2: coarse compensation scan
 
 - **Run**
-  `scqo run qc_trotter_compensation --params chain.json --set compensation_target=<sink> --set max_compensation_amp=1.0 --set num_amp_points=31`.
+  `scqo run qc_trotter_compensation --params chain.json --set compensation_target=<sink> --set max_compensation_amp=0.9 --set num_amp_points=31`.
   - If `compensation_amps` already holds the sink, add `--set "compensation_amps={}"`. The
     experiment refuses a qubit that is both swept and held fixed.
-  - Takes about 1.5 minutes.
+  - Takes about 1.5 minutes at 20 rounds, 2.3 at 30.
 - **Read** `best_compensation_amp_refined` ± `best_compensation_amp_err` and the flag
   `compensation_unresolved`.
   - The refined value is the parabola vertex of the sink averaged over rounds ≥ 2, within
@@ -112,9 +121,11 @@ after changing either operation.
 - **Decide**:
   - Sweep only the **sink** and leave the source untoned. Only the difference matters.
   - On 5Q4C, q1's tone at 5192.9 MHz sits 2.6 MHz from q3 and would drive it.
-  - The window stops at 1.0, one full turn (`procedures/README.md`), so it holds exactly
-    one optimum. The same phase one turn higher (1.05 for 030/030 at 20:14) is never used:
-    a tone that strong drives the qubit.
+  - The window stops at 0.9. One full turn, 1.0, is the bound `procedures/README.md` sets,
+    and the last tenth below it already drives the sink (Trap 8). Go up to 1.0 only when a
+    0–0.9 scan comes back unresolved with the sink still rising at its top edge.
+  - Inside one turn the window holds exactly one optimum. The same phase one turn higher
+    (1.05 for 030/030 at 20:14) is never used: a tone that strong drives the qubit.
 
 ### Step 3: fine scan
 
@@ -123,7 +134,13 @@ after changing either operation.
 - **Read** `best_compensation_amp_refined` ± `best_compensation_amp_err` again: that is
   the compensation. The spread was ±0.001–0.003 on 5Q4C.
   - On 5Q4C a coarse-scan vertex landed within 0.004 of the fine one run minutes later
-    (060/060), so the fine scan is a confirmation.
+    (060/060), so the fine scan is a confirmation. On 2026-10-01..03 the two agreed to
+    0.001–0.005 for θ1 ≤ 0.55 and were 0.010 apart at θ1 0.69 and 0.88.
+  - **At a large first angle the optimum is weakly determined.** At θ1 1.28 (126/040)
+    `best_compensation_amp_err` was 0.080 on the coarse scan and 0.020 on the fine one,
+    against 0.0003–0.002 for θ1 ≤ 0.88. The source keeps cos²θ1 = 8 % per round, so it
+    empties in a round or two and few rounds carry the phase. Take the fine value and do
+    not iterate.
 
 ### Step 4: write it and run the chain
 
@@ -143,9 +160,22 @@ after changing either operation.
   - The SOURCE curve is the clean probe: it depends on the first angle alone, so a source
     that falls faster than cos^(2N)θ₁ is loss outside the swaps (5Q4C 2026-09-28: q1's T1
     had halved), not a swap error.
+    - *How far it agrees today:* on 5Q4C 2026-10-01/02 the source's decay in twelve runs
+      implied a θ1 7.5 % (rms 2.4 %) above the tomography value measured minutes earlier,
+      and a T1 off by 30 % does not close that. The cause is open, so a source that falls
+      this much faster is the present norm and not yet a sign of a fault.
+  - At a large first angle (θ1 ≥ 0.7) read the discrete Trotter model, not the master
+    equation: the continuum picture, γ = θ² per round, stops holding once a single round
+    moves most of the population.
   - For a decay, fit c + A·P(M)·e^(−M/τ) by hand. With the ideal peak beyond `max_rounds`
     (030/030), A and τ trade off, so fix A at the readout contrast (0.9 on 5Q4C) to compare
     runs.
+- **Background control:** run the chain once more with `--set "prep_operations={}"`
+  (nothing prepared). It measures the floor under every sink curve. On 5Q4C 2026-10-01..03
+  the sink then read 0.03–0.05 averaged over 60 rounds and 0.05–0.07 at its highest
+  (twelve runs), against sink maxima of 0.15–0.36 for the source-only prep.
+- A multi-qubit prep (Prerequisite 2) runs the same way, with the same compensation. Its
+  run draws no theory, and its `sink_p_max` reports the prepared state at round 0 (I34).
 
 ## Predicting the compensation from the pair calibrations
 
@@ -224,7 +254,10 @@ Outcome on 2026-09-22:
    - Over hours: 030/030 moved from 0.23 (20:14) to 0.33 (22:47). The setup snapshots of
      the two scans differ only by operations added in between.
    - Repeats 10 minutes apart then agreed within 0.002.
-   - Run Steps 2–3 right before a trotter run.
+   - Two days apart, with re-parks in between: 040/040 read 0.3286 (2026-10-01 22:40) and
+     0.3554 (10-03 18:54).
+   - Run Steps 2–3 right before a trotter run, and calibrate the two operations right
+     before that (Prerequisite 1).
 4. **`best_compensation_amp` is the brightest pixel, not the ridge centre.** On 5Q4C:
    - 060/060: 0.367 against the round-averaged vertex 0.331 (coarse), and 0.350 against
      0.327 (fine).
@@ -244,8 +277,45 @@ Outcome on 2026-09-22:
      0.06 to 0.02 on q2 and from 0.07–0.09 to 0.05 on q3.
    - *Cure:* run Steps 2–3 with the SAME `reset_method` (and wait) as the trotter run. Put
      `reset_method` in the chain file, so both experiments read it.
+8. **A tone near one turn drives the sink.**
+   - *Symptom:* a 0–1.0 coarse scan returns `compensation_unresolved` = 1 with
+     `best_compensation_amp` = 1.0. The sink brightens at the top of the window because
+     the tone excites it, not because the phase is compensated there.
+   - *Case:* 5Q4C 2026-10-01, 040/023, `20261001-232335-380`. A fine scan over 0.25–0.49
+     then gave 0.3786 ± 0.0003 (`232613-619`). Three 0–1.0 scans earlier that evening had
+     resolved.
+   - *Cure:* stop the coarse window at 0.9 (Step 2). The eight coarse scans run that way
+     afterwards all resolved. The loss a strong tone adds on q3 is I36.
 
 ## Typical values
+
+5Q4C cooldown cd2, 2026-10-01..03. Gap 20, 360 ns round, compensation on q3 only. Scans at
+30 rounds and 400 averages; chains at 60 rounds, shot readout, 1000 shots. θ1 and θ2 are
+the tomography values taken minutes before each chain. The sink columns are the
+source-only prep: measured maximum, `model_sink_p_max` and `ideal_sink_p_max`.
+
+| first / second pair | θ1 | θ2 | (θ1/θ2)² | q3 compensation | sink maximum (round) | model | ideal |
+|---|---|---|---|---|---|---|---|
+| 040 / 056 | 0.3874 | 0.5513 | 0.49 | 0.2972 | 0.335 (6) | 0.373 | 0.497 |
+| 040 / 040 | 0.3881 | 0.3878 | 1.00 | 0.3286 | 0.339 (8) | 0.360 | 0.542 |
+| 040 / 028 | 0.3812 | 0.2694 | 2.00 | 0.3724 | 0.246 (12) | 0.286 | 0.499 |
+| 040 / 023 | 0.3899 | 0.2233 | 3.05 | 0.3786 | 0.250 (12) | 0.238 | 0.439 |
+| 040 / 018 | 0.3940 | 0.1748 | 5.08 | 0.4053 | 0.218 (14) | 0.176 | 0.351 |
+| 040 / 013 | 0.3937 | 0.1220 | 10.41 | 0.4571 | 0.146 (17) | 0.103 | 0.230 |
+| 028 / 040 | 0.2828 | 0.3981 | 0.50 | 0.3255 | 0.290 (11) | 0.297 | 0.500 |
+| 040 / 040 | 0.3982 | 0.3997 | 0.99 | 0.3554 | 0.360 (8) | 0.368 | 0.542 |
+| 057 / 040 | 0.5521 | 0.3956 | 1.95 | 0.4539 | 0.331 (7) | 0.380 | 0.501 |
+| 069 / 040 | 0.6867 | 0.3923 | 3.06 | 0.4043 | 0.315 (3) | 0.353 | 0.434 |
+| 089 / 040 | 0.8775 | 0.3979 | 4.86 | 0.4560 | 0.314 (3) | 0.302 | 0.347 |
+| 126 / 040 | 1.2833 | 0.4033 | 10.13 | 0.5287 ± 0.020 | 0.222 (2) | 0.195 | 0.205 |
+
+- The first six rows are 2026-10-01/02 (second angle varied), the last six 2026-10-03
+  (first angle varied).
+- With θ1 fixed, the compensation rises steadily as the second angle falls. With θ2 fixed
+  it moves between 0.33 and 0.53 and not monotonically.
+- The measured sink sits below the model in most rows, and above it where the transfer is
+  weakest (θ2 ≤ 0.22) or the first angle largest (θ1 ≥ 0.88). Part of that excess is the
+  background the nothing-prepared runs show (Step 4).
 
 5Q4C cooldown cd2, 2026-09-22. Gap 20 gives a 360 ns round in every combination, since all
 four operations are 40 ns. 20 rounds, 400 averages, compensation on q3 only:
@@ -268,7 +338,35 @@ four operations are 40 ns. 20 rounds, 400 averages, compensation on q3 only:
 
 ## Evidence
 
-5Q4C runs (all `20260922-`):
+5Q4C runs, 2026-10-01..03. Per combination: the coarse and fine scans, then the chains
+prepared in |11> (source and sink), |10> (source only) and |00> (nothing).
+
+- **040 / 056:** `20261001-222527-519`, `222746-618`; `222944-476`, `223018-142`,
+  `223052-327`.
+- **040 / 040:** `20261001-223821-179`, `224040-536`; `224237-826`, `224312-299`,
+  `224347-158`.
+- **040 / 028:** `20261001-225120-854`, `225341-099`; `225539-242`, `225614-133`,
+  `225649-023`.
+- **040 / 023:** `20261001-232335-380` (0–1.0, unresolved: Trap 8), `232613-619`;
+  `232811-454`, `232845-199`, `232919-065`.
+- **040 / 018:** `20261001-234605-850`, `234824-468`; `235022-609`, `235056-230`,
+  `235129-792`.
+- **040 / 013:** `20261002-000524-928`, `000741-585`; `000937-143`, `001009-433`,
+  `001041-779`.
+- **040 / 040 again:** `20261003-185213-848`, `185427-112`; `185618-000`, `185651-448`,
+  `185725-348`.
+- **028 / 040:** `20261003-190854-424`, `191108-409`; `191258-237`, `191331-750`,
+  `191406-484`.
+- **057 / 040:** `20261003-192341-853`, `192555-062`; `192744-957`, `192817-778`,
+  `192850-914`.
+- **069 / 040:** `20261003-193814-902`, `194028-179`; `194218-356`, `194251-261`,
+  `194324-300`.
+- **089 / 040:** `20261003-195823-444`, `200036-614`; `200226-649`, `200259-792`,
+  `200333-485`.
+- **126 / 040:** `20261003-201655-572`, `201908-918`; `202058-926`, `202131-719`,
+  `202205-005`.
+
+5Q4C runs, 2026-09-22 (all `20260922-`):
 
 - **030 / 030:** coarse scans `194717-192`, `200826-906`; fine scan `201332-432`; trotter
   `202034-457`.
@@ -287,3 +385,9 @@ four operations are 40 ns. 20 rounds, 400 averages, compensation on q3 only:
 - **F16:** recording the actual round length
 - **F17:** a shorter round, with the stark tones played during the relay reset
 - **F18:** a stark amplitude-to-phase conversion, so the one-turn bound can live in code
+- **I34:** the run's summary and figure say nothing for a multi-qubit prep
+- **I36:** a stark tone near one turn adds population loss per round on q3
+
+Not yet in `BACKLOG.md`:
+
+- the source's decay implying a first angle 7.5 % above the tomography (Step 4)
