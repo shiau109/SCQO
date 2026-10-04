@@ -82,6 +82,7 @@ class QubitThermalPopulation(Experiment):
     """Backend-agnostic |g>-only shot cloud. ``probe()`` must record every shot."""
 
     name: ClassVar[str] = "qubit_thermal_population"
+    writes: ClassVar[tuple[str, ...]] = ("n_th",)
     description: ClassVar[str] = (
         "Prepare |g> only and record every readout shot's I/Q point, then split the "
         "cloud against the readout channel's STORED |g>/|e> blob centers to get the "

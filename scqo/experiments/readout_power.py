@@ -75,6 +75,7 @@ class ReadoutPower(Experiment):
     """Backend-agnostic readout-amplitude scan, per shot or FPGA-averaged."""
 
     name: ClassVar[str] = "readout_power"
+    writes: ClassVar[tuple[str, ...]] = ("readout_amp",)
     description: ClassVar[str] = (
         "Sweep the readout-amplitude prefactor reading |g> and |e>; picks the best "
         "amplitude and updates the readout channel's readout_amp. readout_mode='shot' "

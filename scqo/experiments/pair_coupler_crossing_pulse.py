@@ -211,6 +211,7 @@ class PairCouplerCrossingPulse(Experiment):
     """Backend-agnostic coupler-crossing scan. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_coupler_crossing_pulse"
+    writes: ClassVar[tuple[str, ...]] = ("f_q_max_hz", "flux_offset", "flux_per_phi0")
     description: ClassVar[str] = (
         "Coupler flux period and apex from where the coupler crosses its neighbours: "
         "the coupler plays a flux pulse (swept relative to its idle_flux) while each "

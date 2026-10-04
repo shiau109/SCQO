@@ -114,6 +114,7 @@ class QubitDeterministicBenchmarking(Experiment):
     """Deterministic Benchmarking for single qubit gates."""
 
     name: ClassVar[str] = "qubit_deterministic_benchmarking"
+    writes: ClassVar[tuple[str, ...]] = ("pi_amp", "pi_amp_x90")
     description: ClassVar[str] = (
         "Amplitude error amplification: plays ONE target gate N times and sweeps N, "
         "so a small per-gate over/under-rotation accumulates into a resolvable "

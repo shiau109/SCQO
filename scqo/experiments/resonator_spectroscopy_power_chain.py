@@ -95,6 +95,8 @@ class ResonatorSpectroscopyPowerChain(Experiment):
     already solved the chain for the point being acquired)."""
 
     name: ClassVar[str] = "resonator_spectroscopy_power_chain"
+    writes: ClassVar[tuple[str, ...]] = (
+        "readout_freq_hz", "readout_power_dbm", "f_dress0_hz", "f_bare_hz", "g_hz", "g_coeff")
     description: ClassVar[str] = (
         "Careful punchout that STEPS THE OUTPUT CHAIN (QM full_scale_power_dbm / Qblox "
         "output_att) per power point, holding the digital amplitude ~0.5 for best SNR (slow: "

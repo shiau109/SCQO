@@ -137,6 +137,8 @@ class QubitRamseyFluxPulse(Experiment):
     """Backend-agnostic Ramsey-vs-flux-pulse map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_ramsey_flux_pulse"
+    writes: ClassVar[tuple[str, ...]] = (
+        "drive_freq_hz", "f_01_hz", "f_q_max_hz", "flux_offset", "idle_flux")
     description: ClassVar[str] = (
         "Ramsey fringe vs a z PULSE played during the idle (relative to idle_flux, "
         "0 = stay parked): the pi/2 pulses and the readout stay at the idle point, so "

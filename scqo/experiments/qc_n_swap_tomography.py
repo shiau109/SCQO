@@ -218,6 +218,7 @@ class QcNSwapTomography(Experiment):
     """Backend-agnostic repeated-swap tomography. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qc_n_swap_tomography"
+    writes: ClassVar[tuple[str, ...]] = ("theta_rad",)
     description: ClassVar[str] = (
         "Repeated partial swaps read by two-qubit state tomography: excite ONE member of a "
         "pair, repeat its swap N times with a fixed AC-Stark tone between swaps (the "

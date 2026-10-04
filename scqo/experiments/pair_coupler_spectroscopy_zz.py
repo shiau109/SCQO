@@ -127,6 +127,7 @@ class PairCouplerSpectroscopyZZ(Experiment):
     """Backend-agnostic coupler ZZ spectroscopy. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_coupler_spectroscopy_zz"
+    writes: ClassVar[tuple[str, ...]] = ("f_01_hz", "anharmonicity_hz")
     description: ClassVar[str] = (
         "Coupler frequency at its idle point, the coupler never moving: a tone on one "
         "pair member's drive line excites the coupler when it hits a coupler "

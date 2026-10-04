@@ -193,6 +193,7 @@ class QcNStarkAmp(Experiment):
     """Backend-agnostic N-swap AC-Stark amplitude map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qc_n_stark_amp"
+    writes: ClassVar[tuple[str, ...]] = ("theta_rad",)
     description: ClassVar[str] = (
         "N-swap AC-Stark-amplitude error-amplification map: excite ONE member of a pair, then "
         "apply N repeated swaps (each at its fixed baked flux amplitude) and, after every swap, "

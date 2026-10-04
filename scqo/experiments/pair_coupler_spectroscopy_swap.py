@@ -171,6 +171,7 @@ class PairCouplerSpectroscopySwap(Experiment):
     """Backend-agnostic coupler swap spectroscopy. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_coupler_spectroscopy_swap"
+    writes: ClassVar[tuple[str, ...]] = ("f_01_hz", "anharmonicity_hz")
     description: ClassVar[str] = (
         "Coupler frequency at its idle point: a tone on one pair member's drive line "
         "excites the coupler when it hits a coupler transition, then a slow flux ramp "

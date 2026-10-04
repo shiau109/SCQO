@@ -169,10 +169,13 @@ Say so; that is what `unverified` is for.
       [CLAUDE.md](CLAUDE.md) (*Experiment governance*) — contract declared, `simulate()`
       implemented, an estimator in scqat bound by THIS experiment only, `update()` writing
       only catalogued fields, a catalog-quality `description`.
+- [ ] New experiment? Its `sequence_diagram` is declared and its document
+      `scqo/experiments/_docs/<name>/README.md` is written (SCQO's CLAUDE.md,
+      *Experiment documents*); `tests/test_experiment_docs.py` fails otherwise.
 - [ ] New experiment? `python scripts/update_docs.py` re-run in SCQO, so both generated
-      blocks in `CLAUDE.md` — the census and the estimator map — include it.
-      `tests/test_docs_current.py` fails otherwise. scqat has the same script for its
-      derived tables.
+      blocks in `CLAUDE.md` — the census and the estimator map — include it and the
+      document's generated files are current. `tests/test_docs_current.py` fails
+      otherwise. scqat has the same script for its derived tables.
 - [ ] A `RELEASES.d/<slug>.toml` fragment **drafted in the PR body** — format in
       [RELEASES.d/README.md](RELEASES.d/README.md). Do not commit it: the ledger may
       only list complete features, so the maintainer commits it once the *last* repo's

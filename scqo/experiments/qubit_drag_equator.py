@@ -53,6 +53,7 @@ class QubitDragEquator(Experiment):
     """Calibrate DRAG beta parameter using the 3-line symmetric equator method."""
 
     name: ClassVar[str] = "qubit_drag_equator"
+    writes: ClassVar[tuple[str, ...]] = ("drag_beta", "drag_beta_x90")
     description: ClassVar[str] = (
         "Sweep the DRAG beta coefficient and play three sequences (Seq 0: X90-(Y180)^N, "
         "Seq 1: X90-(-Y180)^N, Seq 2: X90-(X180)^N). The intersection of the three lines "

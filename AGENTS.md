@@ -96,9 +96,14 @@ proved the whole suite.
 1. Subclass the backend-free experiment in `scqo/experiments/`; `@register` it.
 2. A driver implements only `probe()`. Parameters, Result, `estimate`, `simulate` and
    `update` are inherited.
-3. Run `python scripts/update_docs.py` so both generated blocks in `CLAUDE.md` — the
-   census and the estimator map — include it; `tests/test_docs_current.py` fails otherwise.
-4. Work the promotion checklist in [CLAUDE.md](CLAUDE.md) (*Experiment governance*).
+3. Declare its `sequence_diagram` and write its document,
+   `scqo/experiments/_docs/<name>/README.md` ([CLAUDE.md](CLAUDE.md), *Experiment
+   documents*) — `tests/test_experiment_docs.py` refuses an experiment without one.
+4. Run `python scripts/update_docs.py` so both generated blocks in `CLAUDE.md` — the
+   census and the estimator map — include it and the document's figures and index are
+   drawn (`--figures <name>` for the expected-result PNG);
+   `tests/test_docs_current.py` fails otherwise.
+5. Work the promotion checklist in [CLAUDE.md](CLAUDE.md) (*Experiment governance*).
 
 ## What you can and cannot verify
 

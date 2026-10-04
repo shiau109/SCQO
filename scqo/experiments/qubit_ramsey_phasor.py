@@ -119,6 +119,7 @@ class QubitRamseyPhasor(Experiment):
     """Backend-agnostic phasor Ramsey. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_ramsey_phasor"
+    writes: ClassVar[tuple[str, ...]] = ("drive_freq_hz", "f_01_hz", "t2_star_s")
     description: ClassVar[str] = (
         "Two pi/2 pulses separated by a LOG-spaced idle time, with the closing pulse's "
         "phase swept through a full turn at every idle point. A lock-in over that frame "

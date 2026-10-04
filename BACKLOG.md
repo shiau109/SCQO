@@ -841,6 +841,13 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `tests/test_ramsey_detuning.py`).
 - No basic bring-up step calibrates `pi_amp_x90`: only `qubit_deterministic_benchmarking`
   with an x90 `target_gate`, and only on QM.
+- 2026-10-04, decided (user) while adding `Experiment.sequence_diagram`
+  (`docs/experiment-docs-plan.md` §11): the declared `qubit_ramsey` sequence is `y90` - idle -
+  `x90`, perpendicular axes - QM's realization, and the sine `scqat.tools.ramsey_fit` seeds.
+  Qblox is the side to change (needs a hardware run); until then
+  `QbloxQubitRamsey.backend_notes` states the deviation. The knob split (`pi_amp_x90` on QM,
+  half of `pi_amp` on Qblox) is now DECLARED per driver in `requires`, which records it and
+  resolves nothing. `qubit_echo` is not decided.
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 

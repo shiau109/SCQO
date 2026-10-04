@@ -256,6 +256,7 @@ class QubitParitySwitchContinuous(Experiment):
     """Backend-agnostic parity monitor. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_parity_switch_continuous"
+    writes: ClassVar[tuple[str, ...]] = ("parity_rate_hz",)
     description: ClassVar[str] = (
         "Fixed-sequence charge-parity monitor: y90 - idle - x90 - measure repeated as "
         "back-to-back single shots for record_time_s (the shot count is derived from it, "

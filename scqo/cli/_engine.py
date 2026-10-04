@@ -195,6 +195,26 @@ def _check_capability_flags(caps: list[str], name: str | None) -> None:
             "combine with other capabilities")
 
 
+def _check_project_flags(project: str, name: str | None, caps: list[str]) -> None:
+    """Refuse contradictory --project mixes BEFORE any session is built.
+
+    --project lists one project's experiments, so - exactly like --capability -
+    an experiment name beside it is a contradiction to name, not to ignore."""
+    from scqo.experiments import PROJECT_SUMMARIES
+
+    if name:
+        raise SystemExit(
+            "--project lists a project's experiments; drop the experiment "
+            "name (run takes exactly one experiment) or drop --project")
+    if caps:
+        raise SystemExit(
+            "--project and --capability are separate listings; pick one")
+    if project not in PROJECT_SUMMARIES:
+        raise SystemExit(
+            f"unknown project: {project}; "
+            f"pick from: {', '.join(PROJECT_SUMMARIES) or '(none declared)'}")
+
+
 def _columnize(cells: list[str], width: int) -> list[str]:
     """Column-major layout (like ls): the alphabetical catalog reads DOWN each
     column, so experiment families stay vertically adjacent."""
@@ -208,17 +228,37 @@ def _columnize(cells: list[str], width: int) -> list[str]:
 
 
 def _catalog_listing_lines(entries: list[dict], capabilities: list[str] | None = None,
-                           width: int | None = None) -> list[str]:
+                           width: int | None = None,
+                           project: str | None = None) -> list[str]:
     """The no-name `scqo run` listing: compact name columns + capability footer,
     or the --capability-filtered subset. Names only by design — descriptions
     live in `scqo run <name> --help` (per-name capability brackets overflowed
     every column; the footer, the filter and the --help epilog carry them now).
-    Pure and renderer-free so tests read lines, not stdout."""
+    Pure and renderer-free so tests read lines, not stdout.
+
+    THE LISTING IS THE SHARED MENU. An experiment declaring a ``project`` serves
+    one study and is left out of both the columns and the capability browser;
+    a ``# projects:`` line says how many there are, and ``project=<name>`` (the
+    --project flag) lists that project's own."""
+    from scqo.experiments import PROJECT_SUMMARIES
     from scqo.experiments._capabilities import CAPABILITY_SUMMARIES
 
     def cell(entry: dict) -> str:
         contrib = " [contrib]" if entry.get("maturity") == "contrib" else ""
         return entry["name"] + contrib
+
+    if project:
+        matched = [e for e in entries if e.get("project") == project]
+        n = len(matched)
+        header = (f"# project: {project} - {PROJECT_SUMMARIES.get(project, '')}"
+                  f"  [{n} experiment{'' if n == 1 else 's'}]")
+        return [header, *(cell(e) for e in matched)]
+
+    per_project: dict[str, int] = {}
+    for entry in entries:
+        if entry.get("project"):
+            per_project[entry["project"]] = per_project.get(entry["project"], 0) + 1
+    entries = [e for e in entries if not e.get("project")]
 
     if capabilities:
         wanted = list(dict.fromkeys(capabilities))
@@ -244,6 +284,10 @@ def _catalog_listing_lines(entries: list[dict], capabilities: list[str] | None =
         none_count += not caps
         for cap in caps:
             counts[cap] = counts.get(cap, 0) + 1
+    if per_project:
+        lines.append("# projects: "
+                     + " ".join(f"{name}({n})" for name, n in sorted(per_project.items()))
+                     + "    list one: scqo run --project <name>")
     lines.append("# capabilities: "
                  + " ".join(f"{cap}({n})" for cap, n in counts.items())
                  + f" none({none_count})")
@@ -267,8 +311,23 @@ def _schema_epilog(experiment: str, config_path: str | None) -> str:
     schema = entry["parameters_schema"]
     required = set(schema.get("required", []))
     lines = [entry["description"]]
+    if entry.get("project"):
+        from scqo.experiments import PROJECT_SUMMARIES
+
+        lines.append(f"project: {entry['project']} - "
+                     f"{PROJECT_SUMMARIES.get(entry['project'], '')}")
     if entry.get("capabilities"):
         lines.append("capabilities: " + ", ".join(entry["capabilities"]))
+    if entry.get("requires"):
+        lines += ["", "needs these device values first:"]
+        for req in entry["requires"]:
+            only = f"  [only with {req['when']}]" if req.get("when") else ""
+            lines.append(f"  {req['field']:26s} {req['why']}{only}")
+    if entry.get("writes"):
+        lines += ["", "may propose: " + ", ".join(entry["writes"])]
+    if entry.get("backend_notes"):
+        lines += ["", "on this backend:"]
+        lines += [f"  - {note}" for note in entry["backend_notes"]]
     lines += ["", "parameters (set with --set KEY=VALUE):"]
     for key, spec in schema.get("properties", {}).items():
         if key in file_defaults:
@@ -311,6 +370,10 @@ def run_experiment_cli(
                         help="filter the no-name catalog listing to experiments "
                              "carrying this capability (repeatable = AND; "
                              "'none' = experiments with no capabilities)")
+    parser.add_argument("--project", metavar="NAME",
+                        help="list the experiments of one research project instead "
+                             "of the shared catalog (the no-name listing names the "
+                             "projects)")
     parser.add_argument("--params",
                         help="parameters from a file (.toml is read as TOML, anything else "
                              "as JSON; keys at the top level) or an inline JSON string")
@@ -372,6 +435,8 @@ def run_experiment_cli(
     if (args.preview or args.out or args.no_open
             or args.simulate_ns is not None or args.no_simulate):
         _check_preview_flags(args, name)  # fail fast: no session needed
+    if args.project:
+        _check_project_flags(args.project, name, args.capabilities)  # fail fast too
     if args.capabilities:
         _check_capability_flags(args.capabilities, name)  # fail fast too
 
@@ -381,7 +446,8 @@ def run_experiment_cli(
         print(f"# lab config: {cfg.source or 'built-in defaults (simulated, nothing saved)'}")
         print(f"# parameter defaults: {cfg.parameters_source or 'none (code defaults)'}")
         print(f"# user overlay: {cfg.user_source or 'none'}")
-        for line in _catalog_listing_lines(sess.catalog(), args.capabilities):
+        for line in _catalog_listing_lines(sess.catalog(), args.capabilities,
+                                           project=args.project):
             print(line)
         return 0
 

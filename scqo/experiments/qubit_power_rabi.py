@@ -82,6 +82,7 @@ class QubitPowerRabi(Experiment):
     """Backend-agnostic power Rabi. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_power_rabi"
+    writes: ClassVar[tuple[str, ...]] = ("pi_amp",)
     description: ClassVar[str] = (
         "Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi "
         "oscillation to recalibrate the drive channel's pi_amp. use_state_discrimination "

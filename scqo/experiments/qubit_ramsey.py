@@ -15,19 +15,23 @@ from pydantic import Field
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -83,8 +87,44 @@ class QubitRamsey(Experiment):
     required_operations: ClassVar[tuple[str, ...]] = ("rx", "readout")
     #: stored blob centers ride the dataset -> axial axis = the measured g->e vector
     attach_readout_positions: ClassVar[bool] = True
+    #: the charge-parity fringe is a different RESULT from the same sequence,
+    #: so the document shows it as a second expected figure
+    doc_variants: ClassVar[dict[str, dict]] = {"beat": {"ramsey_model": "beat"}}
+    #: the pi/2 pulse itself is not here: which knob holds its amplitude differs
+    #: per backend (BACKLOG I19), so each driver's subclass adds its own
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the fringe is measured against it, and it must already be "
+                    "within frequency_detuning_hz of the qubit"),
+        *CALIBRATED_READOUT,
+    )
+    writes: ClassVar[tuple[str, ...]] = (
+        "drive_freq_hz", "f_01_hz", "t2_star_s", "parity_delta_f_hz")
+    extracts: ClassVar[dict[str, str]] = {
+        "detuning_error_hz": "fitted fringe frequency minus frequency_detuning_hz: "
+                             "the signed distance of the qubit from the drive",
+        "old_drive_freq_hz": "the drive frequency the run started from",
+        "fringe_f_1_hz": "beat model: the first fringe frequency, in the detuned frame",
+        "fringe_f_2_hz": "beat model: the second fringe frequency, in the detuned frame",
+    }
 
     params: QubitRamseyParameters
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRamseyParameters) -> SequenceDiagram:
+        # y90 then x90: perpendicular axes, so the fringe starts at its midpoint
+        # (the sine scqat's ramsey fit seeds). Decided 2026-10-04; Qblox still
+        # plays x90 first - BACKLOG I19.
+        diagram = SequenceDiagram({"drive": "q.xy", "readout": "q.ro"})
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "y90", "gate"))
+        diagram.step(Block("drive", "idle", "wait", swept="idle_time_ns"))
+        diagram.step(Block(
+            "drive", "x90", "gate",
+            note="its phase is ramped by -2 pi * frequency_detuning_hz * idle: "
+                 "the virtual detuning"))
+        measure_step(diagram, params)
+        return diagram
 
     def define_sweep(self) -> dict[str, np.ndarray]:
         return {

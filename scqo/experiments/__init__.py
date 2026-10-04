@@ -34,6 +34,21 @@ _GROUPS = (("scqo.experiments", "core"),
 _discovered = False
 _loading_maturity = "core"
 
+#: One line per research PROJECT, keyed by the name an experiment declares in
+#: ``Experiment.project``. An experiment with no project is SHARED: device-level
+#: calibration or characterization, run on every chip by every operator. A
+#: project experiment runs a study's own circuit on an already-calibrated
+#: device; its result is that study's observable and has no home in the device
+#: model. The `scqo run` listing keeps the two apart (``--project <name>``), the
+#: document index groups by it, and an AI loop leaves project experiments alone
+#: unless its task names the project. Independent of ``maturity``.
+#: tests/test_experiment_projects.py pins the keys to the declared set.
+PROJECT_SUMMARIES = {
+    "MpembaEP_trotter": (
+        "unidirectional (cascaded) coupling along a qubit chain by Trotterized "
+        "partial swaps with a relay reset"),
+}
+
 
 def _discover() -> None:
     """Import every installed driver's experiments so the catalog is complete.
@@ -145,17 +160,27 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
 
 
 def catalog() -> list[dict]:
-    """``[{name, description, maturity, capabilities, target_kinds,
+    """``[{name, description, maturity, project, capabilities, target_kinds,
     required_operations, parameters_schema}, ...]`` for every registered
     experiment. ``maturity`` is ``"core"`` (promoted, governed) or
     ``"contrib"`` (sandbox prototype — an AI loop should avoid these unless
-    told); ``capabilities`` are derived from the Parameters mixins."""
+    told); ``project`` is None for a shared experiment, else a key of
+    ``PROJECT_SUMMARIES`` (avoid these too unless the task names the project);
+    ``requires`` / ``writes`` are the device values it needs first and the ones
+    its update may propose, by catalog field name (``scqo/requirements.py`` -
+    join them across entries for the calibration order); ``backend_notes``
+    are the registered driver's own remarks, empty in a driver-free install;
+    ``capabilities`` are derived from the Parameters mixins."""
     _discover()
     return [
         {
             "name": cls.name,
             "description": cls.description,
             "maturity": _MATURITY.get(cls.name, "core"),
+            "project": cls.project,
+            "requires": [req.as_dict() for req in cls.requirements()],
+            "writes": list(cls.writes),
+            "backend_notes": list(cls.backend_notes),
             "capabilities": _derived_capabilities(cls),
             "target_kinds": list(cls.target_kinds),
             "required_operations": list(cls.required_operations),
@@ -244,7 +269,7 @@ from .resonator_spectroscopy_power_chain import (  # noqa: E402
 from .single_shot_readout import SingleShotReadout  # noqa: E402
 
 __all__ = [
-    "catalog", "get", "register",
+    "catalog", "get", "register", "PROJECT_SUMMARIES",
     "QubitResetParameters", "reset_wait_ns",
     "joint_state_labels", "joint_to_marginals", "member_order",
     "states_to_joint_population",

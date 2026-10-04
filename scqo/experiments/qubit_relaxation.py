@@ -58,6 +58,7 @@ class QubitRelaxation(Experiment):
     """Backend-agnostic T1: pi pulse -> swept wait -> measure -> exponential fit."""
 
     name: ClassVar[str] = "qubit_relaxation"
+    writes: ClassVar[tuple[str, ...]] = ("t1_s", "thermalization_time_s")
     description: ClassVar[str] = (
         "Excite with a pi pulse, wait a swept delay and measure; fits the exponential "
         "decay and proposes t1_s as a physical parameter (sample physics, no instrument "

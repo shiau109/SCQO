@@ -56,6 +56,7 @@ class PairZZCoupler(Experiment):
     """Backend-agnostic pair ZZ map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_zz_coupler"
+    writes: ClassVar[tuple[str, ...]] = ("zz_hz", "idle_flux")
     description: ClassVar[str] = (
         "Residual-ZZ vs coupler standing bias (echo fringe under a virtual detuning, "
         "one pair member measured): finds the signed ZZ zero crossing and proposes it "

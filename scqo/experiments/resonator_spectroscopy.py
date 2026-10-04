@@ -82,6 +82,8 @@ class ResonatorSpectroscopy(Experiment):
     """Backend-agnostic resonator spectroscopy; a driver adds ``probe()``."""
 
     name: ClassVar[str] = "resonator_spectroscopy"
+    writes: ClassVar[tuple[str, ...]] = (
+        "readout_freq_hz", "readout_depletion_s", "f_dress0_hz", "f_bare_hz", "kappa_tot_hz")
     description: ClassVar[str] = (
         "Sweep readout frequency around each resonator and locate the "
         "transmission dip; updates each target's readout channel "

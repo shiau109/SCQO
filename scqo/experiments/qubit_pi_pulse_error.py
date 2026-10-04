@@ -59,6 +59,7 @@ class QubitPiPulseError(Experiment):
     """Calibrate pi-pulse amplitude via error amplification across repeated X180 gates."""
 
     name: ClassVar[str] = "qubit_pi_pulse_error"
+    writes: ClassVar[tuple[str, ...]] = ("pi_amp",)
     description: ClassVar[str] = (
         "Sweep pi-pulse amplitude factor across repeated X180 gate sequences (X^1, X^3, X^5...) "
         "to amplify and precisely calibrate the pi pulse amplitude."

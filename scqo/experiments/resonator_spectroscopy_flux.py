@@ -386,6 +386,9 @@ class ResonatorSpectroscopyFlux(Experiment):
     """Backend-agnostic resonator flux map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "resonator_spectroscopy_flux"
+    writes: ClassVar[tuple[str, ...]] = (
+        "flux_offset", "flux_per_phi0", "idle_flux", "readout_freq_hz", "f_bare_hz", "g_hz",
+        "g_coeff")
     description: ClassVar[str] = (
         "2D resonator spectroscopy vs ABSOLUTE flux bias (the probe sets the line's "
         "DC offset per point, so the window is DAC volts, not an excursion from "

@@ -46,6 +46,7 @@ class QubitDragAlternating(Experiment):
     """Calibrate DRAG parameter using the alternating pulse method."""
 
     name: ClassVar[str] = "qubit_drag_alternating"
+    writes: ClassVar[tuple[str, ...]] = ("drag_beta", "drag_beta_x90")
     description: ClassVar[str] = (
         "Sweep DRAG beta coefficient and play alternating pulse sequences. "
         "The DRAG value that minimizes error accumulation (stays flat at "

@@ -158,6 +158,7 @@ class QcTrotterCompensation(Experiment):
     """Backend-agnostic Trotter-chain compensation scan. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qc_trotter_compensation"
+    project: ClassVar[str | None] = "MpembaEP_trotter"
     description: ClassVar[str] = (
         "Trotter-chain AC-Stark compensation scan: run the unidirectional-coupling chain "
         "over a 2-D sweep of ONE qubit's Stark compensation amplitude against the Trotter-"

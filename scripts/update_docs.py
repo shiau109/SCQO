@@ -1,8 +1,8 @@
-"""Regenerate the DERIVED blocks in CLAUDE.md from the code they describe.
+"""Regenerate the DERIVED parts of the docs from the code they describe.
 
 Hand-kept lists rot. `report.py` already applies that rule to the viewer's field
 orders (catalog-derived, never hand-kept); this script applies it to the docs.
-Two blocks:
+Two blocks in CLAUDE.md:
 
 * the registered-experiment census, which had drifted to 31 of 41 by the v3.1.0
   cut - missing both cryoscopes, both broadband scans and `qubit_ramsey_phasor`,
@@ -12,11 +12,26 @@ Two blocks:
   block is what makes each exception visible instead of folklore, and
   `tests/test_one_estimator_per_experiment.py` is what keeps the list shrinking.
 
-    python scripts/update_docs.py            # rewrite the blocks in place
-    python scripts/update_docs.py --check    # exit 1 if a block is stale (CI)
+And the generated parts of the experiment documents
+(`scqo/experiments/_docs/`, read by `scqo/experiment_docs.py`): every
+`sequence*.svg` a document links, rendered from the experiment's
+`sequence_diagram`; the two blocks inside each document that come from the
+class's `requires` / `writes` / `extracts`; the index `_docs/README.md`; and the
+field-dependency table `_docs/DEPENDENCIES.md`.
 
-`tests/test_docs_current.py` runs the --check form, so a new @register without a
-doc refresh fails the suite.
+    python scripts/update_docs.py            # rewrite whatever is stale, in place
+    python scripts/update_docs.py --check    # exit 1 if anything is stale (CI)
+    python scripts/update_docs.py --figures [NAME ...]
+                                             # also redraw the expected-result PNGs
+
+`tests/test_docs_current.py` and `tests/test_experiment_docs.py` run the --check
+form, so a new @register or a changed sequence without a refresh fails the suite.
+
+`--figures` is separate on purpose. An expected-result PNG comes from one run on
+the simulated backend and its bytes move with the matplotlib version, so it is
+only ever checked to EXIST; redraw it when the experiment's `simulate()` or its
+estimator's figure changes, and before a release. A document whose front matter
+says `expected: hardware ...` keeps the figure someone put there.
 """
 
 from __future__ import annotations
@@ -214,15 +229,123 @@ def render_estimator_map() -> str:
 RENDERERS = {"experiments": render_experiments, "estimator-map": render_estimator_map}
 
 
+# ---------------------------------------------------------- experiment documents
+def experiment_doc_files() -> dict[Path, str]:
+    """Every file under `scqo/experiments/_docs` with a GENERATED part -> its wanted
+    text: the sequence figures each document links, each document itself with its
+    generated blocks re-rendered (the prose around them is kept as it is), the
+    index, and the field-dependency table."""
+    classes = _core_experiments()
+    from scqo import experiment_docs as docs
+
+    wanted: dict[Path, str] = {}
+    for cls in classes:
+        if docs.has_doc(cls.name):
+            doc = docs.load_doc(cls.name)
+            for file, svg in docs.sequence_svgs(cls, doc).items():
+                wanted[doc.folder / file] = svg
+            path = docs.doc_path(cls.name)
+            wanted[path] = docs.with_blocks(path.read_text(encoding="utf-8"),
+                                            cls, classes)
+    wanted[docs.DOCS_DIR / docs.DOC_FILE] = docs.render_index(classes)
+    wanted[docs.DOCS_DIR / docs.DEPENDENCIES_FILE] = docs.render_dependencies(classes)
+    return wanted
+
+
+def stale_doc_files(wanted: dict[Path, str]) -> list[Path]:
+    """The generated files that are missing or differ from a fresh render.
+
+    Compared as TEXT, so a checkout that turned LF into CRLF is not stale."""
+    return [path for path, text in wanted.items()
+            if not path.is_file() or path.read_text(encoding="utf-8") != text]
+
+
+def write_expected_figures(names: list[str]) -> int:
+    """Redraw the simulated expected-result PNGs of the named documents (all of
+    them when `names` is empty). Returns the number of problems, each printed.
+
+    One fresh simulated session per figure, in a temporary data root: the run
+    folder's `analysis/<target>/*.png` are the scqat estimator's own figures,
+    which is the point - the document shows what a run folder shows.
+    """
+    import os
+    import shutil
+    import tempfile
+
+    os.environ.setdefault("MPLBACKEND", "Agg")
+    classes = {cls.name: cls for cls in _core_experiments()}
+    from scqo import Session
+    from scqo import experiment_docs as docs
+    from scqo.cli._backends import default_targets
+    from scqo.testing import SimulatedBackend, demo_device
+
+    unknown = sorted(set(names) - set(classes))
+    if unknown:
+        print(f"--figures: not a registered experiment: {', '.join(unknown)}",
+              file=sys.stderr)
+        return len(unknown)
+
+    def simulate(cls, overrides: dict, tmp: Path) -> list[Path]:
+        roster, design, vendor = demo_device()
+        session = Session(SimulatedBackend(vendor), roster, design=design,
+                          scqo_dir=tmp / "scqo", data_root=tmp / "data",
+                          device_name="demo", setup_name="sim", cooldown_id="cd1")
+        targets = default_targets(session, cls.name)[:1]
+        out = session.run(cls.name, {"targets": targets, **overrides}, update="none")
+        if out.get("error"):
+            raise RuntimeError(out["error"])
+        return sorted((Path(out["data_path"]) / "analysis").rglob("*.png"))
+
+    problems = 0
+    for name in names or sorted(classes):
+        cls = classes[name]
+        if not docs.has_doc(name):
+            if names:
+                print(f"{name}: no document at {docs.doc_path(name)}", file=sys.stderr)
+                problems += 1
+            continue
+        doc = docs.load_doc(name)
+        requests = docs.expected_requests(cls, doc)
+        if not requests:
+            print(f"{name}: expected figures are {doc.meta.get('expected')!r} - left alone")
+            continue
+        wanted = doc.meta.get("expected_figure", "")
+        for file, overrides in requests.items():
+            tmp = Path(tempfile.mkdtemp(prefix="scqo-docs-"))
+            try:
+                figures = simulate(cls, overrides, tmp)
+                matches = [f for f in figures if wanted in f.stem] if wanted else figures
+                if len(matches) != 1:
+                    print(f"{name}: expected_figure={wanted!r} selects "
+                          f"{[f.stem for f in matches]} of {[f.stem for f in figures]}; "
+                          f"name exactly one in the front matter", file=sys.stderr)
+                    problems += 1
+                    continue
+                shutil.copyfile(matches[0], doc.folder / file)
+                print(f"{name}: wrote {file} from {matches[0].name}")
+            except Exception as err:
+                print(f"{name}: {file}: {type(err).__name__}: {err}", file=sys.stderr)
+                problems += 1
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+    return problems
+
+
 def current_block(text: str, key: str) -> str:
     begin, end = BLOCKS[key].format("BEGIN"), BLOCKS[key].format("END")
     return text[text.index(begin) : text.index(end) + len(end)]
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="exit 1 if stale instead of rewriting")
+    ap.add_argument("--figures", nargs="*", metavar="NAME",
+                    help="also redraw the simulated expected-result PNGs (every "
+                         "document, or only the named experiments)")
     args = ap.parse_args()
+    if args.check and args.figures is not None:
+        ap.error("--figures redraws PNGs and --check writes nothing; pick one")
 
     text = CLAUDE_MD.read_text(encoding="utf-8")
     stale = []
@@ -236,19 +359,36 @@ def main() -> int:
             stale.append(key)
             text = text.replace(have, wanted)
 
-    if not stale:
-        print(f"{CLAUDE_MD.name}: generated blocks are current")
-        return 0
-    if args.check:
-        print(
-            f"{CLAUDE_MD.name}: STALE generated block(s): {', '.join(stale)}.\n"
-            f"Run `python scripts/update_docs.py` and commit the result.",
-            file=sys.stderr,
-        )
-        return 1
+    doc_files = experiment_doc_files()
+    stale_files = stale_doc_files(doc_files)
 
-    CLAUDE_MD.write_text(text, encoding="utf-8", newline="\n")
-    print(f"{CLAUDE_MD.name}: rewrote {', '.join(stale)}")
+    if args.check:
+        if stale:
+            print(f"{CLAUDE_MD.name}: STALE generated block(s): {', '.join(stale)}.",
+                  file=sys.stderr)
+        for path in stale_files:
+            print(f"STALE generated file: {path.relative_to(REPO_ROOT)}", file=sys.stderr)
+        if stale or stale_files:
+            print("Run `python scripts/update_docs.py` and commit the result.",
+                  file=sys.stderr)
+            return 1
+        print(f"{CLAUDE_MD.name}: generated blocks are current")
+        print("experiment documents: generated files are current")
+        return 0
+
+    if stale:
+        CLAUDE_MD.write_text(text, encoding="utf-8", newline="\n")
+        print(f"{CLAUDE_MD.name}: rewrote {', '.join(stale)}")
+    else:
+        print(f"{CLAUDE_MD.name}: generated blocks are current")
+    for path in stale_files:
+        path.write_text(doc_files[path], encoding="utf-8", newline="\n")
+        print(f"rewrote {path.relative_to(REPO_ROOT)}")
+    if not stale_files:
+        print("experiment documents: generated files are current")
+
+    if args.figures is not None and write_expected_figures(args.figures):
+        return 1
     return 0
 
 

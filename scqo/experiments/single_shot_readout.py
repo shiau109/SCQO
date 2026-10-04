@@ -51,6 +51,8 @@ class SingleShotReadout(Experiment):
     """Backend-agnostic IQ blobs. ``probe()`` must record every shot (no averaging)."""
 
     name: ClassVar[str] = "single_shot_readout"
+    writes: ClassVar[tuple[str, ...]] = (
+        "fidelity_g", "fidelity_e", "pos_g_i", "pos_g_q", "pos_e_i", "pos_e_q")
     description: ClassVar[str] = (
         "Prepare |g> and |e> and record every readout shot's I/Q point; a two-Gaussian "
         "mixture gives the per-state assignment fidelities (stored as the readout "

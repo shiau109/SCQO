@@ -43,13 +43,15 @@ return discriminated data.
 from __future__ import annotations
 
 import itertools
-from typing import Literal, Sequence
+from typing import ClassVar, Literal, Sequence
 
 import numpy as np
 import xarray as xr
 from pydantic import Field
 
 from ...parameters import Parameters
+from ...requirements import Requirement
+from ...sequence_diagram import Block, SequenceDiagram
 
 #: contract fragment: digital + AVERAGE — the FPGA-discriminated averaged
 #: marginal probability (variable ``population``).
@@ -62,6 +64,17 @@ SHOT_STATE_ALT: tuple[tuple[str, ...], ...] = (("state",),)
 
 class StateReadoutParameters(Parameters):
     """Mixin: FPGA state-discriminated acquisition (digital instead of I/Q)."""
+
+    #: what the discriminated mode needs, joined into every carrier's
+    #: requirements (``scqo/requirements.py``)
+    REQUIRES: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("readout_rotation_rad",
+                    "the axis each shot is projected on before thresholding",
+                    when=("use_state_discrimination", True)),
+        Requirement("readout_threshold",
+                    "splits |0> from |1> on that axis",
+                    when=("use_state_discrimination", True)),
+    )
 
     use_state_discrimination: bool = Field(
         False,
@@ -106,6 +119,17 @@ def discrimination_method(readout_mode: str) -> str:
         raise ValueError(
             f"unknown readout_mode {readout_mode!r}; expected 'average' or 'shot'")
     return "average" if readout_mode == "average" else "gmm"
+
+
+def measure_step(diagram: SequenceDiagram, params: Parameters, *,
+                 readout: str = "readout") -> None:
+    """The closing readout of a carrier of this capability, as one step of its
+    sequence diagram (``Experiment.sequence_diagram``). The pulse is the same
+    in both acquisition modes; what differs is what comes back, so the
+    discriminated mode is a footnote on the block and not another shape."""
+    note = ("discriminated on the FPGA: the dataset holds population, not I/Q"
+            if getattr(params, "use_state_discrimination", False) else None)
+    diagram.step(Block(readout, "readout", "acquire", note=note))
 
 
 def population_row(

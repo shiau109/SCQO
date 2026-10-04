@@ -32,6 +32,8 @@ from .parameters import Parameters
 from .result import Result
 from .catalog import QUBIT_LIKE
 from .design import Design, seed_source
+from .requirements import Requirement, collect as collect_requirements
+from .sequence_diagram import SequenceDiagram
 
 #: Which tier answered an :meth:`Experiment.fact_sourced` read. Only
 #: ``FACT_MEASURED`` is a measurement of THIS chip; the other two are nominal, so
@@ -55,6 +57,58 @@ class Experiment(ABC):
     #: operations every target must carry — DERIVED from wiring for modes,
     #: DECLARED for composites.
     required_operations: ClassVar[tuple[str, ...]] = ()
+    #: the research project this experiment serves, a key of
+    #: ``scqo.experiments.PROJECT_SUMMARIES``. None = SHARED: device-level
+    #: calibration or characterization, run on every chip by every operator.
+    #: Declared, not derived - nothing in the code says who an experiment is
+    #: for - and independent of ``maturity``, which says how far it is promoted.
+    project: ClassVar[str | None] = None
+    #: the device values that must already be right before this runs, by catalog
+    #: field name (``scqo/requirements.py``). The experiment's OWN ones only:
+    #: a capability's requirements ride its Parameters mixin and
+    #: :meth:`requirements` joins the two. A driver's subclass extends this
+    #: with what only its backend consumes.
+    requires: ClassVar[tuple[Requirement, ...]] = ()
+    #: the catalog fields ``update()`` may propose - exactly what a simulated
+    #: run proposes over the default Parameters and every ``doc_variants`` set
+    #: (``tests/test_experiment_outputs.py``). Empty = record-only.
+    writes: ClassVar[tuple[str, ...]] = ()
+    #: ``result.fit`` keys that are reported but never written, each with one
+    #: line saying what it is. Written keys take their meaning from the catalog.
+    extracts: ClassVar[dict[str, str]] = {}
+    #: facts true of ONE backend's realization, declared by that driver's
+    #: subclass beside its ``probe()`` - never in the core, whose documents
+    #: say only what holds on every backend. Short sentences, no period.
+    backend_notes: ClassVar[tuple[str, ...]] = ()
+    #: named extra Parameters sets the experiment's document may show beside
+    #: the default one, ``{variant: {field: value}}``. A variant yields
+    #: ``sequence-<variant>.svg`` and ``expected-<variant>.png``, each generated
+    #: only when the document links it. For a field that changes the sequence
+    #: or the shape of the result, not for every option.
+    doc_variants: ClassVar[dict[str, dict[str, Any]]] = {}
+
+    @classmethod
+    def requirements(cls) -> tuple[Requirement, ...]:
+        """Everything this experiment needs: its own ``requires`` plus each
+        Parameters mixin's, conditional ones included (ask
+        ``Requirement.applies(params)`` for a given run)."""
+        return collect_requirements(cls)
+
+    @classmethod
+    def sequence_diagram(cls, params: Parameters) -> SequenceDiagram:
+        """The neutral, schematic pulse sequence these ``params`` ask for.
+
+        The vendor-free declaration of what every driver's ``probe()`` must
+        realize (CLAUDE.md, *Backend parity*) and the source of the
+        experiment's ``sequence.svg``. A PURE function of Parameters: it reads
+        no device and needs no backend, so the document can be built with no
+        session. Every axis in ``Contract.sweeps`` must be marked ``swept`` on
+        a block or a repeat bracket (``tests/test_experiment_docs.py``).
+
+        When a probe's pulse order changes, this changes in the same commit.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} declares no sequence diagram yet")
 
     @classmethod
     def validate_targets(cls, roster, targets: list[str]) -> list[str]:

@@ -96,6 +96,7 @@ class QubitSpectroscopy(Experiment):
     """Backend-agnostic two-tone spectroscopy. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_spectroscopy"
+    writes: ClassVar[tuple[str, ...]] = ("drive_freq_hz", "f_01_hz")
     description: ClassVar[str] = (
         "Sweep a weak saturation drive around drive_freq_hz and fit the response peaks; "
         "the strongest peak recalibrates the drive channel's drive_freq_hz (coarse "

@@ -280,6 +280,7 @@ class QubitSpectroscopyCryoscope(Experiment):
     """Measure the long-time flux step response by spectroscopy and propose taps."""
 
     name: ClassVar[str] = "qubit_spectroscopy_cryoscope"
+    writes: ClassVar[tuple[str, ...]] = ("distortion_amp", "distortion_tau_s")
     description: ClassVar[str] = (
         "Reconstruct the flux line's LONG-TIME (microsecond) step response by qubit "
         "spectroscopy vs wait-time into a parked flux pulse, and fit it to a sum of "

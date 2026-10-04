@@ -74,6 +74,7 @@ class QubitXyzDelay(Experiment):
     """Backend-agnostic XY-Z delay. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_xyz_delay"
+    writes: ClassVar[tuple[str, ...]] = ("flux_delay_s",)
     description: ClassVar[str] = (
         "Slide a fixed X180 XY pulse and a same-length Z (flux) pulse past each "
         "other at 1 ns resolution for two preparations (|e> via x180, |g> via "

@@ -120,6 +120,7 @@ class QubitParitySwitchDiscrete(QubitParitySwitchContinuous):
     driver."""
 
     name: ClassVar[str] = "qubit_parity_switch_discrete"
+    writes: ClassVar[tuple[str, ...]] = ("parity_rate_hz",)
     description: ClassVar[str] = (
         "Two-measurement charge-parity monitor: per cycle M1 - depletion wait - x90 - "
         "idle - y90 - M2 - pad, repeated at the fixed period cycle_period_ns (None = "

@@ -99,6 +99,8 @@ class ResonatorSpectroscopyPowerAmp(Experiment):
     already solved the chain for ``max_power_dbm``)."""
 
     name: ClassVar[str] = "resonator_spectroscopy_power_amp"
+    writes: ClassVar[tuple[str, ...]] = (
+        "readout_freq_hz", "readout_power_dbm", "f_dress0_hz", "f_bare_hz", "g_hz", "g_coeff")
     description: ClassVar[str] = (
         "Fast punchout: solves the output chain for max_power_dbm once (recorded boundary "
         "write, reverted after), then sweeps the digital readout AMPLITUDE down from it in ONE "

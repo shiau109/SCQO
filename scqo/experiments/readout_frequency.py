@@ -87,6 +87,8 @@ class ReadoutFrequency(Experiment):
     """Backend-agnostic readout-frequency scan, per shot or FPGA-averaged."""
 
     name: ClassVar[str] = "readout_frequency"
+    writes: ClassVar[tuple[str, ...]] = (
+        "readout_freq_hz", "f_dress0_hz", "f_dress1_hz", "chi_hz")
     description: ClassVar[str] = (
         "Sweep the readout detuning reading |g> and |e>; picks the best frequency and "
         "updates the readout channel's readout_freq_hz. readout_mode='shot' records "

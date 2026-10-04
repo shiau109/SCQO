@@ -50,6 +50,7 @@ class QubitEcho(Experiment):
     """Backend-agnostic Hahn echo: X90 - tau/2 - X - tau/2 - X90 -> exponential fit."""
 
     name: ClassVar[str] = "qubit_echo"
+    writes: ClassVar[tuple[str, ...]] = ("t2_echo_s",)
     description: ClassVar[str] = (
         "Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time; fits "
         "the exponential envelope and proposes t2_echo_s as a physical parameter "

@@ -251,6 +251,14 @@ scqo/
                   #   and device.flux_line(t).
                   #   run_estimate() is the ONE caller of estimate() (see
                   #   estimate_inputs.py) - a run() override calls it, never estimate()
+  sequence_diagram.py  # the neutral, SCHEMATIC pulse sequence an experiment declares
+                  #   (Experiment.sequence_diagram) + its stdlib-only SVG renderer;
+                  #   byte-stable so a committed sequence.svg can be checked
+  experiment_docs.py   # reads + checks the per-experiment documents under
+                  #   experiments/_docs/ and renders their generated blocks
+                  #   (see *Experiment documents*)
+  requirements.py # Requirement + the requires/writes join: what an experiment
+                  #   needs first and what it leaves behind, by catalog field name
   _scqat.py       # the one scqat import point (lazy): per-target split + analyze() loop
   session.py      # Session: catalog() / run() / run_campaign() / accept() / reject() /
                   #   suggest() / set_values() / find_runs() / load_run() / tag_run() /
@@ -290,7 +298,14 @@ scqo/
                   #   the roster, never by parsing them; simulated is built in
   experiments/    # the registry lives in __init__.py: @register / get / catalog (the
                   #   AI's menu; maturity core|contrib + DERIVED capabilities —
-                  #   never "tags", that word is the datastore's run tags)
+                  #   never "tags", that word is the datastore's run tags — + the
+                  #   DECLARED project, None = shared; PROJECT_SUMMARIES)
+    _docs/        # one folder per experiment: README.md (prose + two generated
+                  #   blocks) + its generated sequence.svg / expected.png;
+                  #   README.md = the index, DEPENDENCIES.md = field -> written by /
+                  #   required by
+    _requires.py  # requirement bundles experiments include explicitly
+                  #   (CALIBRATED_READOUT)
     _capabilities/  # one module per capability: the canonical Parameters mixin + contract
                     #   fragment + sim/estimate helpers (state_readout.py,
                     #   flux.py = the swept flux window in TWO FRAMES sharing one axis
@@ -510,6 +525,61 @@ Binds no estimator (fits inline - also a violation): `qubit_pi_pulse_error`.
 Shared bindings: 3 - `readout_fidelity`, `resonator_spectroscopy_power`, `state_discrimination`.
 <!-- END generated: estimator-map -->
 
+### Experiment documents
+Every experiment has ONE document, `scqo/experiments/_docs/<name>/README.md`: front
+matter (`experiment`, `validated`, `expected`, optional `expected_figure` — flat
+`key: value` only) and eight fixed sections — Purpose, Before running it, Pulse sequence,
+Theory, Outputs, Expected result, Traps, References. Plan and rationale:
+`docs/experiment-docs-plan.md`. (The form of the Theory section is not settled; it may be
+left empty.)
+
+- **What an experiment needs and what it writes are DECLARED, not written as prose**
+  (`scqo/requirements.py`): `requires` (the device values that must already be right,
+  each a `Requirement(field, why, when)` by CATALOG FIELD NAME), `writes` (the fields
+  `update()` may propose) and `extracts` (fit-only keys). A capability's requirements
+  ride its Parameters mixin (`REQUIRES`) and reach every carrier; shared bundles live in
+  `experiments/_requires.py` and are included EXPLICITLY — never derived from
+  `required_operations`, since a bring-up experiment requires an operation precisely in
+  order to calibrate it. The *Before running it* and *Outputs* sections are GENERATED
+  from these between `<!-- BEGIN generated: ... -->` markers; `catalog()` and
+  `scqo run <name> --help` carry the same data.
+- **The calibration order is computed.** Joining every `requires` with every `writes` on
+  the field name gives who provides what — rendered per document and, whole, in
+  `_docs/DEPENDENCIES.md`. Renaming a field fails `tests/test_experiment_outputs.py` at
+  each declaration that names it. `writes` is checked against simulated runs (no
+  experiment proposes an undeclared field; a documented one proposes every declared
+  field); `requires` is a reviewed list whose names are checked, because drivers read
+  much of their state straight from the vendor tree.
+- **Nothing true of one backend only goes in the core.** A driver's subclass declares
+  `backend_notes` beside its `probe()` and extends `requires` with what only it consumes;
+  `--help` shows them in that driver's environment. A probe that deviates from the
+  declared sequence says so there until it is fixed.
+- **The rest of the prose is hand-written; nothing else derivable is copied in.** The
+  parameter table, estimator binding and capabilities stay in the registry
+  (`scqo run <name> --help`).
+- **Both figures are generated.** `sequence.svg` comes from the experiment's
+  `sequence_diagram(params)` — the neutral declaration of the sequence both probes
+  must realize, a pure function of Parameters — and is compared with a fresh render.
+  `expected.png` comes from one simulated run (`scripts/update_docs.py --figures
+  <name>`) using the scqat estimator's own figure, or is supplied from a hardware
+  run (`expected: hardware <chip> <date> <run_id>`, which the generator leaves
+  alone); a PNG is only checked to exist. A figure is generated exactly when the
+  document links it; `<variant>` in a file name is a key of the class's `doc_variants`.
+- **Every `Contract.sweeps` axis is marked `swept` in the diagram**, and a probe whose
+  pulse order changes updates the diagram in the same commit.
+- **Equations**: inline `$...$`, display in a fenced `math` block. GitHub runs Markdown
+  over inline math first, so write `T_2^{\ast}` rather than a literal `*` and avoid
+  backslash-punctuation (`\,` `\!` `\{`) there.
+- `tests/test_experiment_docs.py` holds the census: `UNDOCUMENTED` may only shrink.
+
+**Shared vs project.** `Experiment.project` is None for a SHARED experiment
+(device-level calibration or characterization, for every chip and operator) and names
+a research project otherwise (`PROJECT_SUMMARIES`; today `MpembaEP_trotter`). It is
+declared, not derived, and independent of `maturity`. The no-name `scqo run` listing
+and `--capability` show the shared menu; `scqo run --project <name>` lists a
+project's own, and the document index groups by it. An AI loop leaves project
+experiments alone unless its task names the project.
+
 ### Datastore (the "find my measurement data" layer)
 `Session(backend, data_root=...)` persists **every** run — raw dataset (`dataset.nc`),
 parameters/result/record JSONs, device before/after snapshots, and the scqat artifacts
@@ -604,7 +674,9 @@ so reindex heals any skipped write); multi-PC writers need per-PC data_roots.
 1. Subclass the backend-free experiment from `scqo.experiments`.
 2. Implement only `probe()` for the instrument (lazy-import the vendor lib inside it).
 3. `@register` the subclass so it appears in `catalog()`.
-Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged.
+Parameters, Result, `estimate`, `simulate` and `update` are inherited unchanged — and so
+is `sequence_diagram`, the declared picture of what this `probe()` must play: change the
+pulse order and the core declaration changes in the same commit.
 
 ### Backend parity — the two probes must realize the SAME sequence
 Given one Parameters object, both drivers' `probe()` must produce the same
@@ -649,6 +721,9 @@ Selection map for experiment work (`scqo/experiments/<name>.py`) — always the 
 | Parameters defaults/overlay plumbing | `tests/test_parameter_defaults.py` |
 | `campaign.py` / `run_campaign` / the campaign CLI | `tests/test_campaign.py` + `tests/test_cli_campaign.py` |
 | `report.py`'s catalog-derived field orders | **+ `tests/test_viewer.py`** — the viewer imports them |
+| `sequence_diagram`, `doc_variants` or a document under `_docs/` | `python scripts/update_docs.py`, then `tests/test_experiment_docs.py` (no simulation — run whole) |
+| `requires` / `writes` / `extracts`, a mixin's `REQUIRES`, or what `update()` writes | `python scripts/update_docs.py`, then `tests/test_experiment_outputs.py -k <stem>` (**unfiltered** for a mixin or `_requires.py`) + `tests/test_experiment_docs.py` |
+| `project` / `PROJECT_SUMMARIES` | `tests/test_experiment_projects.py` |
 
 `-k` takes the **distinctive stem, not the registered name**: `-k ramsey` matches both
 `test_every_experiment_runs_clean[qubit_ramsey]` and `test_ramsey_writes_drive_freq_fact_twin_and_t2`,
@@ -698,6 +773,10 @@ Three roles, distinguished by ACCESS rather than seniority:
          whether that was on hardware or offline — a PR records this as
          `offline` / `hardware <chip> <date>` / `unverified`.
    - [ ] `description` is catalog-quality (an AI reads it to decide).
+   - [ ] `requires`, `writes` and `extracts` declared (`writes` is test-enforced for
+         every experiment); `sequence_diagram` declared and the document written under
+         `scqo/experiments/_docs/<name>/` (*Experiment documents*); `project` set if
+         the experiment serves one study rather than every chip.
    - [ ] Physics half in `scqo/experiments/`; driver `probe()` subclasses registered under
          the core `scqo.experiments` group (then directly runnable via `scqo run <name>`).
    - [ ] `python scripts/update_docs.py` re-run, so this file's experiment census AND

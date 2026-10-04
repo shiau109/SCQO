@@ -98,6 +98,8 @@ class QubitSpectroscopyFluxPulse(Experiment):
     """Backend-agnostic f01(flux) arch. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_spectroscopy_flux_pulse"
+    writes: ClassVar[tuple[str, ...]] = (
+        "ej_sum_hz", "f_q_max_hz", "flux_offset", "flux_per_phi0", "idle_flux")
     description: ClassVar[str] = (
         "2D qubit spectroscopy vs PULSED flux (bias applied only during the drive; "
         "readout at idle flux every slice, reduced against one global IQ reference): "

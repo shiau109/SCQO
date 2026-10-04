@@ -53,11 +53,13 @@ the per-backend policy.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field
 
 from ...parameters import Parameters
+from ...requirements import Requirement
+from ...sequence_diagram import Block, SequenceDiagram
 
 #: canonical field texts — a subclass overriding a DEFAULT re-declares the Field
 #: with these constants, so the catalog text can never drift (test-enforced).
@@ -92,6 +94,25 @@ ACTIVE_RESET_ROUNDS_DESC = (
 class QubitResetParameters(Parameters):
     """Mixin: how the qubit is reset between shots (thermal wait, or active)."""
 
+    #: what a carrier needs for its reset, joined into every carrier's
+    #: requirements (``scqo/requirements.py``). The backend-only extras - QM's
+    #: repeat-until-success threshold - are declared by that driver.
+    REQUIRES: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("thermalization_time_s",
+                    "how long the thermal reset waits (a per-run "
+                    "thermalization_time_ns replaces it)",
+                    when=("reset_method", "thermal")),
+        Requirement("readout_rotation_rad",
+                    "the reset measurement is discriminated on the rotated axis",
+                    when=("reset_method", "active")),
+        Requirement("readout_threshold",
+                    "decides whether the reset plays its pi pulse",
+                    when=("reset_method", "active")),
+        Requirement("readout_depletion_s",
+                    "the settle between the reset measurement and the first pulse",
+                    when=("reset_method", "active")),
+    )
+
     reset_method: Literal["thermal", "active"] = Field(
         "thermal", description=RESET_METHOD_DESC
     )
@@ -116,3 +137,28 @@ def reset_wait_ns(experiment, target: str) -> float:
         return float(override)
     standing = experiment.device.channel(target, "drive").thermalization_time_s
     return float(standing) * 1e9
+
+
+def reset_step(diagram: SequenceDiagram, params: Parameters, *,
+               drive: str = "drive", readout: str = "readout") -> None:
+    """The reset every carrier of this capability opens a shot with, as steps
+    of its sequence diagram (``Experiment.sequence_diagram``).
+
+    Thermal is one idle on the drive lane. Active is the pair the vocabulary
+    above describes - a measurement, then a pi pulse played only on |e> -
+    bracketed when ``active_reset_rounds`` asks for more than one attempt.
+    """
+    if getattr(params, "reset_method", "thermal") != "active":
+        diagram.step(Block(drive, "thermal reset", "wait"))
+        return
+    rounds = int(getattr(params, "active_reset_rounds", 1))
+    if rounds > 1:
+        with diagram.repeat(f"x {rounds}"):
+            _active_reset_steps(diagram, drive, readout)
+    else:
+        _active_reset_steps(diagram, drive, readout)
+
+
+def _active_reset_steps(diagram: SequenceDiagram, drive: str, readout: str) -> None:
+    diagram.step(Block(readout, "measure", "acquire"))
+    diagram.step(Block(drive, "x180 if e", "gate"))

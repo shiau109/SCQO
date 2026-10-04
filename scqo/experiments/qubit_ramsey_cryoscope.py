@@ -142,6 +142,7 @@ class QubitRamseyCryoscope(Experiment):
     """Measure the flux-line step response and propose predistortion taps."""
 
     name: ClassVar[str] = "qubit_ramsey_cryoscope"
+    writes: ClassVar[tuple[str, ...]] = ("distortion_amp", "distortion_tau_s")
     description: ClassVar[str] = (
         "Reconstruct the flux line's step response with a Ramsey phase-tomography "
         "sequence — a flux pulse of swept DURATION (1 ns resolution) between two "

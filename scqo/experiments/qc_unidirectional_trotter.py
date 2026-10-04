@@ -463,6 +463,7 @@ class QcUnidirectionalTrotter(Experiment):
     supplied by a driver."""
 
     name: ClassVar[str] = "qc_unidirectional_trotter"
+    project: ClassVar[str | None] = "MpembaEP_trotter"
     description: ClassVar[str] = (
         "Unidirectional (cascaded) coupling by Trotterization on a three-qubit chain: "
         "excite the chain source once (prep_operations can prepare other qubits too, "
