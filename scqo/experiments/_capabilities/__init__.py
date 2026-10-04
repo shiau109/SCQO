@@ -68,6 +68,17 @@ from .flux import (
     flux_sweep,
     foreign_flux_source,
 )
+from .flux_source import (
+    END_SOURCE_FLUX_DESC,
+    NUM_SOURCE_FLUX_DESC,
+    SOURCE_FLUX_AXIS,
+    SOURCE_LINE_DESC,
+    START_SOURCE_FLUX_DESC,
+    FluxSourcePulseSweepParameters,
+    source_anchor_v,
+    source_flux_sweep,
+    source_line_problems,
+)
 from .mapped_readout import (
     READOUT_MEMBER_DESC,
     SELECTIVE_PI_LEN_DESC,
@@ -114,6 +125,7 @@ CAPABILITY_SUMMARIES = {
     "coupler_flux": "sweeps a pair's coupler flux pulse relative to the coupler's idle_flux",
     "drive_line": "drives the target through a named line's channel, borrowed when it has none there",
     "mapped_readout": "reads the target through a pair member (selective pi plus x180, then its readout)",
+    "flux_source": "pulses a second flux line (the crosstalk source) alongside the target's own, relative to that line's idle_flux",
 }
 
 __all__ = [
@@ -131,6 +143,15 @@ __all__ = [
     "coupler_anchor_v",
     "coupler_flux_sweep",
     "pair_coupler",
+    "END_SOURCE_FLUX_DESC",
+    "NUM_SOURCE_FLUX_DESC",
+    "SOURCE_FLUX_AXIS",
+    "SOURCE_LINE_DESC",
+    "START_SOURCE_FLUX_DESC",
+    "FluxSourcePulseSweepParameters",
+    "source_anchor_v",
+    "source_flux_sweep",
+    "source_line_problems",
     "END_DRIVE_DETUNING_DESC",
     "END_READOUT_DETUNING_DESC",
     "FLUX_AXIS",

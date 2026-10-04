@@ -34,7 +34,7 @@ RECORD_ONLY = {"qubit_sqrb", "qubit_tomography", "qubit_echo_flux_pulse",
                "qubit_t1_ade", "qubit_t1_bayesian",
                "broadband_resonator_spectroscopy", "broadband_qubit_spectroscopy",
                "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
-               "qubit_resonator_stark"}
+               "qubit_resonator_stark", "qubit_ramsey_flux_crosstalk_pulse"}
 
 
 #: the readout reference an accepted single_shot_readout would have left behind.
@@ -90,9 +90,14 @@ TROTTER_DEFAULTS = {"qc_unidirectional_trotter": {
 #: scan (refused by name without one); 0.14 V is 5Q4C q1_q2's.
 COUPLER_SWAP_DEFAULTS = {"pair_coupler_spectroscopy_swap": {"ramp_v": [0.0, 0.14]}}
 
+#: the crosstalk map has no default source line - which other flux line to pulse is
+#: the question being asked (refused by name without one); q1's z line stands in.
+FLUX_CROSSTALK_DEFAULTS = {"qubit_ramsey_flux_crosstalk_pulse": {"source_line": "z_q1"}}
+
 #: what the module fixture runs on; _fresh_parity_session keeps the parity-only set.
 OFFLINE_DEFAULTS = {**PARITY_DEFAULTS, **PARAMETRIC_TIME_DEFAULTS,
-                    **TROTTER_DEFAULTS, **COUPLER_SWAP_DEFAULTS}
+                    **TROTTER_DEFAULTS, **COUPLER_SWAP_DEFAULTS,
+                    **FLUX_CROSSTALK_DEFAULTS}
 
 
 @pytest.fixture(scope="module")

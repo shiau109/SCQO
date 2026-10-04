@@ -375,6 +375,13 @@ scqo/
                     #   flux_component: drive_line stands in for `rx` (the channel
                     #   must exist AND be realized), readout_member for `readout`
                     #   (the target must couple the member's pair);
+                    #   flux_source.py = a SECOND flux line (the crosstalk SOURCE,
+                    #   named by its line: source_line + start/end_source_flux_v, axis
+                    #   source_flux_v) pulsed ALONGSIDE the target's own, RELATIVE to
+                    #   that line's idle_flux - one frame, so every carrier ends in
+                    #   `_pulse` and records old_source_idle_flux. Not flux_component,
+                    #   which sweeps the other line INSTEAD of the target's own. The
+                    #   vocabulary is target / source line, never victim / aggressor;
                     #   catalog
                     #   `capabilities` are DERIVED from mixin subclassing — never declared
                     #   strings, zero capabilities legitimate (new experiments may be
@@ -420,29 +427,30 @@ tests/test_campaign.py          # the pure aggregator + run_campaign orchestrati
 ### The registered experiments
 
 <!-- BEGIN generated: experiments -->
-**51 registered experiments.** This list is GENERATED from the registry
+**52 registered experiments.** This list is GENERATED from the registry
 (`scqo.catalog()`) - refresh it with `python scripts/update_docs.py`. Descriptions are
 catalog-quality and live in the registry, never here: read one with
 `scqo run <name> --help`, or browse by capability with `scqo run --capability <name>`.
 
 ```
-broadband_qubit_spectroscopy        qubit_drag_equator                  qubit_spectroscopy_cryoscope
-broadband_resonator_spectroscopy    qubit_echo                          qubit_spectroscopy_flux_pulse
-pair_coupler_crossing_pulse         qubit_echo_flux_pulse               qubit_sqrb
-pair_coupler_spectroscopy_swap      qubit_parametric_drive_amp          qubit_stark_phase_echo
-pair_coupler_spectroscopy_zz        qubit_parametric_drive_time         qubit_t1_ade
-pair_swap_angle                     qubit_parity_switch_continuous      qubit_t1_bayesian
-pair_swap_chevron                   qubit_parity_switch_discrete        qubit_thermal_population
-pair_swap_flux_map                  qubit_pi_pulse_error                qubit_tomography
-pair_zz_coupler                     qubit_power_rabi                    qubit_xyz_delay
-qc_n_stark_amp                      qubit_ramsey                        readout_frequency
-qc_n_swap_amp                       qubit_ramsey_cryoscope              readout_power
-qc_n_swap_tomography                qubit_ramsey_flux_pulse             readout_time_of_flight
-qc_swap_flux_stark                  qubit_ramsey_phasor                 resonator_spectroscopy
-qc_trotter_compensation             qubit_relaxation                    resonator_spectroscopy_flux
-qc_unidirectional_trotter           qubit_relaxation_flux_pulse         resonator_spectroscopy_power_amp
-qubit_deterministic_benchmarking    qubit_resonator_stark               resonator_spectroscopy_power_chain
-qubit_drag_alternating              qubit_spectroscopy                  single_shot_readout
+broadband_qubit_spectroscopy        qubit_echo                          qubit_spectroscopy_flux_pulse
+broadband_resonator_spectroscopy    qubit_echo_flux_pulse               qubit_sqrb
+pair_coupler_crossing_pulse         qubit_parametric_drive_amp          qubit_stark_phase_echo
+pair_coupler_spectroscopy_swap      qubit_parametric_drive_time         qubit_t1_ade
+pair_coupler_spectroscopy_zz        qubit_parity_switch_continuous      qubit_t1_bayesian
+pair_swap_angle                     qubit_parity_switch_discrete        qubit_thermal_population
+pair_swap_chevron                   qubit_pi_pulse_error                qubit_tomography
+pair_swap_flux_map                  qubit_power_rabi                    qubit_xyz_delay
+pair_zz_coupler                     qubit_ramsey                        readout_frequency
+qc_n_stark_amp                      qubit_ramsey_cryoscope              readout_power
+qc_n_swap_amp                       qubit_ramsey_flux_crosstalk_pulse   readout_time_of_flight
+qc_n_swap_tomography                qubit_ramsey_flux_pulse             resonator_spectroscopy
+qc_swap_flux_stark                  qubit_ramsey_phasor                 resonator_spectroscopy_flux
+qc_trotter_compensation             qubit_relaxation                    resonator_spectroscopy_power_amp
+qc_unidirectional_trotter           qubit_relaxation_flux_pulse         resonator_spectroscopy_power_chain
+qubit_deterministic_benchmarking    qubit_resonator_stark               single_shot_readout
+qubit_drag_alternating              qubit_spectroscopy
+qubit_drag_equator                  qubit_spectroscopy_cryoscope
 ```
 <!-- END generated: experiments -->
 
@@ -484,6 +492,7 @@ experiments, or a name in the trailing line, is a KNOWN VIOLATION carried in
 | `qubit_echo` | qubit_echo |
 | `qubit_echo_flux` | qubit_echo_flux_pulse |
 | `qubit_flux_arch` | qubit_spectroscopy_flux_pulse |
+| `qubit_ramsey_flux_crosstalk` | qubit_ramsey_flux_crosstalk_pulse |
 | `qubit_ramsey_flux_pulse` | qubit_ramsey_flux_pulse |
 | `qubit_relaxation` | qubit_relaxation |
 | `qubit_relaxation_flux` | qubit_relaxation_flux_pulse |

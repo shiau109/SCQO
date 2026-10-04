@@ -94,6 +94,7 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
         DriveDetuningSweepParameters,
         DriveLineParameters,
         FluxPulseSweepParameters,
+        FluxSourcePulseSweepParameters,
         FluxSweepParameters,
         MappedReadoutParameters,
         QubitResetParameters,
@@ -105,7 +106,7 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
     # capabilities first, then each later addition appended at the END so it
     # does not reshuffle every existing entry — qubit_reset, then flux_pulse,
     # then amplitude, then drive_detuning, then readout_detuning, then coupler_flux,
-    # then drive_line and mapped_readout.
+    # then drive_line and mapped_readout, then flux_source.
     caps = []
     if issubclass(cls.Parameters, StateReadoutParameters):
         caps.append("state_readout")
@@ -141,6 +142,11 @@ def _derived_capabilities(cls: type[Experiment]) -> list[str]:
         caps.append("drive_line")
     if issubclass(cls.Parameters, MappedReadoutParameters):
         caps.append("mapped_readout")
+    # a SECOND flux line (the crosstalk source) pulsed alongside the target's own,
+    # relative to that line's idle_flux; one frame, so every carrier ends its name
+    # in "_pulse" (test-pinned)
+    if issubclass(cls.Parameters, FluxSourcePulseSweepParameters):
+        caps.append("flux_source")
     return caps
 
 
@@ -197,6 +203,7 @@ from .qc_trotter_compensation import QcTrotterCompensation  # noqa: E402
 from .qubit_ramsey_cryoscope import QubitRamseyCryoscope  # noqa: E402
 from .qubit_ramsey_phasor import QubitRamseyPhasor  # noqa: E402
 from .qubit_ramsey_flux_pulse import QubitRamseyFluxPulse  # noqa: E402
+from .qubit_ramsey_flux_crosstalk_pulse import QubitRamseyFluxCrosstalkPulse  # noqa: E402
 from .qubit_deterministic_benchmarking import QubitDeterministicBenchmarking  # noqa: E402
 from .qubit_drag_alternating import QubitDragAlternating  # noqa: E402
 from .qubit_drag_equator import QubitDragEquator  # noqa: E402
@@ -255,7 +262,7 @@ __all__ = [
     "PairSwapAngle", "PairSwapChevron", "PairSwapFluxMap",
     "PairZZCoupler", "QcNStarkAmp", "QcNSwapAmp", "QcNSwapTomography", "QcSwapFluxStark",
     "QcTrotterCompensation", "QcUnidirectionalTrotter",
-    "QubitRamseyCryoscope", "QubitRamseyFluxPulse", "QubitRamseyPhasor", "QubitDeterministicBenchmarking", "QubitDragAlternating", "QubitDragEquator", "QubitEcho",
+    "QubitRamseyCryoscope", "QubitRamseyFluxCrosstalkPulse", "QubitRamseyFluxPulse", "QubitRamseyPhasor", "QubitDeterministicBenchmarking", "QubitDragAlternating", "QubitDragEquator", "QubitEcho",
     "QubitEchoFluxPulse", "QubitParametricDriveAmp", "QubitParametricDriveTime",
     "QubitParitySwitchContinuous", "QubitParitySwitchDiscrete",
     "QubitPiPulseError", "QubitPowerRabi", "QubitRamsey",
