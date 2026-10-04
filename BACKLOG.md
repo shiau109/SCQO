@@ -551,7 +551,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   not the readout's business - J=0 (F27) and ZZ=0 (`pair_zz_coupler`, `_pulse` after I26) come
   from their own experiments with their own writebacks, and a coupler-state readout parks the
   coupler at a frequency the USER names. The crosstalk matrix becomes FACTS with no automatic
-  compensation (F29), shaped as `__<source>` scalars on the victim's flux channel
+  compensation (F29), shaped as `__<source>` scalars on the target's flux channel
   (`q1_z.flux_crosstalk__q1_q2_c_z`; parallel lists would break catalog's rule that `float[]`
   never aligns to entities). Writers: F28.
 - Also owed after them: the catalog note that a qubit's `flux_offset` / `f_q_max_hz` hold at the
@@ -575,15 +575,18 @@ provenance or a trap a user can walk into, **low** = hygiene.
   the user made A verification-only, low priority (2026-09-27). Every cell needs a writer:
   neighbour cells (q1 <- q1_q2_c 5.45 % by DC), non-neighbour cells (q3 <- q1_q2_c 7.16 %, both
   measured by DC on 2026-09-26) and qubit <- qubit cells (~1 %).
-  The signed m needs the victim's apex LOCATION at several source biases; a parked-at-apex
+  The signed m needs the target's apex LOCATION at several source biases; a parked-at-apex
   `flux_component` scan gives only |m|.
 - Until then they are entered by hand.
-- Done when: an experiment measures a signed m for any (victim, source) pair and proposes it.
+- 2026-10-04: `qubit_ramsey_flux_crosstalk_pulse` measures the signed m for any qubit
+  target and any source line (pulse frame) but proposes nothing - the writeback waits
+  for the fact home (F32).
+- Done when: an experiment measures a signed m for any (target, source) pair and proposes it.
 
 ### F29 Virtual-flux compensation of DC moves (deferred by decision)
 - The user decided 2026-09-27 (F24): the crosstalk matrix is stored as facts and NOT used to
   compensate automatically. Compensation would mean every DC move of a line (`scqo set` /
-  accept of an `idle_flux`) also moves the victims by -m*dV, and pulse-frame probes add
+  accept of an `idle_flux`) also moves its targets by -m*dV, and pulse-frame probes add
   compensating pulses (a neighbour pulsed by -m*b alongside the coupler stays on its own
   apex, turning the nested neighbour-apex reading from 3D into 2D).
   That touches the knob write path and both drivers - its own feature, when wanted.
@@ -620,6 +623,116 @@ provenance or a trap a user can walk into, **low** = hygiene.
     comparison passes, and record the small-angle stark-window lesson (below 0.2 rad the
     compensation peak is narrow: 0.35-0.60 x 26, not 0-1.0 x 21);
   - a Qblox probe (the qc_* family is QM-only today).
+- Done when: each item is landed or explicitly dropped by the user.
+
+### F32 Flux crosstalk: what `qubit_ramsey_flux_crosstalk_pulse` v1 left out (medium)
+- 2026-10-04: v1 built, offline-validated and run on 5Q4C (*Hardware validation owed*),
+  committed the same night (QM only;
+  scqat estimator `qubit_ramsey_flux_crosstalk` over `tools/local_arch` +
+  `tools/flux_crosstalk`; SCQO capability `flux_source`). It reads the signed
+  m(target <- source line) in the PULSE frame from the target's flux-apex POSITION at each
+  source amplitude, and is record-only.
+- Deferred, each a separate step (user 2026-10-03/04: the Ramsey version first):
+  - the SPECTROSCOPY version - the same (own, source) grid with the drive detuning as the
+    inner axis, reusing `flux_source` and `tools/flux_crosstalk`: three targets per run, no
+    coherence needed, a 20 us pulse instead of <= 1.6 us. Fix I20 first, or its first
+    comparison cannot tell crosstalk from I20/I25;
+  - the FACT HOME, then a writeback (F28): 4.0.0 removed the `__<source>` grammar; a
+    candidate is a borrowed flux channel `<source line>.<target>`. Decide first whether the
+    pulse-frame and the DC coefficient are one fact or two - compare this experiment with
+    the 2026-09-26 DC values (q1 <- zc12 +5.45 %, q3 <- zc12 +7.16 %). 2026-10-04: they are
+    NOT one number - the pulse frame reads -3.24 % and +0.95 % for those two cells (the
+    first with the opposite sign), stable across the 1.6 us pulse.
+    SAME-HOUR DC READING 2026-10-04 19:30-19:47 (tag `crosstalk-dc`; `zc12.idle_flux` walked
+    V0, +20 mV, V0, -20 mV, V0 with the own-line `qubit_ramsey_flux_pulse` apex of each
+    target read twice per stop; bias restored, setup snapshot hash identical before and
+    after): DC m = q1 +5.62 %, q2 +12.79 %, q3 +7.42 % (+-0.05), the same for both signs and
+    at ~20 s and ~3 min after the step, no hysteresis at the V0 stops. DC minus pulse is
+    +8.9 / +8.5 / +6.5 points - a slow part of ONE sign on all three targets. The coupler
+    line's own action is not frame dependent: q1's apex height moves -15.5 kHz/mV (pulse)
+    against -16.2 (DC), q2's -9.9 against -10.8. So TWO numbers per cell, or one with a time
+    axis (the user, 2026-10-04: the difference is real, cause unknown, m may be a function
+    of the pulse time).
+    LEAD-TIME SCAN the same night (`source_lead_time_ns`, added 2026-10-04: the source pulse
+    starts that long before the own one and ends with it; tag `crosstalk-lead`,
+    21:12-21:47, 19 runs, all SUCCESSFUL). q1 <- zc12 with the normal 301 us reset wait:
+    -3.30 % at 0, -3.28 at 1 us, -3.18 at 3 us, -2.82 at 10 us, -1.93 at 30 us, +0.18 at
+    100 us, +2.95 at 300 us, +4.93 at 1 ms, +5.47 at 3 ms. With 3 ms between shots it reads
+    LESS (-0.84 at 100 us, +1.52 at 300 us, +3.59 at 1 ms): the slow part outlives a shot,
+    so a run reads the periodic steady state and not the step. One model fits both series
+    to 0.04 points: m_fast -3.28 %, then the gap to DC closes as 54 % with 171 us and 46 %
+    with 1.6 ms (a description, not a unique decomposition). The single-step response it
+    implies: -2.98 % at 10 us, -0.90 at 100 us, +1.40 at 300 us, +3.41 at 1 ms, +4.98 at
+    3 ms, DC by 10 ms. The same two constants predict q3 <- zc12 (+3.69 at 100 us and +7.11
+    at 1 ms measured, 3.73 and 7.01 predicted). A QUBIT line carries the same slow part:
+    q3 <- z2 goes +1.26 -> +4.16 (100 us) -> +7.41 (1 ms), so its DC value should be near
+    +7.9 % (not measured) - not the ~1 % assumed for qubit <- qubit cells (F28).
+    So a cell is (m_fast, m_dc, the time constants), and the pulse-frame m holds for
+    pulses up to a few us only.
+    DC WALK OF z2 the same night (22:00-22:15, tag `crosstalk-dc`; V0, +20 mV, V0, -20 mV,
+    V0; bias restored, setup snapshot hash identical): DC m = q1 <- z2 +8.41 % (pulse
+    -0.33), q3 <- z2 +7.72 % (pulse +1.26; the lead scan had predicted +7.9). q2 ITSELF, read
+    on a window re-centred on -dV: its pulse-frame apex moves 1.0859 V per DC volt, i.e. a
+    DC volt of its own line moves it 8.59 % more than a pulse volt - this is I25, measured.
+    THE SLOW PART DEPENDS ON THE TARGET ONLY (DC minus pulse, in points): q1 +8.86 from
+    zc12 and +8.74 from z2; q2 +8.54 from zc12 and +8.59 from its own line; q3 +6.47 from
+    zc12 and +6.46 from z2. A coupler's line and another qubit's line reach a given SQUID
+    with the same low-frequency weight, and q2's OWN line does too. That is what a return
+    path shared by all lines would do (a reading of the numbers, not a verified mechanism).
+    If it holds for the other lines, a chip needs one slow weight per target plus the fast
+    matrix, not two matrices.
+    BUT q1's own line seems to carry about half of it: the re-park's two passes give a
+    DC-to-pulse ratio of 1.03 +- 0.03 on q1 (1.08 +- 0.03 on q2, 1.02 +- 0.06 on q3), and
+    2026-09-26 read 1.045 on q1 (g 0.956-0.958), against the +8.8 points q1 gets from other
+    lines. So "the target's own line included" is established on q2 only.
+    Open: a DC walk of z1 and of z3 (the own-line ratio of q1 and q3, and whether the
+    per-target weight really does not depend on the source); zc23 as a source; the cause;
+    and the DC walk itself as an experiment or procedure (tonight it was a script of
+    `scqo set` + own-line runs).
+    SIDE EFFECT to know before repeating a long-lead run: over the evening every apex moved
+    by -0.6 to -0.9 mV (own-line reading, 19:30 -> 22:00: q1 +0.07 -> -0.83, q2 +0.09 ->
+    -0.76, q3 +0.28 -> -0.40 mV from idle), most of it while the leads of 0.3-3 ms ran
+    (apex(0) of q1 fell 0.4 mV in those 27 min, 3x its rate before); it was flat again
+    during the z2 walk. A long lead at 80-97 % duty is a quasi-DC excursion of up to
+    100 mV on the source line, so either that left a persistent offset or the usual drift
+    ran faster - not separated. RE-PARKED the same night (22:35-22:47, tag `re-park`,
+    `procedures/qubit-frequency-park` Steps 3-5, two fine passes per qubit): the closing
+    readings sit +0.02 / -0.03 / -0.01 mV from the new biases (z1 0.271281, z2 -0.006647,
+    z3 0.015876 V) and the verifying Ramseys read +4.8 / -0.8 / +0.4 kHz.
+    `procedures/qubit-frequency-park` was corrected the same night: its Step 5 quoted ~1 %
+    for qubit-to-qubit crosstalk (the short-pulse value; a park is a DC move, ~8 %), and it
+    now carries the DC values, the DC recipe in Step 6 and the long-lead trap. Still stale:
+    `qubit_ramsey_flux_pulse`'s catalog description says a pulse moves the qubit "~4 % less
+    than the same DC step" - that is q1's value; q2 reads 8 %.
+    REPORT: `scq-reports/reports/flux_crosstalk_time_dependence_20261004/` (HTML, written
+    PDF, slides; 104 runs in the NAS raw store);
+  - the apex HEIGHT's own dependence on the source (`apex_height_span_hz`): q3 moves
+    -0.56 kHz per mV of z2 without any crosstalk (most likely z2 pulling q2_q3_c), which is
+    what makes the `flux_component` scan of a parked target unusable for the SIGN - its
+    vertex is set by that slope, not by the crosstalk;
+  - a FIXED-idle-time reading (asked 2026-10-04): at one idle time the phase response to a
+    small own-line step and to a small source step gives m as their ratio - 28 settings
+    instead of 3500. Checked offline on the three saved cubes: at ONE operating point it is
+    off by 4-6 % (q3) and 45-49 % (q1 <- zc12), because the source moves the apex height
+    too; reading both sides of the apex (+-20 mV) and differencing gives m to 0.001-0.009
+    points of the full run. Per shot it is only 1.3-3.3x the idle sweep; the price is phase
+    wrapping (0.8-2.4 turns across the source window at 500 ns) and no fringe to judge. It
+    would be a second experiment with its own estimator. The idle sweep itself has 47x
+    headroom on its fringe gate (snr >= 1400 against 30 at 200 averages), so fewer
+    averages are the zero-code speed-up: `num_averages=50` ran the nine other cells at about
+    1 min each and reproduced q3 <- z2 (20 is untried);
+  - COUPLER targets (qubit lines pull the couplers ~15 %, 2026-10-03): the probe has to be
+    a coupler frequency reading;
+  - sources z4, z5, zc34, zc45 (q4/q5 are not brought up, and their frequencies set the
+    safe source windows);
+  - several targets per run (non-neighbours only: two targets in superposition shift each
+    other's fringes, and a coupler source moves that shift);
+  - active reset (a hardware-gated opt-in: `scqo-qm/tests/test_reset_method.py` CARRIERS);
+  - retiring `flux_component` on `qubit_ramsey_flux_pulse` and
+    `qubit_spectroscopy_flux_pulse`: it sweeps the source INSTEAD of the own line, so a
+    target at its apex shows only |m|, and QM refuses a coupler there.
+    `resonator_spectroscopy_flux` keeps its own;
+  - a Qblox probe.
 - Done when: each item is landed or explicitly dropped by the user.
 
 ## Known issues / potential problems (found in passing)
@@ -1088,7 +1201,44 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - Done when: the loss is explained (e.g. vs stark amplitude and detuning with the swap off)
   and the chain's sink model carries it, or the tone is reshaped so it vanishes.
 
+### I38 The QM gateway simulator shows the flux DC levels on the wrong ports (low)
+- 2026-10-04, while checking `source_lead_time_ns` on the gateway simulator (5Q4C): the
+  generated QUA sets every flux element's DC offset correctly (`set_dc_offset("q1.z", ..,
+  0.2721)`, `q2.z` -0.0060, `q3.z` 0.0162, `q4.z` 0.1056, `q5.z` 0.0846, `q1_q2` 0.17006,
+  `q2_q3` 0.07083), but `get_simulated_samples()` returns the standing level 0.2721 on
+  analog keys 1-1 AND 1-2, -0.0060 on 1-3 and 1-4, 0.0162 on 1-5 and 1-6, 0.1056 on 1-7
+  and 1-8: each value on two neighbouring keys, the later elements' values nowhere. The
+  PULSES sit on the right keys with the right timing and height. So
+  `scqo run --preview`'s `simulated_waveforms.html` draws wrong standing biases. The
+  hardware is right (every apex sits where the stored bias says).
+- Not investigated: a simulator artifact, or the key -> port reading in
+  `QMBackend._simulated_waveforms`.
+- Done when: explained, and the preview either shows the right levels or says they are not
+  to be trusted.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
+- `qubit_ramsey_flux_crosstalk_pulse` (built 2026-10-04; F32). FIRST RUNS on 5Q4C the same
+  day (tag `crosstalk-hwtest`, all `--no-update`, each SUCCESSFUL with 5/5 source points):
+  q3 <- z2 m = +1.259 % +- 0.002 (`20261004-182639-890`), q1 <- zc12 m = -3.242 % +- 0.008
+  (`-182937-908`), q3 <- zc12 m = +0.951 % +- 0.003 (`-183325-517`). The apex track is a
+  line to 1-14 uV, m is the same in the first and the second half of the 1.6 us pulse, and
+  a run takes 3-4 min. The zero-code reading of q3 <- z2 (tag `crosstalk-pretest`,
+  `-182123-772`) gives |m| 1.34 % and is reproduced to 1.1 kHz by the new run's numbers.
+  THE OTHER NINE CELLS of q1-q3 x (z1, z2, z3, zc12, zc23) the same evening at
+  `num_averages=50` (tag `crosstalk-matrix`, runs `20261004-1911..1920`, about 1 min per
+  cell, all SUCCESSFUL with 5/5 source points; a repeat of q3 <- z2 reads +1.254 % +- 0.008).
+  Pulse-frame m in percent, one target per row:
+    q1 <- z2 -0.328 +- 0.004, z3 -1.131 +- 0.011, zc12 -3.242 +- 0.008, zc23 -0.461 +- 0.006
+    q2 <- z1 +1.600 +- 0.004, z3 -1.677 +- 0.032, zc12 +4.247 +- 0.016, zc23 -3.507 +- 0.008
+    q3 <- z1 +0.725 +- 0.003, z2 +1.259 +- 0.002, zc12 +0.951 +- 0.003, zc23 +2.967 +- 0.014
+  In all 12 cells the sign follows the side of the chain (q1, c12, q2, c23, q3) the source
+  sits on: + from the q1 side of the target, - from the q3 side. Windows: z1/z2 +-100 mV,
+  z3 +-40 mV, couplers -100..+30 mV. Largest line residual 33 uV (q2 <- zc12).
+  `source_lead_time_ns` ran the same night (tag `crosstalk-lead`, 19 runs at leads of 0 to
+  3 ms, 10-20 averages, all SUCCESSFUL; results under F32); on the gateway simulator the
+  source pulse rises exactly the lead before the own one and falls with it.
+  STILL OWED: a halved source window and a reversed sweep on one cell; `linearity_tol_v`
+  (0.1 mV is 2x the largest residual seen - 51 uV, at a 1 ms lead).
 - `qc_n_swap_tomography` (landed 2026-10-01). DONE on 5Q4C the same day for both 040 swaps at
   gap 260 after the re-park: theta' and the compensating amplitude agree with a same-session
   `qc_n_stark_amp` within 0.01 (plan doc section 12; two frame fixes were needed - per-shot
