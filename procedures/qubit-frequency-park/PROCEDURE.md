@@ -11,9 +11,9 @@ outputs:
   drive_freq_hz: the drive at the parked frequency, with its f_01_hz fact
   flux_offset: the DC apex (absolute), when the last window held it
   f_q_max_hz: the apex frequency at the current coupler biases, when the window held it
-experiments: [resonator_spectroscopy_flux, qubit_spectroscopy_flux_pulse, qubit_ramsey_flux_pulse, qubit_ramsey]
+experiments: [resonator_spectroscopy_flux, qubit_spectroscopy_flux_pulse, qubit_ramsey_flux_pulse, qubit_ramsey, qubit_ramsey_flux_crosstalk_pulse]
 backends: [qm]
-validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset)
+validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset); q1, q2, q3 re-parked by Steps 3-5 on 2026-10-04
 ---
 
 # qubit-frequency-park
@@ -38,13 +38,18 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
 
 - **How the fine step works.** The π/2 pulses and the readout stay at the idle point. A
   square z pulse detunes the qubit only during the idle τ, so the fringe frequency gives f01
-  at each amplitude. A pulse moves the qubit by g times the same DC step (5Q4C q1:
-  g = 0.956–0.958, no constant offset), so a park found from far away lands within ~4 % of
-  the move and a re-run converges.
-- **Couplers move qubits.** A coupler line shifts qubit apex LOCATIONS by 5–7 % of its own
-  change (5Q4C q1_q2_c: q1 5.5 %, q3 7.2 %, q3 is not even its neighbour), and shifts a
-  neighbour's apex HEIGHT through the coupler's frequency. So `flux_offset` and
-  `f_q_max_hz` hold only at the current coupler biases, and couplers are parked first.
+  at each amplitude. A pulse moves the qubit by g times the same DC step, with no constant
+  offset, and g differs from line to line (5Q4C: q1 0.956–0.958, q2 0.921). A park found
+  from far away therefore lands within 4–8 % of the move, and a re-run converges.
+- **Every flux line moves every apex, and a DC move more than a pulse.** At DC a coupler
+  line shifts qubit apex LOCATIONS by 6–13 % of its own change (5Q4C zc12: q1 5.6 %, q2
+  12.8 %, q3 7.4 %, q3 is not even its neighbour), and another QUBIT's line by about 8 %
+  (z2: q1 8.4 %, q3 7.7 %). A pulse of a few microseconds reads far less (z2: −0.3 % and
+  +1.3 %): a slow part of 6–9 points arrives over about a millisecond
+  (`scq-reports/reports/flux_crosstalk_time_dependence_20261004`, BACKLOG F32). A park is a
+  DC move, so the DC values are the ones that count here. A coupler also shifts a
+  neighbour's apex HEIGHT through its own frequency. So `flux_offset` and `f_q_max_hz` hold
+  only at the current biases of the other lines, and couplers are parked first.
 
 ## Prerequisites
 
@@ -99,9 +104,10 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
 - **Decide:**
   - SUCCESSFUL, |excursion| ≤ 0.2 mV: accept; this is within the run-to-run scatter.
     Go to Step 4.
-  - SUCCESSFUL, larger: accept and run Step 3 again. Each run leaves ~4 % of its move: from
-    +8 mV, run 1 stopped 0.39 mV short and run 2 landed 0.016 mV from the DC reference. A
-    move of more than ~20 mV may take a third run.
+  - SUCCESSFUL, larger: accept and run Step 3 again. Each run misses by 4–8 % of its move
+    (1 − g): from +8 mV, q1's run 1 stopped 0.39 mV short and run 2 landed 0.016 mV from the
+    DC reference; q2 moved by 0.73 mV came out 0.06 mV past its apex. A move of more than
+    ~20 mV may take a third run.
   - `apex_not_bracketed` or `park_out_of_window`: the window missed. Shift it toward the side
     where the curve rises (apex) or toward the target, or do Step 2 first.
   - Refused before the probe with `folding_risk` or `undersampled`, or `fold_suspected`: the
@@ -119,17 +125,29 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
 
 ### Step 5: several qubits
 
-- Park them one at a time with Steps 3–4. Qubit-to-qubit line crosstalk is ~1 % (5Q4C: an
-  apex moves ~0.06 mV), so one pass is enough.
-- End with one multi-target `qubit_ramsey_flux_pulse` as an inspection. It is record-only by
-  design (`multi_target_context`): every line moves at once, and simultaneous neighbours pick
-  up ZZ/2 in their fringes.
+- Park them one at a time with Steps 3–4. A park is a DC move, and at DC a qubit line
+  moves the other qubits' apexes by about 8 % of its own change (see *Physics in brief*;
+  the ~1 % once quoted here is the short-pulse value). A re-park of 1 mV therefore moves
+  the others by ~0.08 mV and one pass is enough. After a move of more than ~2 mV on any
+  line, read the qubits parked BEFORE it again (Step 3) and re-park those above 0.2 mV.
+- End with a record-only reading of each qubit (`qubit_ramsey_flux_pulse --no-update`, one
+  target per run), or with one multi-target run as an inspection. The multi-target run is
+  record-only by design (`multi_target_context`): every line moves at once, and simultaneous
+  neighbours pick up ZZ/2 in their fringes.
 
 ### Step 6: once per cooldown
 
-- The crosstalk matrix, coupler columns included. The SIGNED coefficient comes from the apex
-  LOCATION at two source biases; a `flux_component` scan of a qubit sitting at its apex gives
-  only |m|. Method and open decisions: `docs/coupler-readout-plan.md`, BACKLOG F24.
+- The crosstalk matrix, coupler columns included. It has two readings per cell, and a park
+  needs the DC one:
+  - **DC:** move the source line's `idle_flux` by ±20 mV with `scqo set`, read the
+    target's apex with Step 3 (`--no-update`) at each stop, return to the start in between
+    and at the end. The apex moves by −m times the DC move.
+  - **Short pulses:** `qubit_ramsey_flux_crosstalk_pulse --set source_line=<line>`, about a
+    minute per cell, no device write. Its `source_lead_time_ns` reads how the value grows
+    toward the DC one.
+  - A `flux_component` scan of a qubit sitting at its apex gives only |m|, and not even that
+    reliably next to a coupler (the apex HEIGHT moves too).
+  Open decisions (where the coefficients are stored): BACKLOG F28, F32.
 
 ## Stop criteria
 
@@ -165,6 +183,13 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
    drive, and the 16 ns π/2 tolerates it. A qubit with a long, weak π/2 that has moved far
    loses fringe contrast. Park coarsely first (Step 2), or retune the drive (Step 4) before
    the fine step.
+8. **Long flux pulses at a high duty cycle move the apexes.**
+   - *Case:* 5Q4C 2026-10-04: crosstalk runs that held a source line up to 100 mV off its
+     bias for 0.3–3 ms of every shot. Over that evening the apexes of q1, q2 and q3 went
+     from +0.19 / +0.06 / +0.38 mV to −0.83 / −0.73 / −0.36 mV from their biases, most of it
+     while those runs were taken. Not separated from the ordinary drift.
+   - *Cure:* re-park after such runs, or keep their duty cycle low (a longer
+     `thermalization_time_ns`).
 
 ## Typical values
 
@@ -197,6 +222,14 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
   `155314-209` … `155531-551`, q3 `155630-420` … `155855-936`.
 - **Coupler crosstalk** (tag `coupler-scan`): see `docs/coupler-readout-plan.md`.
 
+5Q4C runs of 2026-10-04:
+
+- **DC crosstalk** (tag `crosstalk-dc`): zc12 walked ±20 mV, `20261004-193018-577` …
+  `194637-322`; z2 walked ±20 mV, `215825-075` … `221522-451`.
+- **Re-park of q1, q2, q3** (tag `re-park`, Steps 3–5 as written): `223509-604` …
+  `224703-886`. Two fine passes per qubit; the closing readings sat +0.02 / −0.03 /
+  −0.01 mV from the new biases and the Step 4 detuning errors were +4.8 / −0.8 / +0.4 kHz.
+
 ## Open issues
 
 `BACKLOG.md`:
@@ -204,4 +237,6 @@ validated: hardware 5Q4C q1, 2026-09-26 (apex; from a deliberate +8 mV DC offset
 - **F24:** coupler state readout and the crosstalk matrix (Step 6, Prerequisite 1)
 - **I24:** the `ramsey` estimator at large virtual detuning (Trap 2)
 - **I25:** the pulse arch's excursion ratio (Step 2)
+- **F28, F32:** where the crosstalk coefficients are stored, and the slow part of the
+  crosstalk (Steps 5 and 6)
 - Qblox: `qubit_ramsey_flux_pulse` has a probe, but no hardware run yet.
