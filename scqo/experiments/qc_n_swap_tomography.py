@@ -64,14 +64,18 @@ from pydantic import Field, field_validator
 from ..contract import ContractError, DatasetContract
 from ..experiment import FACT_MEASURED, Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     joint_state_labels,
     states_to_joint_population,
 )
+from ._diagrams import joint_measure_step, swap_chain_lanes, swap_rounds
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT
 from ._sim import stable_seed
 from .pair_swap_chevron import DRIVE_SIDE_DESC, FLUX_SIDE_DESC, _flux_member_problems, _role_names
 
@@ -219,6 +223,79 @@ class QcNSwapTomography(Experiment):
 
     name: ClassVar[str] = "qc_n_swap_tomography"
     writes: ClassVar[tuple[str, ...]] = ("theta_rad",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "both members play pulses: the x180 that excites one, and the "
+                    "rotations in front of the readout on both"),
+        Requirement("pi_amp",
+                    "the x180 on the excited member, and on both members in the "
+                    "readout calibration, has to be a full pi pulse"),
+        PAIR_FLUX_PULSE_ORIGIN,
+        *PAIR_JOINT_READOUT,
+        Requirement("fidelity_g",
+                    "without the in-run calibration the readout is corrected with "
+                    "the members' stored fidelities",
+                    when=("readout_calibration_shots", 0)),
+        Requirement("fidelity_e",
+                    "without the in-run calibration the readout is corrected with "
+                    "the members' stored fidelities",
+                    when=("readout_calibration_shots", 0)),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "theta_rad_err": "the standard error of the proposed angle",
+        "theta_stark_amp": "the stark amplitude the angle was taken at: the one with "
+                           "the smallest phase per round",
+        "theta_spread_rad": "the spread of the fitted angle across the stark "
+                            "amplitudes; 0 with one amplitude",
+        "theta_consistency_sigma": "the largest distance of one amplitude's angle "
+                                   "from the reported one, in combined standard "
+                                   "errors; above 3 nothing is proposed",
+        "phase_at_theta_amp_rad": "the relative phase per round at that amplitude",
+        "compensating_stark_amp": "the stark amplitude where the phase per round "
+                                  "crosses zero; NaN with one amplitude",
+        "compensation_extrapolated": "1 when that amplitude lies outside the "
+                                     "measured ones",
+        "t1_loss_per_step_high": "the excitation the high member loses per round",
+        "t1_loss_per_step_low": "the excitation the low member loses per round",
+        "dephasing_per_step": "the loss of the coherence between the two members "
+                              "per round",
+        "prep_error": "the part of the prepared state that is not the one excitation",
+        "leak_to_11_per_step": "the growth per round of the population with both "
+                               "members excited",
+        "predicted_t1_loss_high": "the loss per round that the high member's T1 "
+                                  "alone predicts; NaN without round_duration_ns "
+                                  "and a measured T1",
+        "predicted_t1_loss_low": "the same for the low member",
+        "predicted_dephasing": "the dephasing per round that T1 and T2* alone "
+                               "predict; NaN without round_duration_ns and "
+                               "measured values",
+        "excess_dephasing_per_step": "the fitted dephasing minus that prediction",
+        "frame_step_rad": "how far the two members' drive frames turn against each "
+                          "other per round, as fitted",
+        "predicted_frame_step_rad": "the same from the two drive frequencies and "
+                                    "round_duration_ns; NaN without the round "
+                                    "length",
+        "fit_rms": "the rms residual of the fit; above 0.08 nothing is proposed",
+        "n_fit_ok": "the number of stark amplitudes whose fit converged",
+        "readout_calibrated": "1 when the in-run readout calibration was used",
+        "readout_corrected": "1 when any readout correction was used",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QcNSwapTomographyParameters) -> SequenceDiagram:
+        partner = "high" if params.drive_side == "low" else "low"
+        diagram = SequenceDiagram(swap_chain_lanes(params, partner=f"{partner}.xy"))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        swap_rounds(diagram, params, "x N", count_axis="swap_count",
+                    stark_axis="stark_amp")
+        diagram.step(
+            Block("drive", "rotation", "gate", swept="basis",
+                  note="per member, from the basis label: z nothing, x -y90, y x90"),
+            Block("partner", "rotation", "gate", swept="basis"))
+        joint_measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Repeated partial swaps read by two-qubit state tomography: excite ONE member of a "
         "pair, repeat its swap N times with a fixed AC-Stark tone between swaps (the "

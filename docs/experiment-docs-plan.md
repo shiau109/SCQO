@@ -608,7 +608,8 @@ class Experiment(ABC):
 | 4 | 磁通線的時間對齊與失真，3 個 | 完成（理論留空），見 §17 |
 | 5 | Stark 位移、參數式驅動、電荷宇稱，6 個 | 完成（理論留空），見 §18 |
 | 6 | 一對量子位元與耦合器，7 個 `pair_*` | 完成（理論留空），見 §19 |
-| 7 到 8 | 見 §7 | 未開始 |
+| 7 | 重複交換與 Stark 補償，4 個（`qc_n_*`、`qc_swap_flux_stark`） | 完成（理論留空），見 §20 |
+| 8 | 專案 `MpembaEP_trotter`，2 個 | 未開始 |
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -765,6 +766,15 @@ class Experiment(ABC):
   文件照實說明了怎麼讀；圖本身要在 scqat 改（I40，§19.3）。
 - pair 實驗的前置條件表只列欄位名稱，分不出是哪個成員或哪條線的值；每份文件在表格下方用一段話說明。
   這個寫法請過目（§19.2）。
+- 第 7 批四個實驗同樣只有 QM 有 probe；`qc_n_swap_tomography` 的登錄說明結尾還寫著「QM only.」，
+  是核心裡描述後端的句子（與上面 cryoscope 那一條同一個問題，§20.4）。
+- `qc_swap_flux_stark` 的預期結果圖是帶著先驗角度畫的（`swap_angle_rad=0.196`），不是預設參數。
+  不給先驗，估計器不會回報共振點與補償值，圖就沒有內容可讀。文件有寫明（§20.2）。
+- `qc_n_stark_amp`、`qc_n_swap_tomography`、`qc_swap_flux_stark` 的 `swap_operation` 預設是 `iswap`（完整交換），
+  但它們的欄位說明都寫這個讀法是給部分交換用的。要不要把預設改成 `partial_swap`（`pair_swap_angle` 就是這樣），
+  或至少讓 `qc_n_stark_amp` 在 `min_osc_period` 貼近 2 時不判定成功（§20.4）。
+- `qc_n_swap_amp` 的登錄說明寫「能更精細地找到正確的振幅」，但 `pair_swap_chevron` 的模組說明指出重複交換圖的峰不是共振點。
+  文件採用後者，登錄說明要不要改（§20.4）。
 
 **發現但沒有修的問題（都在 `BACKLOG.md`）**
 
@@ -780,6 +790,10 @@ class Experiment(ABC):
 - I40：`pair_zz_coupler` 的 ZZ 低於 −2 倍 detuning 時會回報一個假的去耦點，而且判定成功、提議寫回（已重現，§19.3）。
 - I41：pair 系列三處呈現不一致（`result.fit` 裡放了字串、`pair_swap_flux_map` 的軸說明與圖相反、
   `pair_zz_coupler` 的 `idle_time_ns` 是單臂時間但說明沒講清楚）。
+- I41 第 7 批補了兩條：`qc_n_swap_amp` 的登錄說明與 `pair_swap_chevron` 的說法相反；
+  三個要用部分交換的實驗預設卻是完整交換。
+- F15、F16、F18、I36：原本就在，第 7 批文件的 Traps 有引用（角度沒有誤差棒；回合的實際長度沒有記錄；
+  Stark 視窗不超過一圈沒有程式把關；強的 Stark 訊號每回合多損失布居）。
 - I26、I21、F24：原本就在，第 6 批文件的 Traps 有引用（`pair_zz_coupler` 把脈衝振幅當成絕對偏壓寫回；
   成員讀出失效的圖仍判定成功；`pair_coupler_spectroscopy_swap` 找不到 f01 時把下一條線當成 f01）。
 - I32、F12、F18：原本就在，第 5 批文件的 Traps 有引用（`qubit_parametric_drive_time` 回報的「最佳頻率」不是共振點、
@@ -966,3 +980,54 @@ class Experiment(ABC):
    `validated` 仍然都寫 `offline`，等你填。
 6. **`pair_zz_coupler` 的寫回在偏壓不是 0 V 時是錯的（I26）。** 文件的 Traps 寫了正確的值怎麼算
    （舊的靜態偏壓加上過零點），並建議拒絕提議、手動設定。這個建議請過目。
+
+## 20. 第 7 批實作紀錄（2026-10-05）：重複交換與 Stark 補償，四個實驗
+
+`qc_n_swap_amp`、`qc_n_stark_amp`、`qc_n_swap_tomography`、`qc_swap_flux_stark`。連同前面的，51 個裡有 49 個有文件，
+剩下專案 `MpembaEP_trotter` 的兩個。這四個實驗只有 QM 有 probe，所以只動了 SCQO 與 scqo-qm。
+
+### 20.1 這一批加的共用宣告
+
+四個實驗的序列幾乎相同：重設、`x180`、重複 N 次的回合、讀出。回合是「交換、可選的等待、Stark 訊號」。
+所以這次把回合寫成一個共用的畫法，放在 `experiments/_diagrams.py`：
+
+- `swap_chain_lanes`：軌道名稱（被激發成員的驅動線、帶交換脈衝的磁通線、聯合讀出），成員用角色命名。
+- `swap_rounds`：畫出重複框與框裡的回合；次數、磁通振幅、Stark 振幅哪一個是掃描軸由呼叫的實驗指定。
+  `qc_n_swap_amp` 沒有 Stark 訊號；`qc_swap_flux_stark` 的次數是固定值，框上寫的是實際的數字。
+- `joint_measure_step`：讀出那一步，註腳依 `readout_mode` 說明資料集存的是聯合布居還是每一發的能階。
+
+前置條件沿用第 6 批的 pair 組合。`qc_n_swap_tomography` 另外宣告兩個成員都要有校正好的脈衝
+（讀出前的旋轉在兩個成員上都播），以及 `readout_calibration_shots=0` 時才需要的 `fidelity_g`、`fidelity_e`。
+
+### 20.2 預期結果圖
+
+- `qc_n_swap_amp`：布居圖（它只有這一張）。
+- `qc_n_stark_amp`：補償圖。兩個判準在同一個振幅達到最大，右邊是那個振幅上的振盪與擬合。
+- `qc_n_swap_tomography`：分量圖。三個 Bloch 分量與三種布居隨交換次數的變化，連同擬合。
+- `qc_swap_flux_stark`：脊線圖，用 `swap_angle_rad=0.196` 畫（`FIGURE_PARAMETERS` 新增一條）。
+  0.196 是模擬器在預設四個回合下埋的單次交換角度。不給這個先驗，兩道閘門都不開，圖上沒有共振點與補償值。
+
+### 20.3 驅動端的宣告（QM）
+
+四個類別都有後端註記，`qc_n_swap_tomography` 另外加上 `pi_amp_x90`。重點：
+
+- 四個都要求 `drive_side` 與 `flux_side` 指向這一對的 control 成員，因為交換操作只在 control 的磁通線上播成員脈衝。
+- 兩個以族群讀出的 Stark 實驗用切換中頻的方式讓訊號偏離共振；斷層掃描不切換頻率，Stark 操作必須自帶 detuning，
+  每一發開頭重設兩個成員的參考相位。
+- 一個回合的實際長度是交換、等待、訊號再加約 8 ns 的程式開銷（在 gateway 模擬器上量到的）。
+- 每一對各跑一支程式；`--preview` 只建一對的程式；四個都拒絕 `reset_method=active`。
+
+probe 沒有改。
+
+### 20.4 待你過目（已加進 §16）
+
+1. **預設值與用途不一致。** 三個實驗的 `swap_operation` 預設是 `iswap`，欄位說明卻寫讀法是給部分交換用的。
+   對 `qc_n_stark_amp` 這不只是不方便：完整交換正好落在週期讀法失效的邊界，而執行仍然判定成功。
+   文件的 Traps 寫了要指定部分交換的操作。
+2. **`qc_n_swap_amp` 的登錄說明與文件說法不同。** 登錄說明說它能精細地找到正確振幅；
+   文件依 `pair_swap_chevron` 的模組說明寫「最亮的振幅不是共振點」，並指向 `qc_swap_flux_stark` 與 chevron。
+3. **`qc_n_swap_tomography` 的登錄說明寫著「QM only.」。** 這是核心裡描述後端的句子，照規則應該在驅動那邊。
+4. **`qc_swap_flux_stark` 的圖不是預設參數畫的**（§20.2）。
+5. **硬體數字沒有放進文件。** 只引用了程序文件與 BACKLOG 已經寫下的事實：弧形擬合的角度相對斷層掃描最多低 18 %、
+   單一回合時高 10 %；強 Stark 訊號下每回合的損失是 T1 預測的三到四倍；週期角度每次執行約有 0.007 rad 的散布。
+   四個實驗都在 5Q4C 上跑過，`validated` 仍然寫 `offline`，等你填。

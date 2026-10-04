@@ -1206,8 +1206,9 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   figures draw `f - detuning` with a correct unit. Fix together with I26 (the frame of the
   written value).
 
-### I41 Pair family: three presentation mismatches (hygiene)
-- Found 2026-10-04 while documenting the seven `pair_*` experiments.
+### I41 Pair family: presentation mismatches (hygiene)
+- Found 2026-10-04 while documenting the seven `pair_*` experiments and the four
+  swap-chain ones.
 - `pair_coupler_crossing_pulse` puts a STRING into `result.fit` (`center_kind`), which is
   declared `dict[str, float]`: every run prints pydantic's "serialized value may not be as
   expected". The two punchouts do the same (`'punchout'`). Either an integer code, or a
@@ -1219,6 +1220,15 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   per arm, and the fringe model is in that time), while the field text says "echo evolution
   time" and the `define_sweep` comment speaks of keeping "the two arms whole nanoseconds".
   Its bias field texts also say "standing bias" for what is played as a pulse (I26).
+- `qc_n_swap_amp`: the registry description says the map "locates the correctly calibrated
+  amplitude far more finely than a single swap", while `pair_swap_chevron`'s module text
+  shows why the peak of a repeated-swap map is NOT the resonance (the between-swap phase
+  moves it by about phi / t_pulse). The document follows the second.
+- `qc_n_stark_amp`, `qc_n_swap_tomography` and `qc_swap_flux_stark` default
+  `swap_operation` to `iswap`, the full swap, while their own field texts say the reading
+  is meant for a PARTIAL swap (for `qc_n_stark_amp` a full swap sits on the limit where
+  the period reading stops meaning anything). `pair_swap_angle` defaults to
+  `partial_swap`.
 - Done when: each is made consistent, on whichever side is judged right.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)

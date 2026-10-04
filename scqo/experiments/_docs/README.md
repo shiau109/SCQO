@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**45 of 51 registered experiments are documented.**
+**49 of 51 registered experiments are documented.**
 
 ## Shared
 
@@ -23,6 +23,10 @@ Device-level calibration and characterization, for every chip and operator.
 | [pair_swap_chevron](pair_swap_chevron/README.md) | Single-excitation swap chevron: excite ONE member of a pair, then sweep a flux pulse (absolute volts) on one member's flux line against its duration, reading both members' joint populations. | offline |
 | [pair_swap_flux_map](pair_swap_flux_map/README.md) | Fixed-duration 2D swap map: excite ONE member of a pair, then play a coupler flux pulse and a member flux pulse simultaneously over a fixed window, sweeping both amplitudes (absolute volts) and reading both members' joint populations. | offline |
 | [pair_zz_coupler](pair_zz_coupler/README.md) | Residual-ZZ vs coupler standing bias (echo fringe under a virtual detuning, one pair member measured): finds the signed ZZ zero crossing and proposes it as idle_flux on the coupler's flux line (the interaction-OFF standing bias) | offline |
+| [qc_n_stark_amp](qc_n_stark_amp/README.md) | N-swap AC-Stark-amplitude error-amplification map: excite ONE member of a pair, then apply N repeated swaps (each at its fixed baked flux amplitude) and, after every swap, an off-resonant RF Stark tone on the excited qubit at the same swept amplitude, reading both members' joint populations. | offline |
+| [qc_n_swap_amp](qc_n_swap_amp/README.md) | N-swap swap-amplitude error-amplification map: excite ONE member of a pair, then apply N repeated swaps (each at the same swept control-qubit flux amplitude, absolute volts) and read both members' joint populations. | offline |
+| [qc_n_swap_tomography](qc_n_swap_tomography/README.md) | Repeated partial swaps read by two-qubit state tomography: excite ONE member of a pair, repeat its swap N times with a fixed AC-Stark tone between swaps (the qc_n_stark_amp round), then measure both members in the nine Pauli bases. | offline |
+| [qc_swap_flux_stark](qc_swap_flux_stark/README.md) | Fixed-count swap map over TWO amplitudes: excite ONE member of a pair, then apply a fixed number N of swaps — each at the same swept control-qubit flux amplitude (absolute volts), each followed by an off-resonant RF Stark tone on the excited member at the same swept amplitude factor — and read both members' joint populations. | offline |
 | [qubit_deterministic_benchmarking](qubit_deterministic_benchmarking/README.md) | Amplitude error amplification: plays ONE target gate N times and sweeps N, so a small per-gate over/under-rotation accumulates into a resolvable fringe. | offline |
 | [qubit_drag_alternating](qubit_drag_alternating/README.md) | Sweep DRAG beta coefficient and play alternating pulse sequences. | offline |
 | [qubit_drag_equator](qubit_drag_equator/README.md) | Sweep the DRAG beta coefficient under two sequences that both end on the equator: x180 then y90, and y180 then x90 (two x90 / two y90 in place of the pi pulse for target_gate='x90'). | offline |
@@ -68,4 +72,4 @@ None yet.
 
 ## Not documented yet
 
-`qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`
+`qc_trotter_compensation`, `qc_unidirectional_trotter`

@@ -289,6 +289,9 @@ FIGURE_PARAMETERS: dict[str, dict] = {
     "qubit_parametric_drive_time": {"use_state_discrimination": True},
     # ramp_v has no default: the run is refused without one
     "pair_coupler_spectroscopy_swap": {"ramp_v": [0.14, 0.0]},
+    # the ridge is read only with a prior angle; this is the simulated one
+    # (a quarter of a full transfer over the default four rounds)
+    "qc_swap_flux_stark": {"swap_angle_rad": 0.196},
     # the demo's shot is a few us long, so the default 30 s record is more shots
     # than max_num_shots allows
     "qubit_parity_switch_continuous": {"record_time_s": 2.0},

@@ -68,6 +68,48 @@ def pair_measure_step(diagram: SequenceDiagram, *, readout: str = "readout",
     diagram.step(Block(readout, "readout", "acquire", note=note))
 
 
+def swap_chain_lanes(params: Parameters, **extra: str) -> dict[str, str]:
+    """The lanes of a repeated-swap experiment: the excited member's drive line,
+    the flux line that carries the swap, any ``extra`` lanes, the joint readout.
+    The members are named by ROLE, from ``drive_side`` / ``flux_side``."""
+    return {"drive": f"{params.drive_side}.xy", "flux": f"{params.flux_side}.z",
+            **extra, "readout": PAIR_READOUT_LANE}
+
+
+#: footnotes of the repeated round's blocks
+SWAP_STORED_NOTE = "the swap_operation's pulses, at their stored amplitudes"
+SWAP_SWEPT_NOTE = ("the swap_operation: its member pulse at the swept amplitude, "
+                   "its coupler pulse as stored")
+STARK_NOTE = "off-resonant by stark_detuning_hz; its stored amplitude times stark_amp"
+
+
+def swap_rounds(diagram: SequenceDiagram, params: Parameters, label: str, *,
+                count_axis: str | None = None, flux_axis: str | None = None,
+                stark_axis: str | None = None, stark: bool = True) -> None:
+    """The repeated round of the swap-chain experiments, in a repeat bracket:
+    the swap, the gap when ``operation_gap_ns`` asks for one, and the stark
+    tone on the excited member. An axis argument names the sweep axis that
+    block (or the count itself) varies with."""
+    with diagram.repeat(label, swept=count_axis):
+        diagram.step(Block("flux", "swap", "flattop", swept=flux_axis,
+                           note=SWAP_SWEPT_NOTE if flux_axis else SWAP_STORED_NOTE))
+        if getattr(params, "operation_gap_ns", 0):
+            diagram.step(Block("flux", "gap", "wait"))
+        if stark:
+            diagram.step(Block("drive", "stark", "tone", swept=stark_axis,
+                               note=STARK_NOTE))
+
+
+def joint_measure_step(diagram: SequenceDiagram, params: Parameters) -> None:
+    """``pair_measure_step`` for an experiment with a ``readout_mode``: the
+    footnote says which of the two forms the dataset holds."""
+    if getattr(params, "readout_mode", "average") == "shot":
+        pair_measure_step(diagram, note="both members, discriminated: every "
+                                        "shot's two levels are kept")
+    else:
+        pair_measure_step(diagram)
+
+
 def depletion_step(diagram: SequenceDiagram, *, readout: str = "readout") -> None:
     """The wait after a readout for its photons to leave the resonator - the
     readout channel's ``readout_depletion_s`` (``_depletion.depletion_wait_ns``)."""

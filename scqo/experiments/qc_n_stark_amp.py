@@ -73,12 +73,16 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     joint_state_labels,
     states_to_joint_population,
 )
+from ._diagrams import joint_measure_step, swap_chain_lanes, swap_rounds
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
@@ -91,6 +95,7 @@ from .pair_swap_chevron import (
     _flux_member_problems,
     _role_names,
     summarize_transfer_map,
+    transfer_map_extracts,
 )
 
 
@@ -194,6 +199,49 @@ class QcNStarkAmp(Experiment):
 
     name: ClassVar[str] = "qc_n_stark_amp"
     writes: ClassVar[tuple[str, ...]] = ("theta_rad",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        **transfer_map_extracts(
+            ("stark_amp", "the stark amplitude factor"),
+            ("swap_count", "the number of swaps")),
+        "compensating_stark_amp": "the swept stark amplitude whose oscillation along "
+                                  "the swap count is the strongest and the slowest: "
+                                  "the compensation point",
+        "compensating_stark_amp_refined": "the same point interpolated between the "
+                                          "swept amplitudes",
+        "compensating_is_refined": "1 when that interpolation was possible",
+        "compensation_score": "the score of the picked amplitude: the geometric mean "
+                              "of its contrast and its period, each as a fraction of "
+                              "the largest in the map",
+        "compensating_osc_contrast": "the oscillation contrast at the picked "
+                                     "amplitude: half the observed swing of the "
+                                     "transfer",
+        "compensating_osc_period": "the oscillation period at the picked amplitude, "
+                                   "in swaps per cycle",
+        "compensating_theta_rad": "the angle of one round at the picked amplitude, pi "
+                                  "over that period. Proposed as theta_rad",
+        "max_osc_contrast_stark_amp": "the amplitude with the largest contrast",
+        "max_osc_contrast": "that contrast",
+        "max_osc_period_stark_amp": "the amplitude with the longest period",
+        "max_osc_period": "that period",
+        "min_osc_period": "the shortest period in the map; at 2 swaps per cycle the "
+                          "reading is at its limit",
+        "n_osc_ok": "the number of stark amplitudes whose oscillation was fitted",
+        "osc_criteria_agree": "1 when the two criteria pick the same amplitude or "
+                              "neighbouring ones",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QcNStarkAmpParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(swap_chain_lanes(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        swap_rounds(diagram, params, "x N", count_axis="swap_count",
+                    stark_axis="stark_amp")
+        joint_measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "N-swap AC-Stark-amplitude error-amplification map: excite ONE member of a pair, then "
         "apply N repeated swaps (each at its fixed baked flux amplitude) and, after every swap, "

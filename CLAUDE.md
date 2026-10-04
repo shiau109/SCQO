@@ -309,7 +309,8 @@ scqo/
                   #   for a pair: PAIR_JOINT_READOUT, PAIR_MEMBER_PI - the fields are
                   #   the MEMBERS' and the flux lines', a pair holds none of them)
     _diagrams.py  # sequence-diagram fragments several experiments share (lane
-                  #   sets, depletion_step, prepared_state_steps, pair_measure_step)
+                  #   sets, depletion_step, prepared_state_steps, pair_measure_step,
+                  #   swap_rounds = the repeated swap / gap / stark round)
     _capabilities/  # one module per capability: the canonical Parameters mixin + contract
                     #   fragment + sim/estimate helpers (state_readout.py,
                     #   flux.py = the swept flux window in TWO FRAMES sharing one axis

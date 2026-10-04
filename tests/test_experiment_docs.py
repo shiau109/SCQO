@@ -45,8 +45,7 @@ CORE = {obj.name: obj for obj in (getattr(registry, n) for n in registry.__all__
 #: document means deleting its name here, and a new experiment never joins it -
 #: it ships with its document (CLAUDE.md, promotion checklist).
 UNDOCUMENTED = frozenset({
-    "qc_n_stark_amp", "qc_n_swap_amp", "qc_n_swap_tomography",
-    "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
+    "qc_trotter_compensation", "qc_unidirectional_trotter",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))

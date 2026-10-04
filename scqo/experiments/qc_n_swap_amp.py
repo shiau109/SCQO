@@ -36,12 +36,16 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     joint_state_labels,
     states_to_joint_population,
 )
+from ._diagrams import joint_measure_step, swap_chain_lanes, swap_rounds
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
@@ -54,6 +58,7 @@ from .pair_swap_chevron import (
     _flux_member_problems,
     _role_names,
     summarize_transfer_map,
+    transfer_map_extracts,
 )
 
 
@@ -102,6 +107,21 @@ class QcNSwapAmp(Experiment):
     """Backend-agnostic N-swap amplitude map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qc_n_swap_amp"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = transfer_map_extracts(
+        ("flux_amp_v", "the flux amplitude"), ("swap_count", "the number of swaps"))
+
+    @classmethod
+    def sequence_diagram(cls, params: QcNSwapAmpParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(swap_chain_lanes(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        swap_rounds(diagram, params, "x N", count_axis="swap_count",
+                    flux_axis="flux_amp_v", stark=False)
+        joint_measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "N-swap swap-amplitude error-amplification map: excite ONE member of a pair, then "
         "apply N repeated swaps (each at the same swept control-qubit flux amplitude, "

@@ -79,12 +79,16 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     joint_state_labels,
     states_to_joint_population,
 )
+from ._diagrams import joint_measure_step, swap_chain_lanes, swap_rounds
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
@@ -97,6 +101,7 @@ from .pair_swap_chevron import (
     _flux_member_problems,
     _role_names,
     summarize_transfer_map,
+    transfer_map_extracts,
 )
 
 #: phase (rad) the SIMULATED map accumulates per round at the far edge of the
@@ -308,6 +313,59 @@ class QcSwapFluxStark(Experiment):
     """Backend-agnostic fixed-N flux x stark map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qc_swap_flux_stark"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        **transfer_map_extracts(
+            ("flux_amp_v", "the flux amplitude"),
+            ("stark_amp", "the stark amplitude factor")),
+        "resonance_flux_amp_v": "the flux amplitude of the resonance: the centre of "
+                                "the arch fitted through the compensated transfer",
+        "resonance_flux_err_v": "its one-sigma error",
+        "compensating_stark_amp": "the compensating stark amplitude at that flux, "
+                                  "interpolated between the two rows around it",
+        "compensating_stark_err": "its one-sigma error",
+        "swap_angle_rad_refined": "the exchange angle of one swap, from the height of "
+                                  "the arch",
+        "swap_angle_err_rad": "its one-sigma error",
+        "swap_angle_rad_prior": "the swap_angle_rad that was given; NaN when none was",
+        "swap_angle_consistent": "1 when the refined angle agrees with that prior",
+        "arch_r_squared": "the R squared of the arch fit",
+        "ridge_ok": "1 when the prior allows the resonance and the compensation to be "
+                    "read (swap_count times the angle up to pi)",
+        "branch_ok": "1 when it also allows the angle to be read (up to pi/2)",
+        "resonance_at_edge": "1 when the fitted centre lies outside the rows that "
+                             "carry signal; the numbers are withheld",
+        "resonance_unresolved": "1 when the centre's error is too large or the fit "
+                                "failed; the numbers are withheld",
+        "compensation_in_gap": "1 when the resonance lies among rows with no stark "
+                               "signal; only the compensation is withheld",
+        "ridge_peak_flux_amp_v": "the flux amplitude of the row whose compensated "
+                                 "transfer is the largest; needs no prior",
+        "ridge_peak_transfer": "that transfer",
+        "ridge_slope_per_v": "how fast the compensating amplitude moves with the flux",
+        "ridge_local_rms": "the scatter of the rows' compensating amplitudes around "
+                           "that line",
+        "ridge_wrap_amp": "the stark amplitude of one full turn of phase, as the map "
+                          "measured it; NaN when the ridge does not wrap",
+        "stark_amp_2pi_prior": "the stark_amp_2pi that was given; NaN when none was",
+        "wrap_consistent": "1 when the measured turn agrees with that prior",
+        "n_ridge_rows": "the number of flux rows whose transfer swings by at least "
+                        "min_row_contrast along the stark axis",
+        "n_fold_rows": "the number of rows read on the far side of a full transfer",
+        "max_row_contrast": "the largest swing of one row along the stark axis",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QcSwapFluxStarkParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(swap_chain_lanes(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        swap_rounds(diagram, params, f"x {params.swap_count}",
+                    flux_axis="flux_amp_v", stark_axis="stark_amp")
+        joint_measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Fixed-count swap map over TWO amplitudes: excite ONE member of a pair, then apply a "
         "fixed number N of swaps — each at the same swept control-qubit flux amplitude "
