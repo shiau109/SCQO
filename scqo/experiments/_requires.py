@@ -53,6 +53,17 @@ DRIVE_CHAIN = Requirement(
     "drive_power_dbm", "the run moves the drive chain to its own saturation power "
                        "and restores this value afterwards, so one has to be set")
 
+#: the amplitude of the gate a ``target_gate`` experiment plays: the pi pair
+#: or the x90 pair, as ``_gate_target.amp_knob`` decides. For the two-valued
+#: ``target_gate`` of the DRAG calibrations; an experiment with more gate names
+#: states its own pair.
+GATE_AMPLITUDE: tuple[Requirement, ...] = (
+    Requirement("pi_amp", "the rotation angle of the gate whose DRAG term is tuned",
+                when=("target_gate", "x180")),
+    Requirement("pi_amp_x90", "the rotation angle of the gate whose DRAG term is tuned",
+                when=("target_gate", "x90")),
+)
+
 #: a discriminator that is ALWAYS used - for an experiment whose instrument-side
 #: arithmetic consumes the discriminated state of every shot. (The optional
 #: case is the state_readout capability's own conditional pair.)

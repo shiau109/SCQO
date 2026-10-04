@@ -783,6 +783,12 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `scqat/tools/dip_fit.py` is inclusive, so a centre sitting on the bound passes.
 - `readout_frequency` / `readout_power`: the best point is `nanargmax` over the sweep
   (`readout_fidelity/estimator.py::_select_best_index`) and an endpoint is accepted.
+- 2026-10-04, three more found while documenting them (their documents' Traps say so):
+  `qubit_drag_alternating` - scqat returns `success: True` unconditionally;
+  `qubit_drag_equator` - the estimator computes whether the crossing is inside the swept
+  window and then discards it, so an extrapolated crossing is SUCCESSFUL;
+  `qubit_pi_pulse_error` - the inline fit clips its vertex to the window with `np.clip`
+  and is SUCCESSFUL unless it raises. (`qubit_deterministic_benchmarking` is I30.)
 - Related: the uncertainties that would expose this (`detuning_err`, `fwhm_err`,
   `chi_square`, peak stderrs, Ramsey `var_explained`) are computed but reach only
   `analysis/<target>/*_metadata.json` — not `Result.fit`, and not at all under
@@ -856,6 +862,25 @@ provenance or a trap a user can walk into, **low** = hygiene.
   length, I20; Qblox a continuous tone held for the reset wait); and the pi/2 knob split of
   `qubit_ramsey` holds for `qubit_ramsey_phasor`, `qubit_ramsey_flux_pulse`, `qubit_echo`
   and `qubit_echo_flux_pulse` too, declared per driver in `requires`.
+- 2026-10-04, third batch of documents (same plan, section 15), each stated in the driver's
+  `backend_notes`:
+  - `qubit_drag_equator.pulse_repetitions` is read by no probe and by no `simulate()`: both
+    backends play ONE pi pulse per sequence. (Its registry description still spoke of three
+    sequences with `(Y180)^N`; corrected to the two sequences the probes play.)
+  - The swept DRAG coefficient is realized three ways. QM `qubit_drag_alternating` scales
+    the stored pulse's DRAG quadrature by `beta / stored`, with `stored` taken from the
+    FIRST target for all of them, and is blind when the stored coefficient is 0. QM
+    `qubit_drag_equator` bakes a reference coefficient into the benchmarked gate's family
+    only, so the other family's pulses in the same sequence do not carry the swept beta.
+    Qblox `qubit_drag_equator` writes `drag_beta` on the device per point; with
+    `target_gate=x90` it still sweeps that one coefficient and proposes `drag_beta_x90`,
+    which is Unrealized there (`qubit_deterministic_benchmarking` refuses the pi/2 gates on
+    Qblox for the same reason; the equator does not).
+  - `qubit_tomography`: the Qblox probe does not read the `amp` / `detuning` entries of
+    `qubit_configs`.
+  - `qubit_sqrb`: the identity Clifford is an idle one pi pulse long on QM and nothing at
+    all on Qblox, so a Clifford averages 1.875 pulses on one and 44/24 on the other, while
+    scqat divides by 1.875 for both.
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 

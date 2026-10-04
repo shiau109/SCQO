@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="995.3" height="358" viewBox="0 0 995.3 358" role="img">
+<rect x="0.5" y="0.5" width="994.3" height="357" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="64.2" y="72" width="324.7" height="160" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="226.6" y="62" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x num_training_shots  (train_shot_idx)</text>
+<rect x="611.1" y="72" width="122.3" height="160" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="672.3" y="62" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x gate_count  (gate_count)</text>
+<rect x="392.9" y="50" width="586.4" height="185" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="686.1" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x num_averages  (shot_idx)</text>
+<text x="52.2" y="114" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
+<path d="M62.2,120 H981.3" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="52.2" y="198" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>
+<path d="M62.2,204 H981.3" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M74.2,110 H179" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M69.2,110 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M184,110 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="126.6" y="103" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M228.8,120 C243.7,120 242,94 250.8,94 C259.6,94 257.8,120 272.8,120 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="250.8" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x180<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<text x="250.8" y="135" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">prepared_state</text>
+<rect x="317.5" y="178" width="66.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="350.7" y="195.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout</text>
+<path d="M402.9,110 H507.7" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M397.9,110 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M512.7,110 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="455.3" y="103" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M542.4,120 C557.4,120 555.6,94 564.4,94 C573.2,94 571.5,120 586.4,120 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="564.4" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">prepare<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<path d="M650.3,120 C665.2,120 663.5,94 672.3,94 C681.1,94 679.3,120 694.3,120 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="672.3" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">target gate<tspan font-size="9.4" dy="-4.9">3</tspan></text>
+<text x="672.3" y="135" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">noise_condition</text>
+<path d="M762.2,120 C777.1,120 775.4,94 784.2,94 C793,94 791.2,120 806.2,120 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="784.2" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">to basis<tspan font-size="9.4" dy="-4.9">4</tspan></text>
+<text x="784.2" y="135" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">basis</text>
+<path d="M844.9,120 C859.9,120 858.1,94 866.9,94 C875.7,94 873.9,120 888.9,120 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="866.9" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x180<tspan font-size="9.4" dy="-4.9">5</tspan></text>
+<text x="866.9" y="135" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">sym</text>
+<rect x="907.9" y="178" width="66.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="941.1" y="195.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout</text>
+<text x="62.2" y="253" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  played only when the prepared state is 1</text>
+<text x="62.2" y="270" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  the init_state of qubit_configs; nothing for '0'</text>
+<text x="62.2" y="287" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">3  noise_condition has the single value 'off': no qubit is configured as a noise source</text>
+<text x="62.2" y="304" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">4  a pi/2 pulse for the x and y bases, nothing for z</text>
+<text x="62.2" y="321" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">5  played only for the inverted readout</text>
+<rect x="62.2" y="329" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="82.2" y="338" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>

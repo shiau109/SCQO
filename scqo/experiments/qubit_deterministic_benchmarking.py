@@ -26,20 +26,30 @@ from ._capabilities.amplitude import (
     amp_sweep,
     attach_absolute_amp,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT
 from ._gate_target import X90_GATES, amp_knob, normalize_gate
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
+
+#: the gate names by the knob they are played from - `_gate_target.amp_knob`
+#: written out, because a Requirement's condition is a list of values
+PI_GATES = ("x180", "y180")
+HALF_PI_GATES = ("x90", "y90", "-x90", "-y90")
 
 
 class QubitDeterministicBenchmarkingParameters(
@@ -115,6 +125,48 @@ class QubitDeterministicBenchmarking(Experiment):
 
     name: ClassVar[str] = "qubit_deterministic_benchmarking"
     writes: ClassVar[tuple[str, ...]] = ("pi_amp", "pi_amp_x90")
+    #: not seed_ok: this is the fine step, and the analysis assumes the stored
+    #: amplitude is already near the optimum (BACKLOG I30)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("pi_amp",
+                    "the benchmarked gate is played at a factor of it, and it has to "
+                    "be close to right already", when=("target_gate", PI_GATES)),
+        Requirement("pi_amp_x90",
+                    "the benchmarked gate is played at a factor of it, and it has to "
+                    "be close to right already", when=("target_gate", HALF_PI_GATES)),
+        Requirement("drive_freq_hz",
+                    "the gate has to be on resonance: a detuning accumulates with "
+                    "the repetitions as well"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_amp_prefactor": "the factor of the stored amplitude at which the fitted "
+                             "error rate crosses zero; 1 when a single amplitude was "
+                             "measured",
+        "old_pi_amp": "pi gates: the pi amplitude the run started from",
+        "old_pi_amp_x90": "pi/2 gates: the pi/2 amplitude the run started from",
+        "unit": "what the trajectories are plotted in: 'P0', the ground-state "
+                "population on the run's own scale",
+    }
+    #: `sweep` is the calibration (the default measures one amplitude and fits
+    #: none); `x90` exercises the pi/2 knob
+    doc_variants: ClassVar[dict[str, dict]] = {
+        "sweep": {"num_amp_points": 21},
+        "x90": {"target_gate": "x90", "num_amp_points": 21},
+    }
+
+    @classmethod
+    def sequence_diagram(
+            cls, params: QubitDeterministicBenchmarkingParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        with diagram.repeat("x N", swept="repetitions"):
+            diagram.step(Block(
+                "drive", normalize_gate(params.target_gate), "gate", swept=AMP_AXIS,
+                note="played at the stored amplitude times the swept factor"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Amplitude error amplification: plays ONE target gate N times and sweeps N, "
         "so a small per-gate over/under-rotation accumulates into a resolvable "

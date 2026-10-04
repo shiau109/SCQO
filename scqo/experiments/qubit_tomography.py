@@ -18,11 +18,15 @@ import xarray as xr
 
 from .._scqat import per_qubit_results
 from ..contract import ContractError, DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -136,6 +140,86 @@ class QubitTomography(Experiment):
     """Backend-agnostic Qubit Tomography. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_tomography"
+    #: the pi/2 pulses (state preparation, basis rotation) are each driver's own
+    #: line, as in qubit_ramsey (BACKLOG I19)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *CALIBRATED_PI_PULSE, *CALIBRATED_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        "centers": "the centres of the |0> and |1> clouds found in the training shots",
+        "readout_fidelity": "how well the classifier trained on those shots tells "
+                            "the two prepared states apart",
+        "confusion_matrix": "its confusion matrix: row = prepared state, column = "
+                            "assigned state",
+        "gate_counts": "the gate counts that were swept: the x axis of every list "
+                       "below",
+        "population_x": "the |1> population measured in the x basis at each gate "
+                        "count (noise ON when a noise source is interleaved)",
+        "population_y": "the same in the y basis",
+        "population_z": "the same in the z basis",
+        "baseline_population_x": "the x-basis population with the noise source OFF "
+                                 "(equal to population_x without one)",
+        "baseline_population_y": "the same in the y basis",
+        "baseline_population_z": "the same in the z basis",
+        "delta_population_x": "noise ON minus noise OFF, x basis",
+        "delta_population_y": "noise ON minus noise OFF, y basis",
+        "delta_population_z": "noise ON minus noise OFF, z basis",
+        "differential_drift": "the distance the Bloch vector moved between noise OFF "
+                              "and ON at each gate count",
+        "interleaved_noise": "whether the run interleaved the two noise conditions",
+        "success": "whether the classifier's fidelity is above one half",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitTomographyParameters) -> SequenceDiagram:
+        noisy = [name for name, cfg in params.qubit_configs.items()
+                 if bool(cfg.get("noise_mode", False))]
+        lanes = dict(DRIVE_READOUT)
+        if noisy:
+            # after the target's own lanes: the spectator only ever plays gates
+            lanes["spectator"] = "spectator.xy"
+        diagram = SequenceDiagram(lanes)
+
+        # 1. the training shots the state classifier is fitted to
+        with diagram.repeat("x num_training_shots", swept="train_shot_idx"):
+            reset_step(diagram, params)
+            diagram.step(Block("drive", "x180", "gate", swept="prepared_state",
+                               note="played only when the prepared state is 1"))
+            diagram.step(Block("readout", "readout", "acquire"))
+
+        # 2. the tomography shots
+        with diagram.repeat("x num_averages", swept="shot_idx"):
+            reset_step(diagram, params)
+            diagram.step(Block("drive", "prepare", "gate",
+                               note="the init_state of qubit_configs; nothing for '0'"))
+            with diagram.repeat("x gate_count", swept="gate_count"):
+                if noisy:
+                    # one condition only when the two are not interleaved - and
+                    # define_sweep labels that one 'off' although the gates play
+                    note = ("played under 'on'; an idle of the same length under 'off'"
+                            if params.interleave_noise else
+                            "always played: interleave_noise is off, so the one "
+                            "condition is labelled 'off'")
+                    diagram.step(
+                        Block("drive", "target gate", "gate"),
+                        Block("spectator", "noise gate", "gate",
+                              swept="noise_condition", note=note))
+                else:
+                    diagram.step(Block(
+                        "drive", "target gate", "gate", swept="noise_condition",
+                        note="noise_condition has the single value 'off': no qubit is "
+                             "configured as a noise source"))
+            diagram.step(Block("drive", "to basis", "gate", swept="basis",
+                               note="a pi/2 pulse for the x and y bases, nothing for z"))
+            if params.symmetrized_readout:
+                diagram.step(Block("drive", "x180", "gate", swept="sym",
+                                   note="played only for the inverted readout"))
+                diagram.step(Block("readout", "readout", "acquire"))
+            else:
+                diagram.step(Block(
+                    "readout", "readout", "acquire", swept="sym",
+                    note="sym has the single value 'reg': symmetrized_readout is off"))
+        return diagram
+
     description: ClassVar[str] = (
         "Performs state tomography by applying init states, target gates, "
         "and sweeping basis rotations to measure populations and gate error trajectory."

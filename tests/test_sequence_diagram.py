@@ -171,6 +171,27 @@ def test_repeat_brackets_nest_and_the_outer_one_is_drawn_around_the_inner():
     assert len(rows) == 2
 
 
+def test_an_outer_bracket_steps_out_only_on_an_edge_it_shares():
+    """A bracket that holds an inner one somewhere in its middle keeps the plain
+    inset, so it does not reach into the bracket next to it."""
+    diagram = SequenceDiagram({"a": "A"})
+    with diagram.repeat("x 2"):
+        diagram.step(Block("a", "one", "gate"))
+    with diagram.repeat("x 3"):
+        diagram.step(Block("a", "two", "gate"))
+        with diagram.repeat("x 4"):
+            diagram.step(Block("a", "three", "gate"))
+        diagram.step(Block("a", "four", "gate"))
+    assert diagram.repeat_levels() == [0, 0, 1]     # closing order: x2, x4, x3
+    rects = [node for node in xml.dom.minidom.parseString(
+        render_svg(diagram)).getElementsByTagName("rect")
+        if node.getAttribute("stroke-dasharray") == "4 3"]
+    neighbour, _inner, outer = rects
+    neighbour_right = (float(neighbour.getAttribute("x"))
+                       + float(neighbour.getAttribute("width")))
+    assert neighbour_right < float(outer.getAttribute("x"))
+
+
 def test_two_brackets_side_by_side_are_both_innermost():
     diagram = SequenceDiagram({"a": "A"})
     with diagram.repeat("x 2"):

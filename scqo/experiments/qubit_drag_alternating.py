@@ -14,12 +14,16 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
-from ._gate_target import drag_knob
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._gate_target import drag_knob, is_x90
+from ._requires import CALIBRATED_READOUT, GATE_AMPLITUDE
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -47,6 +51,40 @@ class QubitDragAlternating(Experiment):
 
     name: ClassVar[str] = "qubit_drag_alternating"
     writes: ClassVar[tuple[str, ...]] = ("drag_beta", "drag_beta_x90")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the pulses have to be on resonance: a detuning makes the pair "
+                    "leave the same kind of residue the DRAG term is tuned to remove"),
+        *GATE_AMPLITUDE,
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_beta": "the coefficient at which the signal varies least over the "
+                    "repetition count; proposed as drag_beta, or drag_beta_x90 for "
+                    "target_gate='x90'",
+        "beta": "the DRAG coefficients that were swept",
+        "nb_of_pulses": "the repetition counts that were swept",
+    }
+    #: the x90 target plays a different sequence and writes the other knob
+    doc_variants: ClassVar[dict[str, dict]] = {"x90": {"target_gate": "x90"}}
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitDragAlternatingParameters) -> SequenceDiagram:
+        # one repetition returns the qubit to |g>: +pi then -pi, or with the
+        # x90 target two +pi/2 then two -pi/2
+        gate = "x90" if is_x90(params.target_gate) else "x180"
+        pulses = [gate, "-" + gate] if gate == "x180" else [gate, gate, "-" + gate, "-" + gate]
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        with diagram.repeat("x nb_of_pulses", swept="nb_of_pulses"):
+            for k, label in enumerate(pulses):
+                diagram.step(Block(
+                    "drive", label, "gate", swept="beta",
+                    note="every pulse is played with the swept DRAG coefficient"
+                    if k == 0 else None))
+        diagram.step(Block("readout", "readout", "acquire"))
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep DRAG beta coefficient and play alternating pulse sequences. "
         "The DRAG value that minimizes error accumulation (stays flat at "

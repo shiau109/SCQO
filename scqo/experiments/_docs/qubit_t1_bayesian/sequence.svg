@@ -2,8 +2,8 @@
 <rect x="0.5" y="0.5" width="906" height="323" rx="6" fill="#ffffff" stroke="#d0d7de"/>
 <rect x="193" y="72" width="697.9" height="160" rx="4" fill="none" stroke="#8c959f" stroke-dasharray="4 3"/>
 <text x="542" y="62" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#8c959f" text-anchor="middle">x num_probes</text>
-<rect x="60.2" y="50" width="834.7" height="185" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
-<text x="477.6" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x num_blocks  (block_idx)</text>
+<rect x="64.2" y="50" width="830.7" height="185" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="479.6" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x num_blocks  (block_idx)</text>
 <text x="52.2" y="114" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
 <path d="M62.2,120 H893" fill="none" stroke="#8c959f" stroke-width="1"/>
 <text x="52.2" y="198" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>

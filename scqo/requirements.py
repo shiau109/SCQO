@@ -57,8 +57,9 @@ class Requirement:
     field: str
     #: what the experiment uses it for - one line, no trailing period
     why: str
-    #: ``(parameter, value)`` when the need exists only for that setting;
-    #: None = always
+    #: ``(parameter, value)`` when the need exists only for that setting, or
+    #: ``(parameter, (value, value, ...))`` when any of several settings brings
+    #: it (the six gates of a ``target_gate`` split into two knobs); None = always
     when: tuple[str, Any] | None = None
     #: True = a STARTING value is enough - the standing one, or the design
     #: value ``Experiment.anchor()`` falls back to. This is what a bring-up
@@ -68,14 +69,21 @@ class Requirement:
 
     def applies(self, params) -> bool:
         """Whether these Parameters put the requirement in force."""
-        return self.when is None or getattr(params, self.when[0], None) == self.when[1]
+        if self.when is None:
+            return True
+        name, value = self.when
+        have = getattr(params, name, None)
+        return have in value if isinstance(value, tuple) else have == value
 
     def condition(self) -> str:
-        """``"reset_method=active"`` for a conditional requirement, else ``""``."""
+        """``"reset_method=active"`` for a conditional requirement
+        (``"target_gate=x90 / y90"`` for one with alternatives), else ``""``."""
         if self.when is None:
             return ""
         name, value = self.when
-        return f"{name}={str(value).lower() if isinstance(value, bool) else value}"
+        values = value if isinstance(value, tuple) else (value,)
+        return f"{name}=" + " / ".join(
+            str(v).lower() if isinstance(v, bool) else str(v) for v in values)
 
     def as_dict(self) -> dict:
         return {"field": self.field, "why": self.why,
@@ -127,11 +135,14 @@ def _setting_refused(parameters, name: str, value: Any) -> bool:
         parameters.model_validate(base)
     except Exception:
         return False
-    try:
-        parameters.model_validate({**base, name: value})
-    except Exception:
-        return True
-    return False
+    # with alternatives, the line stands while ANY of them is accepted
+    for candidate in value if isinstance(value, tuple) else (value,):
+        try:
+            parameters.model_validate({**base, name: candidate})
+        except Exception:
+            continue
+        return False
+    return True
 
 
 def unknown_fields(names) -> list[str]:

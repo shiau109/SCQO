@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512.6" height="253" viewBox="0 0 512.6 253" role="img">
+<rect x="0.5" y="0.5" width="511.6" height="252" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<text x="52.2" y="60" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
+<path d="M62.2,66 H498.6" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="52.2" y="144" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>
+<path d="M62.2,150 H498.6" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M74.2,56 H179" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M69.2,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M184,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="126.6" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M229.9,66 C244.8,66 243.1,40 251.9,40 C260.7,40 258.9,66 273.9,66 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="251.9" y="34" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x180 / y180<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<text x="251.9" y="81" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">seq_idx</text>
+<text x="251.9" y="94" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">beta</text>
+<path d="M343.5,66 C358.4,66 356.7,40 365.5,40 C374.3,40 372.5,66 387.5,66 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="365.5" y="34" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">y90 / x90<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<text x="365.5" y="81" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">seq_idx</text>
+<text x="365.5" y="94" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">beta</text>
+<rect x="425.2" y="124" width="66.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="458.4" y="141.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout</text>
+<text x="62.2" y="199" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  left of the slash is sequence 0, right of it sequence 1</text>
+<text x="62.2" y="216" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  every pulse is played with the swept DRAG coefficient</text>
+<rect x="62.2" y="224" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="82.2" y="233" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>

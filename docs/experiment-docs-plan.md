@@ -604,7 +604,8 @@ class Experiment(ABC):
 | 樣板 | `qubit_ramsey` | 完成 |
 | 1 | 讀出與共振腔，9 個 | 完成（理論留空） |
 | 2 | 單比特頻率與相干，其餘 13 個 | 完成（理論留空），見 §14 |
-| 3 到 8 | 見 §7 | 未開始 |
+| 3 | 閘校正與基準測試，6 個 | 完成（理論留空），見 §15 |
+| 4 到 8 | 見 §7 | 未開始 |
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -679,3 +680,83 @@ class Experiment(ABC):
    這是後端的事實，但核心的實驗說明本來就寫了，而且原因（需要儀器即時運算）是中立的，所以保留。
 5. **`qubit_echo_flux_pulse` 的預期結果圖看起來很亂，文件裡有說明原因**：模擬的 T2 echo 約 50 us，
    預設視窗只到 40 us。要不要把預設的 `max_wait_ns` 加長，請你決定。
+
+## 15. 第 3 批實作紀錄（2026-10-04）：閘校正與基準測試，六個實驗
+
+`qubit_drag_alternating`、`qubit_drag_equator`、`qubit_pi_pulse_error`、
+`qubit_deterministic_benchmarking`、`qubit_sqrb`、`qubit_tomography`。連同前面的，51 個裡有 29 個有文件。
+三個版本庫都有改，做法與第 2 批相同（先對照兩個驅動的 probe 再宣告）。
+
+### 15.1 為了這一批加進核心的東西
+
+- **條件可以是「幾個值之一」。** `qubit_deterministic_benchmarking` 有六種目標閘，分屬兩個振幅旋鈕。
+  `Requirement.when` 的值現在可以是一組值（`("target_gate", ("x90", "y90", "-x90", "-y90"))`），
+  文件上印成 `target_gate=x90 / y90 / -x90 / -y90`，不必一個閘寫一行。
+- **`experiments/_requires.py`** 多一組 `GATE_AMPLITUDE`：`target_gate` 只有 `x180` 與 `x90` 兩個值的實驗用。
+- **外層括號只在與內層共用邊界的那一側外擴。** `qubit_tomography` 有兩個並排的括號，其中一個含內層；
+  原本外層兩側都外擴，會壓到隔壁的括號。`qubit_t1_bayesian` 的圖因此左緣移了 4 px。
+- **改了一段錯的實驗說明。** `qubit_drag_equator` 的登錄說明寫的是「三條序列、`(Y180)^N`」，
+  但程式（定義掃描、模擬、兩個 probe、估計器）都是兩條序列：`x180` 接 `y90`，以及 `y180` 接 `x90`。
+  說明已改成與程式一致；`pulse_repetitions` 這個參數的說明也改成「沒有 probe 會讀」。
+
+### 15.2 驅動端的宣告
+
+- **QM**：`qubit_drag_equator`、`qubit_sqrb`、`qubit_tomography` 加上 `pi_amp_x90`；
+  `qubit_drag_alternating` 加上 `drag_beta` 或 `drag_beta_x90`（它是把已存的脈衝按比例縮放來實現掃描的，
+  所以已存的係數是輸入，而且不能是 0）。四個類別有後端註記。
+- **Qblox**：`qubit_drag_equator` 加上 `pi_amp`。四個類別有後端註記。
+
+### 15.3 對照驅動與估計器時發現的問題
+
+都沒有修，只記錄；各自寫進該文件的 Traps 或該驅動的後端註記。
+
+1. **`qubit_drag_equator.pulse_repetitions` 沒有任何 probe 或模擬在讀**（I19）。
+2. **掃 DRAG 係數的方式有三種**（I19）：QM 的 `qubit_drag_alternating` 用「係數除以已存係數」縮放已存脈衝，
+   已存係數取自第一個目標，已存為 0 時整個掃描無效；QM 的 `qubit_drag_equator` 只把參考係數寫進被校正的那一族閘，
+   同一條序列裡另一族的脈衝帶的不是掃描的係數；Qblox 的 `qubit_drag_equator` 逐點改裝置上的 `drag_beta`，
+   `target_gate=x90` 時仍然掃同一個係數，卻提出 Qblox 沒有實作的 `drag_beta_x90`。
+3. **三個估計沒有失敗判斷**（I17）：`qubit_drag_alternating` 永遠成功；`qubit_drag_equator` 算出交點是否在視窗內後又丟掉，
+   外插的交點也算成功；`qubit_pi_pulse_error` 把結果夾在視窗邊界，仍然算成功。
+4. **`qubit_tomography`：Qblox 沒有讀 `qubit_configs` 裡的 `amp` 與 `detuning`**（I19）。
+5. **`qubit_sqrb`：單位 Clifford 在 QM 是一段等待、在 Qblox 什麼都不打**，平均每個 Clifford 的脈衝數因此是
+   1.875 與 1.83，而估計器一律除以 1.875（I19）。
+6. **`qubit_sqrb` 沒給 `seed` 時兩個後端都用固定的 42**，所以每次跑的序列都一樣。這不是錯，但文件的 Traps 有寫。
+
+### 15.4 待你過目（累積到 §16）
+
+1. 三份文件（兩個 DRAG、tomography）的模擬資料是示意用的，不是真實脈衝的模型；文件裡有明說。
+   換成硬體的圖會比較有用。
+2. `qubit_deterministic_benchmarking` 預設只量一個振幅，卻仍然提出「不變的」`pi_amp` 並算成功。文件照實寫了。
+3. `qubit_pi_pulse_error` 只有 QM 有 probe；文件沒有寫這件事（核心的實驗說明也沒寫）。
+
+## 16. 待你處理的事項總表
+
+你在 2026-10-04 決定：這些都等整體鋪開完成後再處理，各批之間不再逐項詢問。每批結束時把新的項目加到這裡。
+
+**每份文件都有的**
+
+- `validated` 全部寫 `offline`，硬體驗證過的晶片與日期要你填。
+- Traps 只寫了能從程式、欄位說明、`BACKLOG.md` 確認的事，硬體上遇過的問題要你補。
+- Theory 一節的形式與深度未定（`qubit_ramsey` 那段是草稿）。
+
+**需要你決定的**
+
+- `PROJECT_SUMMARIES["MpembaEP_trotter"]` 的一行說明沒提到 Mpemba 或 EP（§10.3）。
+- `readout_frequency`、`readout_power`、`single_shot_readout` 的前置條件請過目（§13.4）。
+- `qubit_echo_flux_pulse` 的預設 `max_wait_ns`（40 us）比常見的 T2 echo 短，要不要加長（§14.5）。
+- `qubit_ramsey_flux_pulse` 的 park 模式要不要有預期結果圖（§14.5）。
+- 三份示意用模擬資料的文件要不要換成硬體的圖（§15.4）。
+
+**發現但沒有修的問題（都在 `BACKLOG.md`）**
+
+- I38：QM 的 `qubit_echo_flux_pulse` 把單臂時間存成總等待時間，T2 echo 讀成一半。
+- I19：兩個後端不一致的地方，第 2、3 批各補了幾條（`prepare_state`、`qubit_spectroscopy_flux_pulse` 的驅動、
+  `pulse_repetitions`、DRAG 係數的三種掃法、tomography 的 `amp` 與 `detuning`、SQRB 的單位 Clifford）。
+- I17：沒有失敗判斷的估計，第 3 批補了三個。
+- I20、I25、I30、I13：原本就在，文件的 Traps 有引用。
+
+**還沒做的功能**
+
+- 就緒狀態、檢視器標記、執行前閘門、`scqo run <name> --doc`、檢視器的實驗頁（§7 階段 2、§11.3）。
+- 「這個後端拒絕 active 重設」目前沒有顯示在任何地方；可以從驅動的類別屬性推出來，不該手寫。
+- 合併回 main 與 `RELEASES.d` 片段（§10.4）。

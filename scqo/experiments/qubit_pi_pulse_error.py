@@ -27,11 +27,15 @@ from ._capabilities.amplitude import (
     amp_sweep,
     attach_absolute_amp,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -60,6 +64,35 @@ class QubitPiPulseError(Experiment):
 
     name: ClassVar[str] = "qubit_pi_pulse_error"
     writes: ClassVar[tuple[str, ...]] = ("pi_amp",)
+    #: not seed_ok: the window is +-10 % of the stored amplitude, so it has to
+    #: be close already (power Rabi's job)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("pi_amp",
+                    "the swept amplitude is a factor of it, in a narrow window: it "
+                    "has to be within a few per cent already"),
+        Requirement("drive_freq_hz",
+                    "the pulses have to be on resonance: a detuning accumulates over "
+                    "the repeated pulses as well"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_amp_prefactor": "the factor of the stored amplitude at the vertex of the "
+                             "parabola fitted to the weighted curves, clipped to the "
+                             "swept window",
+        "old_pi_amp": "the pi amplitude the run started from",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitPiPulseErrorParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        with diagram.repeat("x gate_count", swept="gate_count"):
+            diagram.step(Block(
+                "drive", "x180", "gate", swept=AMP_AXIS,
+                note="played at the stored pi_amp times the swept factor"))
+        diagram.step(Block("readout", "readout", "acquire"))
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep pi-pulse amplitude factor across repeated X180 gate sequences (X^1, X^3, X^5...) "
         "to amplify and precisely calibrate the pi pulse amplitude."

@@ -14,12 +14,16 @@ import numpy as np
 from pydantic import Field, field_validator
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
-from ._gate_target import drag_knob
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._gate_target import drag_knob, is_x90
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -29,7 +33,11 @@ class QubitDragEquatorParameters(TargetSelection, AveragingParameters, QubitRese
     min_beta: float = Field(-0.5, description="Minimum DRAG beta coefficient.")
     max_beta: float = Field(0.5, description="Maximum DRAG beta coefficient.")
     num_beta_points: int = Field(41, gt=1, description="Number of beta sweep points.")
-    pulse_repetitions: int = Field(3, gt=0, description="Number of alternating pi pulses. Must be odd.")
+    pulse_repetitions: int = Field(
+        3, gt=0,
+        description="Not realized: no probe reads it, and both sequences play ONE pi "
+        "pulse (two pi/2 for target_gate='x90') whatever its value (BACKLOG I19). "
+        "Must be odd.")
     target_gate: Literal["x180", "x90"] = Field(
         "x180",
         description="Gate to calibrate: 'x180' writes drag_beta, 'x90' writes drag_beta_x90.",
@@ -54,10 +62,50 @@ class QubitDragEquator(Experiment):
 
     name: ClassVar[str] = "qubit_drag_equator"
     writes: ClassVar[tuple[str, ...]] = ("drag_beta", "drag_beta_x90")
+    #: only the pi pulse's amplitude is neutral here. The closing pi/2 pulse is
+    #: in every sequence, and which knob holds its amplitude differs per
+    #: backend (BACKLOG I19), so each driver's subclass adds its own.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the pulses have to be on resonance: a detuning tilts the final "
+                    "state the same way a wrong DRAG coefficient does"),
+        Requirement("pi_amp", "the pi pulse that opens each sequence has to be a full "
+                              "rotation", when=("target_gate", "x180")),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_beta": "the coefficient at which the two fitted lines cross; proposed as "
+                    "drag_beta, or drag_beta_x90 for target_gate='x90'",
+        "beta": "the DRAG coefficients that were swept",
+        "seq0": "the signal of sequence 0 (x180 then y90) at each coefficient",
+        "seq1": "the signal of sequence 1 (y180 then x90) at each coefficient",
+    }
+    #: the x90 target plays a different sequence and writes the other knob
+    doc_variants: ClassVar[dict[str, dict]] = {"x90": {"target_gate": "x90"}}
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitDragEquatorParameters) -> SequenceDiagram:
+        # the two sequences differ only in which axis each pulse is about, so
+        # one picture shows both: sequence 0 left of the slash, sequence 1 right
+        first = "x90 x90 / y90 y90" if is_x90(params.target_gate) else "x180 / y180"
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(Block(
+            "drive", first, "gate", swept=("seq_idx", "beta"),
+            note="left of the slash is sequence 0, right of it sequence 1"))
+        diagram.step(Block(
+            "drive", "y90 / x90", "gate", swept=("seq_idx", "beta"),
+            note="every pulse is played with the swept DRAG coefficient"))
+        diagram.step(Block("readout", "readout", "acquire"))
+        return diagram
+
     description: ClassVar[str] = (
-        "Sweep the DRAG beta coefficient and play three sequences (Seq 0: X90-(Y180)^N, "
-        "Seq 1: X90-(-Y180)^N, Seq 2: X90-(X180)^N). The intersection of the three lines "
-        "determines the optimal DRAG beta."
+        "Sweep the DRAG beta coefficient under two sequences that both end on the "
+        "equator: x180 then y90, and y180 then x90 (two x90 / two y90 in place of the "
+        "pi pulse for target_gate='x90'). A wrong beta tilts the two final states in "
+        "opposite directions, so the two lines cross at the optimal beta, which is "
+        "proposed as the drive channel's drag_beta (drag_beta_x90 for "
+        "target_gate='x90')."
     )
     Parameters: ClassVar[type] = QubitDragEquatorParameters
     Result: ClassVar[type] = QubitDragEquatorResult

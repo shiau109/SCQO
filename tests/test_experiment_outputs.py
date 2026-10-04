@@ -167,6 +167,22 @@ def test_an_unconditional_need_supersedes_a_conditional_one_for_the_same_field()
     assert [req.condition() for req in depletion] == ["reset_method=active"]
 
 
+def test_a_condition_may_list_alternatives():
+    """Six target gates are played from two knobs: one line per knob, each
+    conditional on ANY of its gates."""
+    cls = CORE["qubit_deterministic_benchmarking"]
+    by_field = {req.field: req for req in collect(cls)}
+    assert by_field["pi_amp"].condition() == "target_gate=x180 / y180"
+    assert by_field["pi_amp_x90"].condition() == "target_gate=x90 / y90 / -x90 / -y90"
+    assert by_field["pi_amp"].as_dict()["when"] == "target_gate=x180 / y180"
+    pi_gate = cls.Parameters(targets=["q"])
+    half_gate = cls.Parameters(targets=["q"], target_gate="-y90")
+    assert by_field["pi_amp"].applies(pi_gate)
+    assert not by_field["pi_amp_x90"].applies(pi_gate)
+    assert by_field["pi_amp_x90"].applies(half_gate)
+    assert not by_field["pi_amp"].applies(half_gate)
+
+
 def test_a_class_with_required_parameters_of_its_own_keeps_every_condition():
     """The refusal test needs a baseline that validates; without one a failure
     could not be pinned on the setting, so nothing is dropped."""

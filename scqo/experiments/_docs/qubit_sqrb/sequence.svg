@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="488.8" height="285" viewBox="0 0 488.8 285" role="img">
+<rect x="0.5" y="0.5" width="487.8" height="284" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="193" y="50" width="101.8" height="160" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="243.9" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x depth  (depth)</text>
+<text x="52.2" y="92" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
+<path d="M62.2,98 H474.8" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="52.2" y="176" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>
+<path d="M62.2,182 H474.8" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M74.2,88 H179" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M69.2,88 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M184,88 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="126.6" y="81" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M221.9,98 C236.9,98 235.1,72 243.9,72 C252.7,72 251,98 265.9,98 Z" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="243.9" y="66" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">Clifford<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<text x="243.9" y="113" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">sequence_idx</text>
+<path d="M323.6,98 C338.6,98 336.8,72 345.6,72 C354.4,72 352.6,98 367.6,98 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="345.6" y="66" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">recovery<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<rect x="401.3" y="156" width="66.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="434.6" y="173.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout</text>
+<text x="62.2" y="231" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  drawn at random; sequence_idx numbers the random sequences</text>
+<text x="62.2" y="248" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  the one Clifford that returns the qubit to its ground state</text>
+<rect x="62.2" y="256" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="82.2" y="265" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>

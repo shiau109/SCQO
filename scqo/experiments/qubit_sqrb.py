@@ -15,18 +15,23 @@ from pydantic import Field
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -85,6 +90,43 @@ class QubitSQRB(Experiment):
     """Single Qubit Randomized Benchmarking."""
 
     name: ClassVar[str] = "qubit_sqrb"
+    #: a benchmark needs nothing to be RIGHT, but it measures the gate set
+    #: these two define - an uncalibrated one gives a decay too fast to fit.
+    #: The pi/2 pulses' own amplitude knob differs per backend (BACKLOG I19),
+    #: so each driver's subclass adds its own.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "every Clifford is built from resonant pi and pi/2 pulses; their "
+                    "calibration is what the result measures"),
+        Requirement("pi_amp",
+                    "every Clifford is built from pi and pi/2 pulses; their "
+                    "calibration is what the result measures"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "alpha": "the fitted depolarizing parameter: the signal decays as alpha to "
+                 "the power of the depth",
+        "alpha_stderr": "the fit's standard error on alpha",
+        "error_per_clifford": "(1 - alpha) / 2",
+        "error_per_gate": "the error per Clifford divided by 1.875, the mean number "
+                          "of pulses in a Clifford",
+        "gate_fidelity": "1 minus the error per gate",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitSQRBParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        with diagram.repeat("x depth", swept="depth"):
+            diagram.step(Block(
+                "drive", "Clifford", "gate", swept="sequence_idx",
+                note="drawn at random; sequence_idx numbers the random sequences"))
+        diagram.step(Block(
+            "drive", "recovery", "gate",
+            note="the one Clifford that returns the qubit to its ground state"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Single Qubit Randomized Benchmarking (SQRB) to measure average gate fidelity."
     )

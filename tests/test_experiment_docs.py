@@ -50,15 +50,13 @@ UNDOCUMENTED = frozenset({
     "pair_swap_flux_map", "pair_zz_coupler",
     "qc_n_stark_amp", "qc_n_swap_amp", "qc_n_swap_tomography",
     "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
-    "qubit_deterministic_benchmarking", "qubit_drag_alternating",
-    "qubit_drag_equator",
     "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
     "qubit_parity_switch_continuous", "qubit_parity_switch_discrete",
-    "qubit_pi_pulse_error", "qubit_ramsey_cryoscope",
+    "qubit_ramsey_cryoscope",
     "qubit_resonator_stark",
-    "qubit_spectroscopy_cryoscope", "qubit_sqrb",
+    "qubit_spectroscopy_cryoscope",
     "qubit_stark_phase_echo",
-    "qubit_tomography", "qubit_xyz_delay",
+    "qubit_xyz_delay",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))

@@ -543,8 +543,9 @@ left empty.)
   `experiments/_requires.py` and are included EXPLICITLY — never derived from
   `required_operations`, since a bring-up experiment requires an operation precisely in
   order to calibrate it. What such an experiment needs of the field it measures is a
-  place to start, which is `Requirement(..., seed_ok=True)`. A conditional line is
-  dropped by `collect()` when the experiment needs that field always, or when its
+  place to start, which is `Requirement(..., seed_ok=True)`. `when` is
+  `(parameter, value)`, or `(parameter, (value, ...))` for any of several. A conditional
+  line is dropped by `collect()` when the experiment needs that field always, or when its
   Parameters refuse the setting the line is conditional on. The *Before running it* and *Outputs* sections are GENERATED
   from these between `<!-- BEGIN generated: ... -->` markers; `catalog()` and
   `scqo run <name> --help` carry the same data.

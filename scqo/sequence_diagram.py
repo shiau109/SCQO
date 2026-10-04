@@ -287,6 +287,19 @@ def _block_svg(block: Block, x0: float, x1: float, base: float,
     return out
 
 
+def _edge_levels(repeats: list[Repeat], edge: str) -> list[int]:
+    """Per bracket, how many inner brackets end on the same ``edge`` (``"first"``
+    or ``"last"`` step) stacked inside it - the layers it has to step outside of
+    on that side."""
+    levels: list[int] = []
+    for k, rep in enumerate(repeats):
+        inner = [levels[j] for j, other in enumerate(repeats[:k])
+                 if rep.first <= other.first and other.last <= rep.last
+                 and getattr(other, edge) == getattr(rep, edge)]
+        levels.append(1 + max(inner) if inner else 0)
+    return levels
+
+
 def render_svg(diagram: SequenceDiagram) -> str:
     """The diagram as SVG text. Deterministic: the same diagram renders to the
     same bytes, with no timestamp, no id and no dependence on a font library."""
@@ -330,12 +343,16 @@ def render_svg(diagram: SequenceDiagram) -> str:
         f'rx="6" fill="{_PAPER}" stroke="{_BORDER}"/>',
     ]
 
-    for rep, level in zip(diagram.repeats, levels):
+    lefts = _edge_levels(diagram.repeats, "first")
+    rights = _edge_levels(diagram.repeats, "last")
+    for rep, level, left_level, right_level in zip(
+            diagram.repeats, levels, lefts, rights):
         colour = _ACCENT if rep.swept else _MUTED
-        # each layer out is 4 px wider a side and one label row taller, so an
-        # outer bracket clears the inner one and the inner one's label
-        grow = 4.0 * level
-        x0, x1 = edges[rep.first] + 2 - grow, edges[rep.last + 1] - 2 + grow
+        # each layer out is one label row taller, so an outer bracket clears the
+        # inner one's label; and 4 px wider on a side it SHARES with an inner
+        # bracket - only there, so it does not lean into a neighbour for nothing
+        x0 = edges[rep.first] + 2 - 4.0 * left_level
+        x1 = edges[rep.last + 1] - 2 + 4.0 * right_level
         top = lanes_top + 4 - _BRACKET_STEP * level
         out.append(
             f'<rect x="{_n(x0)}" y="{_n(top)}" width="{_n(x1 - x0)}" '
