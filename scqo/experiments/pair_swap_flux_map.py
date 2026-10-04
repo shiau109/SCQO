@@ -40,8 +40,12 @@ import numpy as np
 from pydantic import Field, model_validator
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import joint_state_labels
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
@@ -55,6 +59,7 @@ from .pair_swap_chevron import (
     _joint_from_roles,
     _role_names,
     summarize_transfer_map,
+    transfer_map_extracts,
 )
 
 #: the y axis here is the MEMBER's flux line; the coupler owns the x axis.
@@ -148,6 +153,48 @@ class PairSwapFluxMap(Experiment):
     """Backend-agnostic fixed-time swap map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_swap_flux_map"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        **transfer_map_extracts(
+            ("qubit_flux_v", "the member's flux-pulse amplitude"),
+            ("coupler_flux_v", "the coupler's flux-pulse amplitude")),
+        "swap_time_ns": "the pulse duration the instrument played; None when each "
+                        "pulse played its own length",
+        "coupler_off_v": "the coupler amplitude where the fitted coupling is "
+                         "smallest: the decouple point of this map",
+        "j_at_off_hz": "the fitted coupling at that point",
+        "off_is_interpolated": "1 when the polynomial through the coupling curve "
+                               "located that point, 0 when it is the smallest "
+                               "measured column",
+        "j_max_hz": "the strongest coupling among the columns that are not flagged "
+                    "as folded",
+        "j_max_coupler_flux_v": "the coupler amplitude of that column",
+        "theta_max_rad": "the exchange angle of that column, 2 pi J times the "
+                         "duration",
+        "n_j_ok": "the number of coupler columns whose swap peak was fitted",
+        "n_branch_warn": "how many of those may lie past a full swap, where the "
+                         "angle is under-reported; they are left out of the "
+                         "polynomial",
+        "n_poly_rows": "the number of columns the polynomial was fitted through",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairSwapFluxMapParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram({
+            "drive": f"{params.drive_side}.xy", "flux": f"{params.flux_side}.z",
+            "coupler": "coupler.z", "readout": PAIR_READOUT_LANE})
+        shape = "square" if params.flux_pulse_shape == "square" else "flattop"
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        diagram.step(
+            Block("flux", "flux pulse", shape, swept="qubit_flux_v"),
+            Block("coupler", "coupler pulse", shape, swept="coupler_flux_v",
+                  note="both pulses start together and last swap_time_ns (their own "
+                       "length when it is None)"))
+        pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Fixed-duration 2D swap map: excite ONE member of a pair, then play a coupler flux "
         "pulse and a member flux pulse simultaneously over a fixed window, sweeping both "

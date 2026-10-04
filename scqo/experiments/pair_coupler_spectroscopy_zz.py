@@ -51,14 +51,25 @@ from pydantic import Field
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from ._capabilities.coupler_flux import pair_coupler
 from ._capabilities.mapped_readout import SELECTIVE_PI_LEN_DESC
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import joint_state_labels
-from ._coupler_tone import TONE_AXIS, CouplerToneParameters, tone_lo_hz
+from ._coupler_tone import (
+    COUPLER_LINE_EXTRACTS,
+    TONE_AXIS,
+    TONE_DRIVE_CHAIN,
+    TONE_NOTE,
+    CouplerToneParameters,
+    tone_lo_hz,
+)
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
 from ._drive_power import drive_power_boundary
+from ._requires import PAIR_JOINT_READOUT
 from ._sim import stable_seed
 from ._window import window_bounds
 from .pair_coupler_crossing_pulse import one_coupled_pair_problems
@@ -128,6 +139,41 @@ class PairCouplerSpectroscopyZZ(Experiment):
 
     name: ClassVar[str] = "pair_coupler_spectroscopy_zz"
     writes: ClassVar[tuple[str, ...]] = ("f_01_hz", "anharmonicity_hz")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        TONE_DRIVE_CHAIN,
+        Requirement("drive_freq_hz",
+                    "the selective pi is played at the pi member's drive frequency, "
+                    "and it is narrow: a stale frequency makes it miss everywhere"),
+        Requirement("pi_amp",
+                    "the selective pi takes its area from the pi member's x180"),
+        Requirement("idle_flux",
+                    "the frequency found is the coupler's at its standing bias, "
+                    "which is recorded with the result"),
+        *PAIR_JOINT_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        **COUPLER_LINE_EXTRACTS,
+        "dip_depth": "the depth of the f01 dip in the pi member's population",
+        "n_lines": "the number of dips found in the pi arm",
+        "pi_contrast": "the median of the pi arm minus the median of the reference "
+                       "arm: how well the selective pi works away from every line",
+        "old_coupler_idle_flux": "the coupler's standing bias during the run",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairCouplerSpectroscopyZZParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram({
+            "drive": f"{params.tone_on}.xy", "pi": f"{_OTHER[params.tone_on]}.xy",
+            "readout": PAIR_READOUT_LANE})
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "tone", "tone", swept=TONE_AXIS, note=TONE_NOTE))
+        diagram.step(Block(
+            "pi", "selective pi", "square", swept=ARM_AXIS,
+            note="selective_pi_len_ns long, with the x180's area; the reference arm "
+                 "waits instead"))
+        pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Coupler frequency at its idle point, the coupler never moving: a tone on one "
         "pair member's drive line excites the coupler when it hits a coupler "

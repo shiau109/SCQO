@@ -54,6 +54,20 @@ def flux_pulse_idle_step(diagram: SequenceDiagram, label: str, time_axis: str, *
         Block(flux, "flux pulse", "square", swept=(FLUX_AXIS, time_axis), note=note))
 
 
+#: the readout lane of a pair experiment: both members, read together
+PAIR_READOUT_LANE = "pair.ro"
+
+#: what the closing readout of a joint-population experiment returns
+JOINT_READOUT_NOTE = ("both members, discriminated in every shot: the dataset "
+                      "holds the joint populations")
+
+
+def pair_measure_step(diagram: SequenceDiagram, *, readout: str = "readout",
+                      note: str = JOINT_READOUT_NOTE) -> None:
+    """The closing readout of a pair experiment: both members at once."""
+    diagram.step(Block(readout, "readout", "acquire", note=note))
+
+
 def depletion_step(diagram: SequenceDiagram, *, readout: str = "readout") -> None:
     """The wait after a readout for its photons to leave the resonator - the
     readout channel's ``readout_depletion_s`` (``_depletion.depletion_wait_ns``)."""

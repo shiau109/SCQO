@@ -1180,6 +1180,47 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   that accepts once and finds the second run's `delay_shift_s` near 0.
 - Done when: an accepted simulated run brings the next run's peak to 0, pinned by that test.
 
+### I40 `pair_zz_coupler`: a ZZ below -2 x detuning reports a false decouple point (medium)
+- Found 2026-10-04 while documenting it (`docs/experiment-docs-plan.md` section 19).
+  Reproduced with the real estimator on the simulator's own signal model (detuning 1 MHz,
+  31 biases over +-0.3 V, zz linear in the bias with its zero at +0.100 V): a slope of
+  2.5 MHz/V reports the crossing at +0.099 V; a slope of 6 MHz/V, where zz reaches -2.4 MHz
+  at the low edge, reports -0.233 V, SUCCESSFUL, and `update()` proposes it as the coupler's
+  `idle_flux`.
+- Cause: scqat `zz_interaction` fits the fringe frequency with `f >= 0`, and the experiment
+  reads `zz = f - detuning_hz`. Where the true zz is below `-detuning_hz` the fringe folds
+  (`f = |detuning + zz|`), so the reported zz turns back up and crosses zero again at
+  `zz = -2 x detuning_hz`; `_zero_crossing` takes the FIRST sign change along the bias axis.
+  A positive zz of any size is unaffected.
+- `simulate()` can reach this range by itself: its slope goes up to 5 MHz/V and its zero up
+  to +0.12 V, i.e. -2.1 MHz at -0.3 V. Only the corner of its draw does (not seen for the
+  demo pair `q0_q1`), so an offline run of another pair name could propose a false point.
+- The figures add to it: both `zz_interaction` figures draw the fitted `f` (in Hz, the
+  detuning included) under the labels "ZZ strength" / "ZZ (MHz)", so the curve's MINIMUM
+  reads as the decouple point while it is the place where zz = -detuning.
+- Where: `scqo/experiments/pair_zz_coupler.py` (`estimate`, `_zero_crossing`), scqat
+  `estimators/zz_interaction/` (the figure labels; the detuning has to reach it to draw zz).
+- Done when: a fold inside the window is either refused by name (e.g. the fitted `f` comes
+  within the fit's resolution of zero somewhere in the sweep) or unfolded by continuity, a
+  test plants zz below -2 x detuning and gets the true crossing or a FAILED run, and the
+  figures draw `f - detuning` with a correct unit. Fix together with I26 (the frame of the
+  written value).
+
+### I41 Pair family: three presentation mismatches (hygiene)
+- Found 2026-10-04 while documenting the seven `pair_*` experiments.
+- `pair_coupler_crossing_pulse` puts a STRING into `result.fit` (`center_kind`), which is
+  declared `dict[str, float]`: every run prints pydantic's "serialized value may not be as
+  expected". The two punchouts do the same (`'punchout'`). Either an integer code, or a
+  place for non-numeric results.
+- `pair_swap_flux_map`: the module text, the field descriptions and the QM probe call the
+  coupler amplitude the x axis and the member's the y axis; the scqat figures draw the
+  member on x and the coupler on y (the shared plotter puts the first sweep axis on x).
+- `pair_zz_coupler`: `idle_time_ns` is the length of ONE echo arm (the QM probe plays it
+  per arm, and the fringe model is in that time), while the field text says "echo evolution
+  time" and the `define_sweep` comment speaks of keeping "the two arms whole nanoseconds".
+  Its bias field texts also say "standing bias" for what is played as a pulse (I26).
+- Done when: each is made consistent, on whichever side is judged right.
+
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qc_n_swap_tomography` (landed 2026-10-01). DONE on 5Q4C the same day for both 040 swaps at
   gap 260 after the re-park: theta' and the compensating amplitude agree with a same-session

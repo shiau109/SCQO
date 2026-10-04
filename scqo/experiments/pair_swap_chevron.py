@@ -47,8 +47,12 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import joint_state_labels
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
@@ -71,6 +75,27 @@ MIN_TRANSFER_DESC = (
     "reported FAILED — no swap feature was found anywhere in the window. Pure "
     "reporting: this experiment writes nothing back."
 )
+
+
+def transfer_map_extracts(first: tuple[str, str],
+                          second: tuple[str, str]) -> dict[str, str]:
+    """The ``extracts`` entries for the keys :func:`summarize_transfer_map`
+    reports, for a map over two axes given as ``(axis name, what it is)``."""
+    (a, a_text), (b, b_text) = first, second
+    return {
+        "best_transfer": "the largest population found on the member that was not "
+                         "excited, over the whole map",
+        f"best_{a}": f"{a_text} at that point",
+        f"best_{b}": f"{b_text} at that point",
+        "p_high_min": "the smallest excited population of the high member over the map",
+        "p_high_max": "the largest excited population of the high member over the map",
+        "p_low_min": "the smallest excited population of the low member over the map",
+        "p_low_max": "the largest excited population of the low member over the map",
+        "p_ee_max": "the largest population of both members excited at once; with "
+                    "one excitation in the pair it stays near zero",
+        f"n_{a}": f"the number of points along {a}",
+        f"n_{b}": f"the number of points along {b}",
+    }
 
 
 class PairSwapChevronParameters(TargetSelection, AveragingParameters, QubitResetParameters):
@@ -141,6 +166,37 @@ class PairSwapChevron(Experiment):
     """Backend-agnostic swap chevron. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_swap_chevron"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        **transfer_map_extracts(
+            ("flux_amp_v", "the flux-pulse amplitude"),
+            ("swap_time_ns", "the pulse duration")),
+        "coupler_flux_v": "the coupler amplitude the map was taken at; None when "
+                          "the coupler was left alone",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairSwapChevronParameters) -> SequenceDiagram:
+        coupled = params.coupler_flux_v is not None
+        lanes = {"drive": f"{params.drive_side}.xy", "flux": f"{params.flux_side}.z"}
+        if coupled:
+            lanes["coupler"] = "coupler.z"
+        lanes["readout"] = PAIR_READOUT_LANE
+        diagram = SequenceDiagram(lanes)
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        pulses = [Block("flux", "flux pulse", "square",
+                        swept=("flux_amp_v", "swap_time_ns"))]
+        if coupled:
+            pulses.append(Block(
+                "coupler", "coupler pulse", "square", swept="swap_time_ns",
+                note="the swap_operation's coupler pulse at the fixed coupler_flux_v, "
+                     "for the same window"))
+        diagram.step(*pulses)
+        pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Single-excitation swap chevron: excite ONE member of a pair, then sweep a flux "
         "pulse (absolute volts) on one member's flux line against its duration, reading "

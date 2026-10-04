@@ -74,12 +74,16 @@ import numpy as np
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     joint_state_labels,
     states_to_joint_population,
 )
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
+from ._requires import PAIR_FLUX_PULSE_ORIGIN, PAIR_JOINT_READOUT, PAIR_MEMBER_PI
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
@@ -91,6 +95,7 @@ from .pair_swap_chevron import (
     _flux_member_problems,
     _role_names,
     summarize_transfer_map,
+    transfer_map_extracts,
 )
 
 
@@ -226,6 +231,57 @@ class PairSwapAngle(Experiment):
     """Backend-agnostic partial-swap angle calibration. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "pair_swap_angle"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *PAIR_MEMBER_PI, PAIR_FLUX_PULSE_ORIGIN, *PAIR_JOINT_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        **transfer_map_extracts(
+            ("coupler_flux_v", "the coupler amplitude"),
+            ("swap_count", "the number of swaps")),
+        # the angle keys describe the fitted curve, so they replace the map's
+        # reading of best_coupler_flux_v
+        "best_coupler_flux_v": "the coupler amplitude that delivers "
+                               "target_theta_rad on the fitted curve; NaN without a "
+                               "target or when the curve does not reach it",
+        "best_theta_rad": "the angle at that amplitude",
+        "best_is_interpolated": "1 when that amplitude lies between two measured "
+                                "points, 0 when it is one of them",
+        "theta_min_rad": "the smallest fitted angle over the coupler axis",
+        "theta_max_rad": "the largest fitted angle over the coupler axis",
+        "n_theta_ok": "the number of coupler amplitudes whose oscillation was "
+                      "fitted; 0 fails the run",
+        "target_theta_rad": "the angle that was asked for; NaN when none was",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairSwapAngleParameters) -> SequenceDiagram:
+        lanes = {"drive": f"{params.drive_side}.xy", "flux": f"{params.flux_side}.z",
+                 "coupler": "coupler.z"}
+        if params.compensation_amps:
+            lanes["stark"] = "member.xy"
+        lanes["readout"] = PAIR_READOUT_LANE
+        diagram = SequenceDiagram(lanes)
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        with diagram.repeat("x N", swept="swap_count"):
+            diagram.step(
+                Block("flux", "swap pulse", "flattop",
+                      note="the swap_operation's own pulses: their shape and length "
+                           "are the operation's"),
+                Block("coupler", "coupler pulse", "flattop", swept="coupler_flux_v"))
+            if params.operation_gap_ns:
+                diagram.step(Block("flux", "gap", "wait"))
+            if params.compensation_amps:
+                diagram.step(Block(
+                    "stark", "stark", "tone",
+                    note="on each member named in compensation_amps, "
+                         "stark_detuning_hz off its drive"))
+        if params.readout_mode == "shot":
+            pair_measure_step(diagram, note="both members, discriminated: every "
+                                            "shot's two levels are kept")
+        else:
+            pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Partial-swap ANGLE calibration: excite ONE member of a pair, apply N repeated "
         "swaps at the same swept COUPLER flux amplitude (the angle knob — the member's "

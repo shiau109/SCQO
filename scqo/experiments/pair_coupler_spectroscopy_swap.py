@@ -60,13 +60,24 @@ from pydantic import Field, model_validator
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from ._capabilities.coupler_flux import pair_coupler
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import joint_state_labels
-from ._coupler_tone import TONE_AXIS, CouplerToneParameters, tone_lo_hz
+from ._coupler_tone import (
+    COUPLER_LINE_EXTRACTS,
+    TONE_AXIS,
+    TONE_DRIVE_CHAIN,
+    TONE_NOTE,
+    CouplerToneParameters,
+    tone_lo_hz,
+)
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
 from ._drive_power import drive_power_boundary
+from ._requires import PAIR_JOINT_READOUT
 from ._sim import stable_seed
 from ._window import window_bounds
 from .pair_coupler_crossing_pulse import one_coupled_pair_problems
@@ -172,6 +183,43 @@ class PairCouplerSpectroscopySwap(Experiment):
 
     name: ClassVar[str] = "pair_coupler_spectroscopy_swap"
     writes: ClassVar[tuple[str, ...]] = ("f_01_hz", "anharmonicity_hz")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        TONE_DRIVE_CHAIN,
+        Requirement("idle_flux",
+                    "the ramp is a pulse on top of the ramped line's standing bias, "
+                    "and the frequency found is the coupler's at its own"),
+        *PAIR_JOINT_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        **COUPLER_LINE_EXTRACTS,
+        "peak_height": "the height of the f01 line in the total excitation",
+        "n_coupler_lines": "the number of lines the ramp changes",
+        "landing_high": "how much of the f01 line arrived on the high member",
+        "landing_low": "how much of the f01 line arrived on the low member",
+        "ramp_duration_ns": "the length of the slow segment that was played",
+        "old_ramp_idle_flux": "the standing bias of the ramped line, which the "
+                              "ramp voltages are measured from",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairCouplerSpectroscopySwapParameters) -> SequenceDiagram:
+        ramped = "coupler.z" if params.ramp_on == "coupler" else f"{params.tone_on}.z"
+        diagram = SequenceDiagram({
+            "drive": f"{params.tone_on}.xy", "flux": ramped,
+            "readout": PAIR_READOUT_LANE})
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "tone", "tone", swept=TONE_AXIS, note=TONE_NOTE))
+        if params.flux_buffer_ns:
+            diagram.step(Block("drive", "buffer", "wait"))
+        diagram.step(Block(
+            "flux", "ramp", "square", swept=ARM_AXIS,
+            note="jumps to ramp_v[0], runs to ramp_v[1], drops to idle; the "
+                 "reference arm waits instead"))
+        if params.flux_buffer_ns:
+            diagram.step(Block("flux", "buffer", "wait"))
+        pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Coupler frequency at its idle point: a tone on one pair member's drive line "
         "excites the coupler when it hits a coupler transition, then a slow flux ramp "

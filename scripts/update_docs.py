@@ -287,6 +287,8 @@ FIGURE_PREREQUISITES: dict[str, tuple[str | tuple[str, dict], ...]] = {
 FIGURE_PARAMETERS: dict[str, dict] = {
     # the fit reads a population: on raw I/Q its rates are not physical
     "qubit_parametric_drive_time": {"use_state_discrimination": True},
+    # ramp_v has no default: the run is refused without one
+    "pair_coupler_spectroscopy_swap": {"ramp_v": [0.14, 0.0]},
     # the demo's shot is a few us long, so the default 30 s record is more shots
     # than max_num_shots allows
     "qubit_parity_switch_continuous": {"record_time_s": 2.0},

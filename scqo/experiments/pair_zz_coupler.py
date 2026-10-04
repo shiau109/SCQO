@@ -18,7 +18,11 @@ from pydantic import Field
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
+from ._requires import PAIR_JOINT_READOUT
 from ._sim import stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
@@ -57,6 +61,53 @@ class PairZZCoupler(Experiment):
 
     name: ClassVar[str] = "pair_zz_coupler"
     writes: ClassVar[tuple[str, ...]] = ("zz_hz", "idle_flux")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the echo pulses on the measured member, and the x180 on its "
+                    "partner, have to be on resonance"),
+        Requirement("pi_amp",
+                    "the x180 that both members play at the middle of the echo has "
+                    "to be a full pi pulse"),
+        Requirement("idle_flux",
+                    "the members stay at their standing bias, where their pulses "
+                    "and readout are calibrated; the coupler's is what the run "
+                    "proposes"),
+        *PAIR_JOINT_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "coupler_zero_v": "the coupler bias where the fitted ZZ changes sign, "
+                          "interpolated between the two points around it",
+        "zz_min_hz": "the smallest fitted ZZ over the bias axis",
+        "zz_max_hz": "the largest fitted ZZ over the bias axis",
+        "n_flux": "the number of bias points",
+        "old_coupler_idle_flux": "the coupler's idle_flux before the run",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairZZCouplerParameters) -> SequenceDiagram:
+        partner = "high" if params.measure == "low" else "low"
+        diagram = SequenceDiagram({
+            "drive": f"{params.measure}.xy", "partner": f"{partner}.xy",
+            "coupler": "coupler.z", "readout": PAIR_READOUT_LANE})
+
+        def arm() -> None:
+            diagram.step(
+                Block("drive", "idle", "wait", swept="idle_time_ns"),
+                Block("coupler", "coupler pulse", "square",
+                      swept=("coupler_bias_v", "idle_time_ns")))
+
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x90", "gate"))
+        arm()
+        diagram.step(Block("drive", "x180", "gate"), Block("partner", "x180", "gate"))
+        arm()
+        diagram.step(Block("drive", "x90", "gate",
+                           note="its phase is advanced by detuning_hz times the idle "
+                                "of one arm"))
+        pair_measure_step(diagram, note="both members are read out; the dataset "
+                                        "keeps the measured member's population")
+        return diagram
+
     description: ClassVar[str] = (
         "Residual-ZZ vs coupler standing bias (echo fringe under a virtual detuning, "
         "one pair member measured): finds the signed ZZ zero crossing and proposes it "

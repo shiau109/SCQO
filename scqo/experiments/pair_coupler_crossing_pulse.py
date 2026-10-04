@@ -50,7 +50,9 @@ from pydantic import Field, model_validator
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram, held
 from . import register
 from ._capabilities.coupler_flux import (
     COUPLER_FLUX_AXIS,
@@ -62,8 +64,10 @@ from ._capabilities.coupler_flux import (
     coupler_flux_sweep,
     pair_coupler,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import joint_state_labels
+from ._diagrams import PAIR_READOUT_LANE, pair_measure_step
+from ._requires import COUPLER_PULSE_ORIGIN, PAIR_JOINT_READOUT
 from ._sim import stable_seed
 from ._window import window_bounds
 from .pair_swap_chevron import _coupler_problems, _role_names
@@ -81,6 +85,22 @@ SIM_X180_NS = 40.0
 _CROSSING_KEYS = ("v", "stderr_v", "width_v", "min_s")
 _FLAG_KEYS = ("crossings_not_bracketed_high", "crossings_not_bracketed_low",
               "center_mismatch", "side_conflict", "arch_unsolved")
+
+#: what each per-crossing key means, for the ``extracts`` declaration
+_CROSSING_MEANINGS = {
+    "v": "the {side} crossing of the {role} member, as a pulse amplitude from idle",
+    "stderr_v": "the standard error of that position",
+    "width_v": "the width of that dip",
+    "min_s": "the smallest normalized population inside that dip",
+}
+
+
+def _crossing_extracts() -> dict[str, str]:
+    """One entry per ``crossing_<role>_<lower|upper>_<key>`` fit key."""
+    return {
+        f"crossing_{role}_{side}_{key}": text.format(role=role, side=side)
+        for role in ("high", "low") for side in ("lower", "upper")
+        for key, text in _CROSSING_MEANINGS.items()}
 
 
 class PairCouplerCrossingPulseParameters(
@@ -212,6 +232,62 @@ class PairCouplerCrossingPulse(Experiment):
 
     name: ClassVar[str] = "pair_coupler_crossing_pulse"
     writes: ClassVar[tuple[str, ...]] = ("f_q_max_hz", "flux_offset", "flux_per_phi0")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "each measured member's x180 has to be on resonance while the "
+                    "coupler is far away: a miss is read as a crossing"),
+        Requirement("pi_amp",
+                    "each measured member's x180 has to be a full pi pulse: the "
+                    "dips are measured against its plateau"),
+        COUPLER_PULSE_ORIGIN,
+        *PAIR_JOINT_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "center_from_idle_v": "the symmetry point of the crossings, as a pulse "
+                              "amplitude from the coupler's idle",
+        "center_from_idle_stderr_v": "its standard error",
+        "center_kind": "what that point is: apex (the coupler sits above the "
+                       "members), anti_apex (below) or unknown",
+        **_crossing_extracts(),
+        "flux_offset_stderr": "the standard error of the proposed flux_offset",
+        "flux_per_phi0_stderr": "the standard error of the proposed flux_per_phi0",
+        "f_q_max_stderr_hz": "the standard error of the proposed f_q_max_hz",
+        "f_c_at_idle_hz": "the coupler frequency at its idle, read off the solved "
+                          "arch",
+        "f_c_at_idle_stderr_hz": "its standard error",
+        "ec_hz_used": "the coupler charging energy the arch was solved with",
+        "old_coupler_idle_flux": "the coupler's idle_flux the window was measured "
+                                 "from",
+        "crossings_not_bracketed_high": "1 when the high member's two crossings "
+                                        "around idle are not both inside the window",
+        "crossings_not_bracketed_low": "the same for the low member",
+        "center_mismatch": "1 when the two members' symmetry points disagree",
+        "side_conflict": "1 when coupler_side names a side the data contradicts",
+        "arch_unsolved": "1 when the period and the maximum frequency could not be "
+                         "solved; the run can still succeed without them",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: PairCouplerCrossingPulseParameters) -> SequenceDiagram:
+        roles = ("high", "low") if params.measure == "both" else (params.measure,)
+        diagram = SequenceDiagram({
+            **{role: f"{role}.xy" for role in roles},
+            "coupler": "coupler.z", "readout": PAIR_READOUT_LANE})
+        lasts = ("it stays on through the x180 and both buffers"
+                 if params.flux_buffer_ns else "it lasts as long as the x180")
+        pulse = Block("coupler", "coupler pulse", "square", swept=COUPLER_FLUX_AXIS,
+                      note=f"relative to the coupler's idle_flux; {lasts}")
+        x180 = [Block(role, "x180", "gate") for role in roles]
+        reset_step(diagram, params, drive=roles[0])
+        if params.flux_buffer_ns:
+            diagram.step(Block(roles[0], "buffer", "wait"), pulse)
+            diagram.step(*x180, held("coupler"))
+            diagram.step(Block(roles[0], "buffer", "wait"), held("coupler"))
+        else:
+            diagram.step(*x180, pulse)
+        pair_measure_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Coupler flux period and apex from where the coupler crosses its neighbours: "
         "the coupler plays a flux pulse (swept relative to its idle_flux) while each "

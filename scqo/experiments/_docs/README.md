@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**38 of 51 registered experiments are documented.**
+**45 of 51 registered experiments are documented.**
 
 ## Shared
 
@@ -16,6 +16,13 @@ Device-level calibration and characterization, for every chip and operator.
 |---|---|---|
 | [broadband_qubit_spectroscopy](broadband_qubit_spectroscopy/README.md) | Sweep qubit XY drive frequency across a wideband range by stepping drive LO sub-bands, detect candidate qubit transition peaks, and mark candidate frequencies without updating device state. | offline |
 | [broadband_resonator_spectroscopy](broadband_resonator_spectroscopy/README.md) | Sweep readout frequency across a wideband range by stepping LO sub-bands, detect transmission dips, and mark the candidate resonator frequencies determined from components.toml without updating device state. | offline |
+| [pair_coupler_crossing_pulse](pair_coupler_crossing_pulse/README.md) | Coupler flux period and apex from where the coupler crosses its neighbours: the coupler plays a flux pulse (swept relative to its idle_flux) while each measured pair member plays an x180 at its own drive frequency | offline |
+| [pair_coupler_spectroscopy_swap](pair_coupler_spectroscopy_swap/README.md) | Coupler frequency at its idle point: a tone on one pair member's drive line excites the coupler when it hits a coupler transition, then a slow flux ramp carries the coupler across a member so the excitation swaps into it (a sudden return leaves it there), and the pair's total excitation 1 - P00 peaks. | offline |
+| [pair_coupler_spectroscopy_zz](pair_coupler_spectroscopy_zz/README.md) | Coupler frequency at its idle point, the coupler never moving: a tone on one pair member's drive line excites the coupler when it hits a coupler transition, then the other member gets a pi | offline |
+| [pair_swap_angle](pair_swap_angle/README.md) | Partial-swap ANGLE calibration: excite ONE member of a pair, apply N repeated swaps at the same swept COUPLER flux amplitude (the angle knob — the member's own flux stays at its calibrated resonance value), and read both members' joint populations. | offline |
+| [pair_swap_chevron](pair_swap_chevron/README.md) | Single-excitation swap chevron: excite ONE member of a pair, then sweep a flux pulse (absolute volts) on one member's flux line against its duration, reading both members' joint populations. | offline |
+| [pair_swap_flux_map](pair_swap_flux_map/README.md) | Fixed-duration 2D swap map: excite ONE member of a pair, then play a coupler flux pulse and a member flux pulse simultaneously over a fixed window, sweeping both amplitudes (absolute volts) and reading both members' joint populations. | offline |
+| [pair_zz_coupler](pair_zz_coupler/README.md) | Residual-ZZ vs coupler standing bias (echo fringe under a virtual detuning, one pair member measured): finds the signed ZZ zero crossing and proposes it as idle_flux on the coupler's flux line (the interaction-OFF standing bias) | offline |
 | [qubit_deterministic_benchmarking](qubit_deterministic_benchmarking/README.md) | Amplitude error amplification: plays ONE target gate N times and sweeps N, so a small per-gate over/under-rotation accumulates into a resolvable fringe. | offline |
 | [qubit_drag_alternating](qubit_drag_alternating/README.md) | Sweep DRAG beta coefficient and play alternating pulse sequences. | offline |
 | [qubit_drag_equator](qubit_drag_equator/README.md) | Sweep the DRAG beta coefficient under two sequences that both end on the equator: x180 then y90, and y180 then x90 (two x90 / two y90 in place of the pi pulse for target_gate='x90'). | offline |
@@ -61,4 +68,4 @@ None yet.
 
 ## Not documented yet
 
-`pair_coupler_crossing_pulse`, `pair_coupler_spectroscopy_swap`, `pair_coupler_spectroscopy_zz`, `pair_swap_angle`, `pair_swap_chevron`, `pair_swap_flux_map`, `pair_zz_coupler`, `qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`
+`qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`

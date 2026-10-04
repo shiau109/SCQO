@@ -64,6 +64,44 @@ GATE_AMPLITUDE: tuple[Requirement, ...] = (
                 when=("target_gate", "x90")),
 )
 
+#: what a pair experiment that reads the JOINT state takes for granted of BOTH
+#: members: each readout parked at its working point and each discriminator
+#: calibrated - the joint populations are counted from every shot's two
+#: discriminated outcomes, so there is no I/Q form to fall back on
+PAIR_JOINT_READOUT: tuple[Requirement, ...] = (
+    Requirement("readout_freq_hz",
+                "each member's readout tone has to sit on its resonator"),
+    Requirement("readout_power_dbm",
+                "each member's readout has to be at its working power"),
+    Requirement("readout_rotation_rad",
+                "both members are discriminated in every shot: the axis each is "
+                "projected on"),
+    Requirement("readout_threshold",
+                "both members are discriminated in every shot: what splits |0> "
+                "from |1> on that axis"),
+)
+
+#: the pi pulse that puts ONE excitation into a pair - on the member the
+#: experiment's ``drive_side`` names
+PAIR_MEMBER_PI: tuple[Requirement, ...] = (
+    Requirement("drive_freq_hz",
+                "the x180 on the excited member has to be on resonance"),
+    Requirement("pi_amp",
+                "the x180 on the excited member has to be a full pi pulse"),
+)
+
+#: what a pair's flux pulses stand on: every flux amplitude a pair experiment
+#: plays - on a member's line or on the coupler's - is a pulse on top of that
+#: line's standing bias
+PAIR_FLUX_PULSE_ORIGIN = Requirement(
+    "idle_flux", "the standing bias of the member's flux line and of the "
+                 "coupler's: every flux amplitude here is a pulse on top of it")
+
+#: the origin of a ``coupler_flux`` window (``_capabilities/coupler_flux.py``)
+COUPLER_PULSE_ORIGIN = Requirement(
+    "idle_flux", "the coupler window is an excursion from the coupler's standing "
+                 "bias, and every position found is re-referenced to it")
+
 #: a discriminator that is ALWAYS used - for an experiment whose instrument-side
 #: arithmetic consumes the discriminated state of every shot. (The optional
 #: case is the state_readout capability's own conditional pair.)

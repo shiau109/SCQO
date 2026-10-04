@@ -45,9 +45,6 @@ CORE = {obj.name: obj for obj in (getattr(registry, n) for n in registry.__all__
 #: document means deleting its name here, and a new experiment never joins it -
 #: it ships with its document (CLAUDE.md, promotion checklist).
 UNDOCUMENTED = frozenset({
-    "pair_coupler_crossing_pulse", "pair_coupler_spectroscopy_swap",
-    "pair_coupler_spectroscopy_zz", "pair_swap_angle", "pair_swap_chevron",
-    "pair_swap_flux_map", "pair_zz_coupler",
     "qc_n_stark_amp", "qc_n_swap_amp", "qc_n_swap_tomography",
     "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
 })
@@ -197,7 +194,12 @@ def test_figure_tables_name_documented_experiments_and_valid_parameters(update_d
         text = docs.doc_path(name).read_text(encoding="utf-8")
         figure = text.split("## Expected result", 1)[1].split("## Traps", 1)[0]
         for field, value in settings.items():
-            shown = str(value).lower() if isinstance(value, bool) else f"{value:g}"
+            if isinstance(value, bool):
+                shown = str(value).lower()
+            elif isinstance(value, (list, tuple)):
+                shown = "[" + ", ".join(f"{item:g}" for item in value) + "]"
+            else:
+                shown = f"{value:g}"
             assert f"{field}={shown}" in figure, (
                 f"{name}: its figure is drawn with {field}={shown}; the document "
                 f"has to say so beside the figure")

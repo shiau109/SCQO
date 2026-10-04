@@ -18,12 +18,43 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 
 from ..parameters import Parameters
+from ..requirements import Requirement
 from ._window import refuse_zero_width
 
 TONE_AXIS = "tone_freq_hz"
 
 #: the widest tone window one LO plays (+-250 MHz of IF around its center)
 MAX_TONE_SPAN_HZ = 500e6
+
+#: the tone's power is set through the tone member's drive chain for the run and
+#: put back afterwards (``_drive_power.drive_power_boundary``), which refuses a
+#: chain with no standing value to return to
+TONE_DRIVE_CHAIN = Requirement(
+    "drive_power_dbm", "the run moves the tone member's drive chain to "
+                       "tone_power_dbm and restores this value afterwards, so one "
+                       "has to be set")
+
+#: the footnote of the tone block in both experiments' sequence diagrams
+TONE_NOTE = "tone_len_ns long at tone_power_dbm, on a member's drive line"
+
+#: the ``extracts`` entries both experiments share: the f01 line, the ladder
+#: and the flags (each adds its own height / depth and provenance keys)
+COUPLER_LINE_EXTRACTS: dict[str, str] = {
+    "f_c_hz": "the coupler's 0-1 frequency: the highest of its lines. Proposed as "
+              "f_01_hz",
+    "f_c_stderr_hz": "the standard error of that frequency",
+    "fwhm_hz": "the width of that line",
+    "snr": "the height of that line over the noise of the trace",
+    "alpha_hz": "the coupler's anharmonicity, from the f02/2 line; NaN when that "
+                "line was not found. Proposed as anharmonicity_hz",
+    "alpha_stderr_hz": "the standard error of the anharmonicity",
+    "n_ladder_lines": "how many of the coupler's lines sit on the multi-photon "
+                      "ladder of f01, f01 included",
+    "lo_hz": "the local oscillator the window was played around: its centre",
+    "no_line": "1 when no coupler line was found",
+    "unexplained_lines": "1 when a coupler line sits off the ladder; the run fails",
+    "peak_at_edge": "1 when f01 is at the edge of the window; the run fails",
+}
 
 
 class CouplerToneParameters(Parameters):

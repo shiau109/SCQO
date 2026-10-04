@@ -607,7 +607,8 @@ class Experiment(ABC):
 | 3 | 閘校正與基準測試，6 個 | 完成（理論留空），見 §15 |
 | 4 | 磁通線的時間對齊與失真，3 個 | 完成（理論留空），見 §17 |
 | 5 | Stark 位移、參數式驅動、電荷宇稱，6 個 | 完成（理論留空），見 §18 |
-| 6 到 8 | 見 §7 | 未開始 |
+| 6 | 一對量子位元與耦合器，7 個 `pair_*` | 完成（理論留空），見 §19 |
+| 7 到 8 | 見 §7 | 未開始 |
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -755,6 +756,15 @@ class Experiment(ABC):
   兩個 parity 實驗把紀錄時間縮成 2 秒。文件裡都有寫明；這個做法請過目。
 - `qubit_parametric_drive_time` 的預設是不鑑別，但它的估計器只有鑑別後的資料才有意義。
   要不要把預設改成鑑別，或在沒有鑑別時拒絕執行（§18.4）。
+- 七個 `pair_*` 實驗都只有 QM 有 probe，文件沒有寫明（與上面「只有一個後端」那一條同一個問題，§19.4）。
+- `pair_swap_chevron` 設了 `coupler_flux_v` 的那條路徑沒有畫序列圖，只用文字說明。
+  要畫就得在 `doc_variants` 放一個耦合器電壓，這是晶片特有的數字（§19.4）。
+- `pair_swap_flux_map` 的預期結果圖用的是布居圖，不是耦合強度曲線：模擬資料大部分落在超過完整交換的區域，
+  曲線圖上幾乎每一欄都被標記。要不要換成硬體的圖（§19.4）。
+- `pair_zz_coupler` 的預期結果圖是估計器自己的圖，軸標寫「ZZ (MHz)」，實際畫的是含 detuning 的條紋頻率（Hz）。
+  文件照實說明了怎麼讀；圖本身要在 scqat 改（I40，§19.3）。
+- pair 實驗的前置條件表只列欄位名稱，分不出是哪個成員或哪條線的值；每份文件在表格下方用一段話說明。
+  這個寫法請過目（§19.2）。
 
 **發現但沒有修的問題（都在 `BACKLOG.md`）**
 
@@ -767,6 +777,11 @@ class Experiment(ABC):
 - I19 第 4 批補了兩條：`qubit_ramsey_cryoscope` 兩個後端在磁通脈衝前後留的時間不同；
   `qubit_spectroscopy_cryoscope` 兩邊對頻譜脈衝振幅的防護不是同一個問題。
 - I19 第 5 批補了一條：`qubit_parity_switch_discrete` 補滿週期的等待，兩個後端的時間格點不同。
+- I40：`pair_zz_coupler` 的 ZZ 低於 −2 倍 detuning 時會回報一個假的去耦點，而且判定成功、提議寫回（已重現，§19.3）。
+- I41：pair 系列三處呈現不一致（`result.fit` 裡放了字串、`pair_swap_flux_map` 的軸說明與圖相反、
+  `pair_zz_coupler` 的 `idle_time_ns` 是單臂時間但說明沒講清楚）。
+- I26、I21、F24：原本就在，第 6 批文件的 Traps 有引用（`pair_zz_coupler` 把脈衝振幅當成絕對偏壓寫回；
+  成員讀出失效的圖仍判定成功；`pair_coupler_spectroscopy_swap` 找不到 f01 時把下一條線當成 f01）。
 - I32、F12、F18：原本就在，第 5 批文件的 Traps 有引用（`qubit_parametric_drive_time` 回報的「最佳頻率」不是共振點、
   速率的單位不是 Hz；`best_peak_amplitude` 永遠是正的；Stark 訊號不超過一圈的規則沒有程式在把關）。
 
@@ -885,3 +900,69 @@ class Experiment(ABC):
    紀錄長度與可見的最低速率）。chipA 上實際量到的數字（例如速率約 2 Hz、週期 30 us）我沒有寫進文件，
    因為那是硬體紀錄，該由你決定要不要放。
 5. **`qubit_resonator_stark` 還沒有在硬體上跑過**，文件的 `validated` 寫的是 `offline`。
+
+## 19. 第 6 批實作紀錄（2026-10-04）：一對量子位元與耦合器，七個實驗
+
+`pair_swap_chevron`、`pair_swap_flux_map`、`pair_swap_angle`、`pair_zz_coupler`、`pair_coupler_crossing_pulse`、
+`pair_coupler_spectroscopy_swap`、`pair_coupler_spectroscopy_zz`。連同前面的，51 個裡有 45 個有文件。
+這七個實驗只有 QM 有 probe，所以這一批只動了 SCQO 與 scqo-qm 兩個版本庫。
+
+### 19.1 這一批加的共用宣告
+
+繪圖與需求的機制沒有改。加的是幾個共用的宣告，讓七個實驗寫法一致：
+
+- `experiments/_requires.py`：
+  - `PAIR_JOINT_READOUT`：兩個成員的讀出頻率、讀出功率、鑑別軸、鑑別門檻。這七個實驗每一發都鑑別兩個成員，
+    沒有 I/Q 的形式，所以鑑別器是無條件需要的。
+  - `PAIR_MEMBER_PI`：被激發的那個成員的 `drive_freq_hz` 與 `pi_amp`。
+  - `PAIR_FLUX_PULSE_ORIGIN`、`COUPLER_PULSE_ORIGIN`：`idle_flux`。這些實驗的每個磁通電壓都是疊在靜態偏壓上的脈衝。
+- `experiments/_diagrams.py`：`pair_measure_step`（兩個成員一起讀出的那一步）與讀出軌的名稱 `pair.ro`。
+- `experiments/_coupler_tone.py`：兩個耦合器光譜共用的 `COUPLER_LINE_EXTRACTS`（f01、階梯、三個旗標的說明）、
+  `TONE_DRIVE_CHAIN`（執行期間會改動並還原 tone 成員的驅動功率）、序列圖上 tone 的註腳。
+- `pair_swap_chevron.py`：`transfer_map_extracts`，三個 swap 實驗共用的傳輸圖摘要鍵的說明。
+- `scripts/update_docs.py`：`FIGURE_PARAMETERS` 加一條 `pair_coupler_spectroscopy_swap` 的 `ramp_v=[0.14, 0]`
+  （這個參數沒有預設值，不給就不能跑）。對應的測試原本只會檢查數字與布林值，現在也能檢查清單。
+
+序列圖的軌道名稱用角色：`low.xy`、`low.z`、`coupler.z`、`pair.ro`。哪個成員被激發、哪個成員帶磁通脈衝是參數
+（`drive_side`、`flux_side`、`measure`、`tone_on`），圖會跟著參數換名稱。
+
+### 19.2 前置條件怎麼宣告
+
+前置條件是照欄位名稱宣告的，而 pair 本身不持有這些欄位：驅動與讀出的值屬於兩個成員，`idle_flux` 屬於成員與耦合器的磁通線。
+生成的表格只會寫「drive channel」「flux line」，分不出是誰的。做法是：
+
+- 每一條的理由寫明是誰的（「被激發的成員」「兩個成員」「耦合器的靜態偏壓」）。
+- 每份文件在表格下方加一段話，說明這些值屬於成員與磁通線。
+
+`pair_swap_angle` 還需要 swap 操作裡存的兩個振幅（成員的共振振幅、耦合器脈衝的振幅）。
+這兩個值存在後端自己的設定裡，目錄的 `coupler_flux` 欄位在 QM 上接不到這種操作，所以沒有列進表格，改在文件裡用文字說明。
+
+### 19.3 發現但沒有修的問題
+
+1. **`pair_zz_coupler` 會回報假的去耦點（I40，已重現）。** 估計器擬合的條紋頻率沒有正負號，實驗用「條紋頻率減 detuning」當作 ZZ。
+   真實的 ZZ 低於 −detuning 時條紋會折回；低到 −2 倍 detuning 時，算出來的 ZZ 又過一次零。
+   程式取偏壓軸上的第一個過零點，所以掃描範圍的低偏壓端只要夠負，就會把假的過零點當成去耦點，判定成功並提議寫回。
+   用實驗自己的訊號模型驗證：零點放在 +0.100 V，斜率 2.5 MHz/V 時回報 +0.099 V（正確）；
+   斜率 6 MHz/V 時回報 −0.233 V（錯誤）。腳本在暫存資料夾的 `zz_fold_check.py`。
+2. **同一個實驗的圖會誤導。** 估計器的兩張圖畫的都是條紋頻率（單位 Hz、含 detuning），標籤卻寫 ZZ。
+   曲線的最低點看起來像去耦點，其實是 ZZ 等於 −detuning 的地方；真正的去耦點是曲線穿過 detuning 的位置。
+   文件的「預期結果」照實說明了怎麼讀。
+3. **I41：三處呈現不一致**，都只是文字或型別，不影響數值：
+   `pair_coupler_crossing_pulse` 在 `result.fit` 放了字串（每次執行都印一條 pydantic 警告，兩個 punchout 也一樣）；
+   `pair_swap_flux_map` 的說明把耦合器寫成橫軸，圖畫成縱軸；
+   `pair_zz_coupler` 的 `idle_time_ns` 是單臂的長度，欄位說明與程式註解沒有講清楚。
+
+### 19.4 待你過目（已加進 §16）
+
+1. **七個實驗都只有 QM 有 probe**，文件沒有寫明。
+2. **`pair_swap_chevron` 帶耦合器脈衝的路徑沒有圖。** 這是 QCQ 晶片上最常用的跑法，但畫它需要在 `doc_variants`
+   放一個耦合器電壓，違反「變體不放晶片特有數字」的做法，所以只寫了文字。
+3. **`pair_swap_flux_map` 的圖選了布居圖。** 模擬器刻意把耦合強度放在接近完整交換的地方，
+   所以耦合曲線圖上大部分的欄都被標成「可能超過完整交換」，不適合當示範。布居圖能看出共振帶怎麼隨耦合器彎曲。
+4. **I27 沒有引用。** 我原本想在耦合器光譜的 Traps 寫「寬的線會被旁邊窄的線搶走」，查了 I27 的現行文字，
+   這兩個估計器已經用較窄的擬合視窗繞過這個問題，所以沒有寫。
+5. **硬體紀錄沒有放進文件。** 5Q4C 上量到的數字（耦合器頻率、`decouple_offset` 不在去耦點、各個電壓）都沒有寫，
+   只在 Traps 用「在實際晶片上看過」帶過並指向 BACKLOG。六個實驗在 5Q4C 上跑過（`pair_zz_coupler` 沒有紀錄），
+   `validated` 仍然都寫 `offline`，等你填。
+6. **`pair_zz_coupler` 的寫回在偏壓不是 0 V 時是錯的（I26）。** 文件的 Traps 寫了正確的值怎麼算
+   （舊的靜態偏壓加上過零點），並建議拒絕提議、手動設定。這個建議請過目。

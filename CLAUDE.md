@@ -305,9 +305,11 @@ scqo/
                   #   README.md = the index, DEPENDENCIES.md = field -> written by /
                   #   required by
     _requires.py  # requirement bundles experiments include explicitly
-                  #   (CALIBRATED_READOUT, CALIBRATED_PI_PULSE, READOUT_WINDOW_CENTRE)
+                  #   (CALIBRATED_READOUT, CALIBRATED_PI_PULSE, READOUT_WINDOW_CENTRE;
+                  #   for a pair: PAIR_JOINT_READOUT, PAIR_MEMBER_PI - the fields are
+                  #   the MEMBERS' and the flux lines', a pair holds none of them)
     _diagrams.py  # sequence-diagram fragments several experiments share (lane
-                  #   sets, depletion_step, prepared_state_steps)
+                  #   sets, depletion_step, prepared_state_steps, pair_measure_step)
     _capabilities/  # one module per capability: the canonical Parameters mixin + contract
                     #   fragment + sim/estimate helpers (state_readout.py,
                     #   flux.py = the swept flux window in TWO FRAMES sharing one axis

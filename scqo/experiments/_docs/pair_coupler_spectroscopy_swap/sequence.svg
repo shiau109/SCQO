@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="684.3" height="354" viewBox="0 0 684.3 354" role="img">
+<rect x="0.5" y="0.5" width="683.3" height="353" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<text x="92.5" y="60" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">high.xy</text>
+<path d="M102.5,66 H670.3" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="92.5" y="144" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">coupler.z</text>
+<path d="M102.5,150 H670.3" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="92.5" y="228" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">pair.ro</text>
+<path d="M102.5,234 H670.3" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M114.5,56 H219.3" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M109.5,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M224.3,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="166.9" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<rect x="238.3" y="49.9" width="91.8" height="16.1" fill="#ffe8d6" fill-opacity="0.55" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="284.2" y="43.9" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">tone<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<text x="284.2" y="81" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">tone_freq_hz</text>
+<path d="M349.2,56 H397.5" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M344.2,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M402.5,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="373.3" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">buffer</text>
+<rect x="416.5" y="124" width="85" height="26" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="459" y="141.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">ramp<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<text x="459" y="165" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">ramp_played</text>
+<path d="M520.5,140 H568.9" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M515.5,140 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M573.9,140 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="544.7" y="133" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">buffer</text>
+<rect x="587.9" y="208" width="75.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="625.6" y="225.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout<tspan font-size="9.4" dy="-4.9">3</tspan></text>
+<text x="102.5" y="283" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  tone_len_ns long at tone_power_dbm, on a member's drive line</text>
+<text x="102.5" y="300" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  jumps to ramp_v[0], runs to ramp_v[1], drops to idle; the reference arm waits instead</text>
+<text x="102.5" y="317" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">3  both members, discriminated in every shot: the dataset holds the joint populations</text>
+<rect x="102.5" y="325" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="122.5" y="334" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>
