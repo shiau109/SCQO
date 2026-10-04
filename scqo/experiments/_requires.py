@@ -33,3 +33,32 @@ CALIBRATED_PI_PULSE: tuple[Requirement, ...] = (
 #: somewhere to centre its window
 READOUT_WINDOW_CENTRE = Requirement(
     "readout_freq_hz", "the swept window is centred on it", seed_ok=True)
+
+#: the same for a drive-frequency scan (the ``drive_detuning`` capability's
+#: window is measured from this knob)
+DRIVE_WINDOW_CENTRE = Requirement(
+    "drive_freq_hz", "the swept window is centred on it", seed_ok=True)
+
+#: what a ``_pulse`` flux experiment needs of the flux line: its window is an
+#: excursion from the standing bias (``_capabilities/flux.py``), so every
+#: number it reports is read from there
+FLUX_PULSE_ORIGIN = Requirement(
+    "idle_flux", "the flux window is an excursion from this standing bias, where "
+                 "the pulses and the readout are played")
+
+#: a saturation drive's power is set through the drive chain for the run and
+#: put back afterwards (``_drive_power.drive_power_boundary``), which refuses a
+#: chain with no standing value to return to
+DRIVE_CHAIN = Requirement(
+    "drive_power_dbm", "the run moves the drive chain to its own saturation power "
+                       "and restores this value afterwards, so one has to be set")
+
+#: a discriminator that is ALWAYS used - for an experiment whose instrument-side
+#: arithmetic consumes the discriminated state of every shot. (The optional
+#: case is the state_readout capability's own conditional pair.)
+CALIBRATED_DISCRIMINATOR: tuple[Requirement, ...] = (
+    Requirement("readout_rotation_rad",
+                "every shot is discriminated: the axis it is projected on"),
+    Requirement("readout_threshold",
+                "every shot is discriminated: what splits |0> from |1> on that axis"),
+)

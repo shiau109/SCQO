@@ -53,15 +53,20 @@ from .._scqat import per_qubit_results
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import log_time_axis_ns
 from . import register
@@ -120,6 +125,43 @@ class QubitRamseyPhasor(Experiment):
 
     name: ClassVar[str] = "qubit_ramsey_phasor"
     writes: ClassVar[tuple[str, ...]] = ("drive_freq_hz", "f_01_hz", "t2_star_s")
+    #: the pi/2 pulse itself is not here: which knob holds its amplitude differs
+    #: per backend (BACKLOG I19), so each driver's subclass adds its own
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the accumulated phase is measured against it, with no "
+                    "artificial detuning: it has to be close enough that the phase "
+                    "can be followed from one idle point to the next"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "stretch_p": "the stretch exponent of the decay: 1 is an exponential, 2 a "
+                     "Gaussian. Reported only - no device field holds it",
+        "stretch_p_err": "the fit's standard error on the stretch exponent",
+        "t2_star_err_s": "the fit's standard error on T2*",
+        "var_explained": "the share of the envelope's variance the fitted decay "
+                         "accounts for",
+        "n_phase_valid": "how many idle points kept a phase the unwrap could follow; "
+                         "the frequency is fitted on those",
+        "detuning_error_hz": "the slope of the accumulated phase: the signed distance "
+                             "of the qubit from the drive. Absent when the phase could "
+                             "not be followed",
+        "old_drive_freq_hz": "the drive frequency the run started from (reported with "
+                             "detuning_error_hz)",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRamseyPhasorParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x90", "gate"))
+        diagram.step(Block("drive", "idle", "wait", swept=IDLE_AXIS))
+        diagram.step(Block(
+            "drive", "x90", "gate", swept=FRAME_AXIS,
+            note="its frame is rotated by the swept fraction of a turn, at every idle"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Two pi/2 pulses separated by a LOG-spaced idle time, with the closing pulse's "
         "phase swept through a full turn at every idle point. A lock-in over that frame "

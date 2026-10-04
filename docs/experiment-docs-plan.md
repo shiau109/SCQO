@@ -603,5 +603,79 @@ class Experiment(ABC):
 |---|---|---|
 | 樣板 | `qubit_ramsey` | 完成 |
 | 1 | 讀出與共振腔，9 個 | 完成（理論留空） |
-| 2 | 單比特頻率與相干，其餘 13 個 | 未開始 |
+| 2 | 單比特頻率與相干，其餘 13 個 | 完成（理論留空），見 §14 |
 | 3 到 8 | 見 §7 | 未開始 |
+
+## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
+
+`qubit_spectroscopy`、`broadband_qubit_spectroscopy`、`qubit_spectroscopy_flux_pulse`、
+`qubit_power_rabi`、`qubit_ramsey_phasor`、`qubit_ramsey_flux_pulse`、`qubit_relaxation`、
+`qubit_relaxation_flux_pulse`、`qubit_echo`、`qubit_echo_flux_pulse`、`qubit_thermal_population`、
+`qubit_t1_ade`、`qubit_t1_bayesian`。連同前面的，51 個裡有 23 個有文件。
+這一批三個版本庫都有改：SCQO 是主體，兩個驅動各補了宣告與註記。
+
+### 14.1 每個實驗做了什麼
+
+做法與第 1 批相同（§13.1）。差別只有一點：這一批的序列我先對照了兩個驅動的 probe 才宣告，
+因為相干實驗的脈衝順序是結果的一部分。對照的結果在 §14.3 與 §14.4。
+
+十三張預期結果圖與十四張序列圖（`qubit_spectroscopy` 多一張重疊模式的）都逐張看過。
+
+### 14.2 為了這一批加進核心的東西
+
+- **重複括號可以巢狀。** `qubit_t1_bayesian` 是「每個區塊重設一次，區塊裡重複 `num_probes` 次探測」，
+  一層括號畫不出來。外層括號畫在內層外面，各有自己的標籤列；只有一層括號的圖位置不變
+  （已提交的圖逐位元組相同）。這也修掉第 1 批留下的一個洞：`single_shot_readout` 在
+  `reset_method=active` 且 `active_reset_rounds` 大於 1 時，`sequence_diagram` 會直接報錯。
+- **`collect()` 會丟掉兩種條件式需求。** 一種是同一個欄位本來就無條件需要
+  （`qubit_t1_ade` 每一發都要鑑別，重設那條「active 才需要門檻」就是多餘的）；
+  另一種是實驗的 Parameters 根本拒絕那個設定
+  （`qubit_thermal_population` 拒絕 active 重設，所以不該列出 active 重設需要什麼）。
+  第二種是用 Parameters 自己的驗證判斷的，不是另外宣告。
+- **`experiments/_requires.py`** 多四組：`DRIVE_WINDOW_CENTRE`（驅動頻率只需要起始值）、
+  `FLUX_PULSE_ORIGIN`（`_pulse` 實驗的磁通視窗從 `idle_flux` 算起）、
+  `DRIVE_CHAIN`（飽和驅動會暫時移動驅動鏈功率，所以鏈上要先有值）、
+  `CALIBRATED_DISCRIMINATOR`（每一發都鑑別的實驗）。
+- **`experiments/_diagrams.py`** 多四個片段：含磁通線的三條軌、磁通線的標籤
+  （指定 `flux_component` 時標成 `source.z`）、echo 的三個脈衝、「等待期間維持磁通脈衝」的一步。
+  `mapped_measure_steps` 放在 `mapped_readout.py`：`qubit_power_rabi` 量耦合器時的三步映射讀出。
+- **`scripts/update_docs.py` 的 `FIGURE_PREREQUISITES`**：`qubit_thermal_population` 沒有存好的雲團中心就拒絕執行，
+  所以產圖前先在同一個示範裝置上跑一次 `single_shot_readout` 並接受。只列真的有硬性門檻的實驗。
+
+### 14.3 驅動端的宣告
+
+- **π/2 脈衝的振幅旋鈕**，做法與 `qubit_ramsey` 相同：QM 的 `qubit_echo`、`qubit_ramsey_phasor`、
+  `qubit_ramsey_flux_pulse`、`qubit_echo_flux_pulse` 加上 `pi_amp_x90`；
+  Qblox 的 `qubit_ramsey_phasor`、`qubit_ramsey_flux_pulse` 加上 `pi_amp`（以一半振幅打）。
+  兩個驅動各有一個 `experiments/_requires.py` 放這條共用的需求。
+- **後端註記**，只寫「這個 probe 與宣告的序列不同」或「只有這個後端才有的限制」：
+  - QM `qubit_relaxation_flux_pulse`：`prepare_state` 沒有實作，不論設多少都會打 `x180`。
+  - QM `qubit_spectroscopy_flux_pulse`：飽和脈衝與磁通脈衝的長度取自已存的飽和操作，沒有參數可設
+    （而且目前打了四倍長，`BACKLOG.md` I20）。
+  - Qblox `qubit_spectroscopy_flux_pulse`：驅動是在重設等待期間持續打的連續波，不是等待之後的一個脈衝。
+  - QM 與 Qblox 的 `broadband_qubit_spectroscopy`：QM 換頻帶時會連帶移動同一對輸出埠的另一個通道；
+    Qblox 一次只能掃一個目標。
+  - QM `qubit_echo`：每一臂對齊到 4 ns，所以總等待時間以 8 ns 為一步。
+- 沒有為「這個後端拒絕 active 重設」寫註記。那是從類別屬性就能推出來的事，手寫會過期。
+
+### 14.4 對照驅動時發現的問題
+
+1. **QM 的 `qubit_echo_flux_pulse` 把單臂時間存成 `wait_time_ns`**，所以擬合出來的 T2 echo 是真實值的一半。
+   每一臂實際打的長度是對的，錯的是座標的標示（`4 * cycles` 應為 `8 * cycles`；`qubit_echo` 是對的）。
+   這是讀程式得到的結論，沒有在儀器上重現。**我沒有修**：它不在這個功能的範圍內，而且會改變硬體上的資料。
+   已記在 `BACKLOG.md` I38，並寫進該類別的後端註記。
+2. `qubit_relaxation_flux_pulse.prepare_state` 只有模擬在讀，唯一的 probe（QM）沒有實作。記在 I19。
+3. `qubit_spectroscopy_flux_pulse` 沒有驅動長度的參數，兩個驅動實際打的驅動不同。記在 I19（QM 那一半原本就在 I20）。
+
+`qubit_echo` 的 π/2 脈衝在兩個後端都是 `x90`，序列順序一致，只有振幅旋鈕不同，所以沒有 `qubit_ramsey` 那種順序問題。
+
+### 14.5 待你過目
+
+1. **Traps 仍然只寫我能從程式、欄位說明、`BACKLOG.md` 確認的事。** 物理上常見但我沒有依據的說法都拿掉了。
+2. **`validated` 十三份都寫 `offline`。**
+3. **`qubit_ramsey_flux_pulse` 的 park 模式沒有預期結果圖。** 文件變體需要一個絕對頻率，
+   只能寫死示範裝置的驅動頻率，所以沒有加；`park_excursion_v` 這個鍵因此只在文字裡提到，不在產生的表裡。
+4. **`qubit_t1_ade` 與 `qubit_t1_bayesian` 的文件寫了「目前只有 QM 驅動有 probe」。**
+   這是後端的事實，但核心的實驗說明本來就寫了，而且原因（需要儀器即時運算）是中立的，所以保留。
+5. **`qubit_echo_flux_pulse` 的預期結果圖看起來很亂，文件裡有說明原因**：模擬的 T2 echo 約 50 us，
+   預設視窗只到 40 us。要不要把預設的 `max_wait_ns` 加長，請你決定。

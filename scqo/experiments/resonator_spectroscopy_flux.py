@@ -53,7 +53,7 @@ from ..experiment import Experiment
 from . import register
 from ..requirements import Requirement
 from ..sequence_diagram import Block, SequenceDiagram
-from ._diagrams import depletion_step
+from ._diagrams import depletion_step, flux_lane
 from ._requires import READOUT_WINDOW_CENTRE
 from ._flux_component import FluxComponentParameters
 
@@ -413,7 +413,7 @@ class ResonatorSpectroscopyFlux(Experiment):
 
     @classmethod
     def sequence_diagram(cls, params) -> SequenceDiagram:
-        diagram = SequenceDiagram({"flux": "q.z", "readout": "q.ro"})
+        diagram = SequenceDiagram({"flux": flux_lane(params), "readout": "q.ro"})
         diagram.step(
             Block("flux", "flux bias", "offset", swept="flux_bias_v",
                   note="an absolute DC level on the flux line, held while the "

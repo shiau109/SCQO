@@ -146,7 +146,8 @@ def reset_step(diagram: SequenceDiagram, params: Parameters, *,
 
     Thermal is one idle on the drive lane. Active is the pair the vocabulary
     above describes - a measurement, then a pi pulse played only on |e> -
-    bracketed when ``active_reset_rounds`` asks for more than one attempt.
+    bracketed when ``active_reset_rounds`` asks for more than one attempt
+    (inside a caller's own per-shot or per-block bracket, that one nests).
     """
     if getattr(params, "reset_method", "thermal") != "active":
         diagram.step(Block(drive, "thermal reset", "wait"))

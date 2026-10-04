@@ -40,10 +40,15 @@ from ._capabilities.flux import (
     flux_sweep,
     foreign_flux_source,
 )
+from ._capabilities.qubit_reset import reset_step
+from ._diagrams import drive_flux_readout
+from ._requires import CALIBRATED_READOUT, DRIVE_CHAIN, DRIVE_WINDOW_CENTRE
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from ._drive_power import drive_power_boundary
 from ._flux_component import FluxComponentParameters
@@ -100,6 +105,44 @@ class QubitSpectroscopyFluxPulse(Experiment):
     name: ClassVar[str] = "qubit_spectroscopy_flux_pulse"
     writes: ClassVar[tuple[str, ...]] = (
         "ej_sum_hz", "f_q_max_hz", "flux_offset", "flux_per_phi0", "idle_flux")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        DRIVE_WINDOW_CENTRE,
+        # restated, not FLUX_PULSE_ORIGIN: this map exists to CORRECT the idle
+        # point, so all it asks is that the sweet spot falls inside the window
+        Requirement("idle_flux",
+                    "the flux window is an excursion from it; it only has to put "
+                    "the sweet spot inside that window", seed_ok=True),
+        DRIVE_CHAIN,
+        *CALIBRATED_READOUT,
+        # no reset capability here: both probes play a fixed thermal wait
+        Requirement("thermalization_time_s",
+                    "how long the thermal reset before every point waits"),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "f01_at_sweet_spot_hz": "the fitted top of the arch; proposed as f_q_max_hz",
+        "flux_offset_from_idle": "the sweet spot as an excursion from the idle flux "
+                                 "the run started from - the frame of the swept axis",
+        "flux_offset_stderr": "the fit's standard error on the sweet spot",
+        "ej_sum_stderr_hz": "the fit's standard error on ej_sum_hz",
+        "ec_ghz_assumed": "the charging energy the arch model held fixed (ec_ghz)",
+        "old_drive_freq_hz": "the drive frequency the detuning window was centred on",
+        "old_idle_flux": "the idle flux the run started from: the origin of the "
+                         "swept axis",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)  # no reset parameters: always the thermal wait
+        diagram.step(
+            Block("drive", "saturation", "tone", swept="detuning_hz"),
+            Block("flux", "flux pulse", "square", swept="flux_bias_v",
+                  note="an excursion from idle_flux, held only while the drive plays"))
+        diagram.step(Block(
+            "readout", "readout", "acquire",
+            note="read out back at the idle flux, the same point for every slice"))
+        return diagram
+
     description: ClassVar[str] = (
         "2D qubit spectroscopy vs PULSED flux (bias applied only during the drive; "
         "readout at idle flux every slice, reduced against one global IQ reference): "

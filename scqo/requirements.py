@@ -86,8 +86,19 @@ def collect(cls) -> tuple[Requirement, ...]:
     """Every requirement of experiment ``cls``: its own, then each Parameters
     mixin's ``REQUIRES`` in MRO order. The first declaration of a
     ``(field, condition)`` wins, so an experiment may restate a mixin's line
-    with its own reason."""
-    out: list[Requirement] = []
+    with its own reason.
+
+    Two kinds of conditional line are dropped, because a reader would take
+    either for a real choice:
+
+    * one whose field the experiment needs ALWAYS (an unconditional line for
+      the same field): ``qubit_t1_ade`` discriminates every shot, so the reset
+      mixin's "with reset_method=active" line for the threshold says nothing;
+    * one whose setting the experiment's Parameters REFUSE:
+      ``qubit_thermal_population`` rejects ``reset_method="active"``, so what an
+      active reset would need is not a requirement of it.
+    """
+    declared: list[Requirement] = []
     seen: set[tuple[str, Any]] = set()
     mixins = [req for klass in cls.Parameters.__mro__
               for req in vars(klass).get("REQUIRES", ())]
@@ -95,8 +106,32 @@ def collect(cls) -> tuple[Requirement, ...]:
         key = (req.field, req.when)
         if key not in seen:
             seen.add(key)
-            out.append(req)
-    return tuple(out)
+            declared.append(req)
+    always = {req.field for req in declared if req.when is None}
+    return tuple(
+        req for req in declared
+        if req.when is None
+        or (req.field not in always and not _setting_refused(cls.Parameters, *req.when)))
+
+
+def _setting_refused(parameters, name: str, value: Any) -> bool:
+    """Whether a Parameters class rejects ``name=value`` with every other field
+    at its default.
+
+    Judged against a baseline: a class that does not validate on defaults alone
+    (it has required fields of its own) refuses nothing here, because the
+    failure could not be pinned on the setting.
+    """
+    base = {"targets": ["q"]}
+    try:
+        parameters.model_validate(base)
+    except Exception:
+        return False
+    try:
+        parameters.model_validate({**base, name: value})
+    except Exception:
+        return True
+    return False
 
 
 def unknown_fields(names) -> list[str]:

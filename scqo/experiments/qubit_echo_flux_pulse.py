@@ -27,19 +27,24 @@ from ._capabilities.flux import (
     flux_anchor_v,
     flux_sweep,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import drive_flux_readout, echo_steps, flux_pulse_idle_step
+from ._requires import CALIBRATED_READOUT, FLUX_PULSE_ORIGIN
 from ._sim import stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import SequenceDiagram
 from . import register
 
 
@@ -69,6 +74,36 @@ class QubitEchoFluxPulse(Experiment):
     """Measure qubit Hahn echo coherence T2_echo vs Z flux PULSE amplitude (idle-relative)."""
 
     name: ClassVar[str] = "qubit_echo_flux_pulse"
+    #: as in qubit_echo, the pi/2 amplitude is each driver's own line
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        FLUX_PULSE_ORIGIN,
+        Requirement("drive_freq_hz", "all three pulses have to be on resonance at "
+                                     "the idle flux, where they are played"),
+        Requirement("pi_amp", "the refocusing x180 has to be a full pi pulse"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "flux_bias_v": "the flux excursions that were swept, in the order the fit "
+                       "holds them: the x axis of every list below",
+        "t2_echo": "the fitted T2 echo at each excursion, in seconds",
+        "t2_echo_stderr": "the fit's standard error on each T2 echo",
+        "amplitude": "the fitted size of each decay",
+        "offset": "the level each decay settles to",
+        "old_idle_flux": "the idle flux the run started from: the origin of the "
+                         "excursions",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitEchoFluxPulseParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        echo_steps(diagram, lambda: flux_pulse_idle_step(
+            diagram, "tau / 2", "wait_time_ns",
+            note="an excursion from idle_flux, held during each arm and off for "
+                 "the pulses"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, "
         "0 = stay parked — and a total wait delay in a Hahn echo sequence, "

@@ -28,11 +28,15 @@ from pydantic import Field, model_validator
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import READOUT_ONLY
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 #: (dataset variable, readout-channel monitor) for the pinned reference, in the
@@ -83,6 +87,41 @@ class QubitThermalPopulation(Experiment):
 
     name: ClassVar[str] = "qubit_thermal_population"
     writes: ClassVar[tuple[str, ...]] = ("n_th",)
+    #: the four stored centres are a hard gate (`_reference_positions` refuses
+    #: without them); the readout pair says they only describe the readout
+    #: condition they were measured at
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("pos_g_i", "the stored centre of the |g> cloud, pinned in the fit"),
+        Requirement("pos_g_q", "the stored centre of the |g> cloud, pinned in the fit"),
+        Requirement("pos_e_i", "the stored centre of the |e> cloud: with only |g> "
+                               "prepared, the data cannot place it"),
+        Requirement("pos_e_q", "the stored centre of the |e> cloud: with only |g> "
+                               "prepared, the data cannot place it"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "pop_e_prep_g": "the FITTED share of the |e> cloud - the population with the "
+                        "readout overlap removed; proposed as n_th",
+        "assign_e_prep_g": "the COUNTED share of shots nearer the |e> centre - the "
+                           "population plus the readout's overlap error",
+        "blob_std": "the fitted width of the clouds, in the units of the stored "
+                    "centres",
+        "outlier_probability": "the share of shots far from both clouds",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitThermalPopulationParameters) -> SequenceDiagram:
+        # one lane: no drive pulse is played anywhere, and the Parameters refuse
+        # the active reset that would play one
+        diagram = SequenceDiagram(dict(READOUT_ONLY))
+        with diagram.repeat("x num_shots", swept="shot_idx"):
+            reset_step(diagram, params, drive="readout")
+            diagram.step(Block(
+                "readout", "readout", "acquire", swept="prepared_state",
+                note="prepared_state has the single value 0: nothing prepares the "
+                     "qubit"))
+        return diagram
+
     description: ClassVar[str] = (
         "Prepare |g> only and record every readout shot's I/Q point, then split the "
         "cloud against the readout channel's STORED |g>/|e> blob centers to get the "

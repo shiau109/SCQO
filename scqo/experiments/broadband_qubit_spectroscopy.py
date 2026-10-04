@@ -17,10 +17,14 @@ from .._scqat import per_qubit_results
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
 from ._drive_power import drive_power_boundary
+from ._requires import CALIBRATED_READOUT, DRIVE_CHAIN
 from ._sim import stable_seed
 
 
@@ -115,6 +119,29 @@ class BroadbandQubitSpectroscopy(Experiment):
     """Backend-agnostic broadband qubit spectroscopy; a driver adds ``probe()``."""
 
     name: ClassVar[str] = "broadband_qubit_spectroscopy"
+    #: no drive_freq_hz here: the scan is in absolute frequency and exists for
+    #: the stage at which nobody knows where the qubit is
+    requires: ClassVar[tuple[Requirement, ...]] = (DRIVE_CHAIN, *CALIBRATED_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        "peaks": "the candidate peaks, strongest first, each with its rank, "
+                 "frequency_hz, fwhm_hz and amplitude",
+        "candidate_qubit_frequencies_hz": "the frequencies of those peaks, in the same "
+                                          "order",
+        "num_peaks_found": "how many peaks passed both the prominence and the "
+                           "signal-to-noise test",
+        "num_peaks_requested": "max_peaks, as the run was asked",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(Block(
+            "drive", "saturation", "tone", swept="frequency_hz",
+            note="the drive LO steps through sub-bands; the tone sweeps inside each one"))
+        diagram.step(Block("readout", "readout", "acquire"))
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep qubit XY drive frequency across a wideband range by stepping drive "
         "LO sub-bands, detect candidate qubit transition peaks, and mark candidate "

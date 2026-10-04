@@ -543,7 +543,9 @@ left empty.)
   `experiments/_requires.py` and are included EXPLICITLY — never derived from
   `required_operations`, since a bring-up experiment requires an operation precisely in
   order to calibrate it. What such an experiment needs of the field it measures is a
-  place to start, which is `Requirement(..., seed_ok=True)`. The *Before running it* and *Outputs* sections are GENERATED
+  place to start, which is `Requirement(..., seed_ok=True)`. A conditional line is
+  dropped by `collect()` when the experiment needs that field always, or when its
+  Parameters refuse the setting the line is conditional on. The *Before running it* and *Outputs* sections are GENERATED
   from these between `<!-- BEGIN generated: ... -->` markers; `catalog()` and
   `scqo run <name> --help` carry the same data.
 - **The calibration order is computed.** Joining every `requires` with every `writes` on
@@ -568,8 +570,13 @@ left empty.)
   run (`expected: hardware <chip> <date> <run_id>`, which the generator leaves
   alone); a PNG is only checked to exist. A figure is generated exactly when the
   document links it; `<variant>` in a file name is a key of the class's `doc_variants`.
+  An experiment that refuses to start on a device nothing has measured names what to
+  run and accept first in `scripts/update_docs.py` `FIGURE_PREREQUISITES`.
 - **Every `Contract.sweeps` axis is marked `swept` in the diagram**, and a probe whose
-  pulse order changes updates the diagram in the same commit.
+  pulse order changes updates the diagram in the same commit. Pieces several
+  experiments draw alike are shared: a capability's own in its module (`reset_step`,
+  `measure_step`, `mapped_measure_steps`), the rest in `experiments/_diagrams.py`.
+  Repeat brackets nest (a block of shots around a repeated pair).
 - **Equations**: inline `$...$`, display in a fenced `math` block. GitHub runs Markdown
   over inline math first, so write `T_2^{\ast}` rather than a literal `*` and avoid
   backslash-punctuation (`\,` `\!` `\{`) there.

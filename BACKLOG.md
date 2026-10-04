@@ -848,6 +848,14 @@ provenance or a trap a user can walk into, **low** = hygiene.
   `QbloxQubitRamsey.backend_notes` states the deviation. The knob split (`pi_amp_x90` on QM,
   half of `pi_amp` on Qblox) is now DECLARED per driver in `requires`, which records it and
   resolves nothing. `qubit_echo` is not decided.
+- 2026-10-04, second batch of documents (same plan, section 14) - three more of the same
+  kind, each now stated in that driver's `backend_notes`:
+  `qubit_relaxation_flux_pulse.prepare_state` is read by `simulate()` only - the one probe
+  (QM) always plays the `x180`; `qubit_spectroscopy_flux_pulse` has no length parameter and
+  the two probes realize different drives (QM a pulse of the stored saturation operation's
+  length, I20; Qblox a continuous tone held for the reset wait); and the pi/2 knob split of
+  `qubit_ramsey` holds for `qubit_ramsey_phasor`, `qubit_ramsey_flux_pulse`, `qubit_echo`
+  and `qubit_echo_flux_pulse` too, declared per driver in `requires`.
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 
@@ -1094,6 +1102,21 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   first suspects.
 - Done when: the loss is explained (e.g. vs stark amplitude and detuning with the swap off)
   and the chain's sink model carries it, or the tone is reshaped so it vanishes.
+
+### I38 QM `qubit_echo_flux_pulse` stores ONE ARM as `wait_time_ns`: T2 echo reads half (medium)
+- Found 2026-10-04 while declaring the sequence diagrams (`docs/experiment-docs-plan.md`
+  section 14). Read from the code, not reproduced on the instrument. (I37 is taken on main.)
+- `scqo-qm/scqo_qm/experiments/qubit_echo_flux_pulse.py`: the shell turns the total idle into
+  per-arm cycles (`round((wait_ns / 2) / 4)`) and each arm plays `t` cycles, which is right;
+  but `build_program` labels the axis `4 * wait_times_cycles` - the length of one arm, under
+  the long name "total wait time". The names already equal the Contract's, so
+  `_to_canonical` passes the probe's coordinates through and `estimate()` fits the decay
+  against half the true idle. `qubit_echo.py` labels the same quantity `8 * cycles`.
+- No test covers the probe's axis values (`tests/` has no `echo_flux` test).
+- Until fixed: `QMQubitEchoFluxPulse.backend_notes` says so in `scqo run ... --help`. Saved
+  runs can be corrected offline by doubling the coordinate.
+- Done when: the builder labels `8 * cycles`, a generated-QUA test pins the axis against the
+  played arm length, and any stored `t2_echo` spectrum taken before the fix is marked.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qc_n_swap_tomography` (landed 2026-10-01). DONE on 5Q4C the same day for both 040 swaps at

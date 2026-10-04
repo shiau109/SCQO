@@ -260,6 +260,17 @@ def stale_doc_files(wanted: dict[Path, str]) -> list[Path]:
             if not path.is_file() or path.read_text(encoding="utf-8") != text]
 
 
+#: experiments run and ACCEPTED on the fresh demo session before a figure's own
+#: run, for the few experiments that refuse to start on a device nothing has
+#: measured yet. It is the calibration order of the document's "Before running
+#: it" table, played once - not a second place to keep that order: an entry is
+#: needed only where the experiment has a hard gate.
+FIGURE_PREREQUISITES: dict[str, tuple[str, ...]] = {
+    # refuses without the stored |g> / |e> centres
+    "qubit_thermal_population": ("single_shot_readout",),
+}
+
+
 def write_expected_figures(names: list[str]) -> int:
     """Redraw the simulated expected-result PNGs of the named documents (all of
     them when `names` is empty). Returns the number of problems, each printed.
@@ -292,6 +303,10 @@ def write_expected_figures(names: list[str]) -> int:
                           scqo_dir=tmp / "scqo", data_root=tmp / "data",
                           device_name="demo", setup_name="sim", cooldown_id="cd1")
         targets = default_targets(session, cls.name)[:1]
+        for earlier in FIGURE_PREREQUISITES.get(cls.name, ()):
+            ran = session.run(earlier, {"targets": targets}, update="apply")
+            if ran.get("error"):
+                raise RuntimeError(f"prerequisite {earlier}: {ran['error']}")
         out = session.run(cls.name, {"targets": targets, **overrides}, update="none")
         if out.get("error"):
             raise RuntimeError(out["error"])

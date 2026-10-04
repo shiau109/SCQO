@@ -102,8 +102,9 @@ class SequenceDiagram:
             raise ValueError("a sequence diagram needs at least one lane")
         self.lanes: dict[str, str] = dict(lanes)
         self.steps: list[tuple[Block, ...]] = []
+        #: in the order the brackets CLOSED, so an inner one precedes the
+        #: bracket around it (``repeat_levels`` reads that order)
         self.repeats: list[Repeat] = []
-        self._in_repeat = False
 
     def step(self, *blocks: Block) -> None:
         """Append one time step holding ``blocks``, which play together."""
@@ -128,18 +129,24 @@ class SequenceDiagram:
 
         ``label`` is the count as the reader should see it ("x N"); ``swept``
         names the sweep axis when the COUNT is what the experiment sweeps.
+        Brackets nest - a block of shots holding a repeated pair - and the
+        outer one is drawn around the inner.
         """
-        if self._in_repeat:
-            raise ValueError("repeat brackets do not nest")
         first = len(self.steps)
-        self._in_repeat = True
-        try:
-            yield
-        finally:
-            self._in_repeat = False
+        yield
         if len(self.steps) == first:
             raise ValueError(f"repeat {label!r} brackets no step")
         self.repeats.append(Repeat(first, len(self.steps) - 1, label, swept))
+
+    def repeat_levels(self) -> list[int]:
+        """How many bracket layers each of ``repeats`` encloses: 0 for an
+        innermost bracket, one more than its deepest inner bracket otherwise."""
+        levels: list[int] = []
+        for k, rep in enumerate(self.repeats):
+            inner = [levels[j] for j, other in enumerate(self.repeats[:k])
+                     if rep.first <= other.first and other.last <= rep.last]
+            levels.append(1 + max(inner) if inner else 0)
+        return levels
 
     def swept_axes(self) -> set[str]:
         """Every sweep axis some block or repeat bracket is marked with."""
@@ -172,6 +179,7 @@ _BASE = 52.0          # baseline, measured from the top of its lane band
 _SHAPE_H = 26.0
 _GATE_W = 44.0
 _BRACKET_BAND = 32.0
+_BRACKET_STEP = 22.0   # what each further bracket layer adds above the lanes
 _NOTE_LINE = 17.0
 #: running prose is narrower than the per-glyph bound the columns are sized
 #: with (which has to hold for a label of capitals and digits)
@@ -306,7 +314,9 @@ def render_svg(diagram: SequenceDiagram) -> str:
     right = max([edges[-1], *(left + _text_w(line, _SMALL) * _NOTE_FIT
                               for line in footnotes)])
 
-    lanes_top = _PAD + (_BRACKET_BAND if diagram.repeats else 0.0)
+    levels = diagram.repeat_levels()
+    lanes_top = _PAD + (_BRACKET_BAND + _BRACKET_STEP * max(levels)
+                        if diagram.repeats else 0.0)
     base = {key: lanes_top + k * _PITCH + _BASE for k, key in enumerate(diagram.lanes)}
     lanes_bottom = lanes_top + len(diagram.lanes) * _PITCH
     footer = len(notes) + (1 if swept else 0)
@@ -320,15 +330,19 @@ def render_svg(diagram: SequenceDiagram) -> str:
         f'rx="6" fill="{_PAPER}" stroke="{_BORDER}"/>',
     ]
 
-    for rep in diagram.repeats:
+    for rep, level in zip(diagram.repeats, levels):
         colour = _ACCENT if rep.swept else _MUTED
-        x0, x1 = edges[rep.first] + 2, edges[rep.last + 1] - 2
+        # each layer out is 4 px wider a side and one label row taller, so an
+        # outer bracket clears the inner one and the inner one's label
+        grow = 4.0 * level
+        x0, x1 = edges[rep.first] + 2 - grow, edges[rep.last + 1] - 2 + grow
+        top = lanes_top + 4 - _BRACKET_STEP * level
         out.append(
-            f'<rect x="{_n(x0)}" y="{_n(lanes_top + 4)}" width="{_n(x1 - x0)}" '
-            f'height="{_n(lanes_bottom - lanes_top - 8)}" rx="4" fill="none" '
+            f'<rect x="{_n(x0)}" y="{_n(top)}" width="{_n(x1 - x0)}" '
+            f'height="{_n(lanes_bottom - 4 + 3 * level - top)}" rx="4" fill="none" '
             f'stroke="{colour}" stroke-dasharray="4 3"/>')
         text = rep.label + (f"  ({rep.swept})" if rep.swept else "")
-        out.append(_text((x0 + x1) / 2, lanes_top - 6, text, fill=colour))
+        out.append(_text((x0 + x1) / 2, top - 10, text, fill=colour))
 
     for key, label in diagram.lanes.items():
         y = base[key]

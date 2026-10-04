@@ -45,22 +45,20 @@ CORE = {obj.name: obj for obj in (getattr(registry, n) for n in registry.__all__
 #: document means deleting its name here, and a new experiment never joins it -
 #: it ships with its document (CLAUDE.md, promotion checklist).
 UNDOCUMENTED = frozenset({
-    "broadband_qubit_spectroscopy",
     "pair_coupler_crossing_pulse", "pair_coupler_spectroscopy_swap",
     "pair_coupler_spectroscopy_zz", "pair_swap_angle", "pair_swap_chevron",
     "pair_swap_flux_map", "pair_zz_coupler",
     "qc_n_stark_amp", "qc_n_swap_amp", "qc_n_swap_tomography",
     "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
     "qubit_deterministic_benchmarking", "qubit_drag_alternating",
-    "qubit_drag_equator", "qubit_echo", "qubit_echo_flux_pulse",
+    "qubit_drag_equator",
     "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
     "qubit_parity_switch_continuous", "qubit_parity_switch_discrete",
-    "qubit_pi_pulse_error", "qubit_power_rabi", "qubit_ramsey_cryoscope",
-    "qubit_ramsey_flux_pulse", "qubit_ramsey_phasor", "qubit_relaxation",
-    "qubit_relaxation_flux_pulse", "qubit_resonator_stark", "qubit_spectroscopy",
-    "qubit_spectroscopy_cryoscope", "qubit_spectroscopy_flux_pulse", "qubit_sqrb",
-    "qubit_stark_phase_echo", "qubit_t1_ade", "qubit_t1_bayesian",
-    "qubit_thermal_population", "qubit_tomography", "qubit_xyz_delay",
+    "qubit_pi_pulse_error", "qubit_ramsey_cryoscope",
+    "qubit_resonator_stark",
+    "qubit_spectroscopy_cryoscope", "qubit_sqrb",
+    "qubit_stark_phase_echo",
+    "qubit_tomography", "qubit_xyz_delay",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))
@@ -125,6 +123,60 @@ def test_sequence_diagram_marks_every_sweep_axis(name):
         assert not unmarked, (
             f"{name} ({variant or 'default'}): sweep axes {sorted(unmarked)} are "
             f"not marked `swept` on any block or repeat bracket")
+
+
+def _active_reset_params(name):
+    """Parameters asking for a two-round active reset, or None where the
+    experiment has no reset capability or its Parameters refuse the method."""
+    cls = CORE[name]
+    if "reset_method" not in cls.Parameters.model_fields:
+        return None
+    try:
+        return cls.Parameters(targets=["q"], reset_method="active",
+                              active_reset_rounds=2)
+    except ValueError:
+        return None
+
+
+ACTIVE_RESET_CARRIERS = [name for name in DOCUMENTED if _active_reset_params(name)]
+
+
+@pytest.mark.parametrize("name", ACTIVE_RESET_CARRIERS)
+def test_sequence_diagram_draws_the_reset_it_was_asked_for(name):
+    """A diagram is a function of Parameters, but a document only ever renders
+    the defaults. The reset is the setting every carrier shares, so it is the
+    one checked on all of them: an active reset is drawn as its bracketed pair,
+    also inside an experiment's own per-shot or per-block bracket."""
+    from scqo.sequence_diagram import render_svg
+
+    cls = CORE[name]
+    diagram = cls.sequence_diagram(_active_reset_params(name))
+    render_svg(diagram)
+    labels = [block.label for step in diagram.steps for block in step]
+    assert "thermal reset" not in labels and "x180 if e" in labels, name
+    assert "x 2" in [rep.label for rep in diagram.repeats], name
+    assert not set(cls.Contract.sweeps) - diagram.swept_axes(), name
+
+
+def test_a_foreign_flux_source_is_drawn_on_the_source_lane():
+    cls = CORE["qubit_spectroscopy_flux_pulse"]
+    own = cls.sequence_diagram(cls.Parameters(targets=["q"]))
+    foreign = cls.sequence_diagram(cls.Parameters(targets=["q"], flux_component="c"))
+    assert own.lanes["flux"] == "q.z" and foreign.lanes["flux"] == "source.z"
+
+
+def test_a_mapped_readout_is_drawn_on_the_member():
+    """qubit_power_rabi on a coupler: the closing readout is the three-step map
+    onto a pair member, on lanes of the member's own."""
+    cls = CORE["qubit_power_rabi"]
+    diagram = cls.sequence_diagram(cls.Parameters(
+        targets=["c"], drive_line="xy2", readout_member="q1",
+        use_state_discrimination=True))
+    assert list(diagram.lanes.values()) == ["q.xy", "member.xy", "member.ro"]
+    tail = [(block.lane, block.label) for step in diagram.steps[-3:] for block in step]
+    assert tail == [("member_drive", "selective x180"), ("member_drive", "x180"),
+                    ("member_readout", "readout")]
+    assert diagram.swept_axes() == set(cls.Contract.sweeps)
 
 
 @pytest.mark.parametrize("name", DOCUMENTED)

@@ -38,6 +38,7 @@ import numpy as np
 from pydantic import Field, model_validator
 
 from ...parameters import Parameters
+from ...sequence_diagram import Block, SequenceDiagram
 
 READOUT_MEMBER_DESC = (
     "Read the target THROUGH this pair member: the target must be the coupler of a "
@@ -96,6 +97,24 @@ class MappedReadoutParameters(Parameters):
             raise ValueError(
                 f"readout_member={member!r} needs: " + "; ".join(needs))
         return self
+
+
+#: the two lanes a mapped readout adds to a carrier's sequence diagram
+MEMBER_LANES = {"member_drive": "member.xy", "member_readout": "member.ro"}
+
+
+def mapped_measure_steps(diagram: SequenceDiagram) -> None:
+    """The closing readout of a carrier run with ``readout_member``, as steps of
+    its sequence diagram: the three-step map of the module docstring, on the
+    member's lanes (:data:`MEMBER_LANES`, which the carrier adds to its own)."""
+    diagram.step(Block(
+        "member_drive", "selective x180", "square",
+        note="selective_pi_len_ns long: it flips the member only while the "
+             "target is in |0>"))
+    diagram.step(Block("member_drive", "x180", "gate"))
+    diagram.step(Block(
+        "member_readout", "readout", "acquire",
+        note="the member, discriminated: its population rises with the target's"))
 
 
 def mapped_population(population: np.ndarray) -> np.ndarray:

@@ -120,13 +120,72 @@ def test_malformed_diagrams_are_refused_by_name(build, message):
         build()
 
 
-def test_repeat_refuses_nesting_and_an_empty_body():
+def test_repeat_refuses_an_empty_body():
     diagram = SequenceDiagram({"a": "A"})
-    with pytest.raises(ValueError, match="do not nest"):
-        with diagram.repeat("x 2"):
-            with diagram.repeat("x 3"):
-                pass
     with pytest.raises(ValueError, match="brackets no step"):
         with diagram.repeat("x 2"):
             pass
+    with pytest.raises(ValueError, match="brackets no step"):
+        with diagram.repeat("x 2"):
+            with diagram.repeat("x 3"):
+                pass
     assert diagram.repeats == []
+
+
+def _nested() -> SequenceDiagram:
+    """A block of shots holding a repeated pair - the shape of a tracking
+    experiment (blocks of probes) or of a shot loop around a two-round reset."""
+    diagram = SequenceDiagram({"drive": "q.xy", "readout": "q.ro"})
+    with diagram.repeat("x num_blocks", swept="block_idx"):
+        diagram.step(Block("drive", "thermal reset", "wait"))
+        with diagram.repeat("x num_probes"):
+            diagram.step(Block("drive", "x180", "gate"))
+            diagram.step(Block("readout", "readout", "acquire"))
+    return diagram
+
+
+def test_repeat_brackets_nest_and_the_outer_one_is_drawn_around_the_inner():
+    diagram = _nested()
+    # closing order: the inner bracket first
+    assert [(r.label, r.first, r.last) for r in diagram.repeats] == [
+        ("x num_probes", 1, 2), ("x num_blocks", 0, 2)]
+    assert diagram.repeat_levels() == [0, 1]
+    svg = render_svg(diagram)
+    xml.dom.minidom.parseString(svg)
+    rects = [node for node in xml.dom.minidom.parseString(svg).getElementsByTagName("rect")
+             if node.getAttribute("stroke-dasharray") == "4 3"]
+    inner, outer = rects
+
+    def box(node):
+        x, y = float(node.getAttribute("x")), float(node.getAttribute("y"))
+        return (x, y, x + float(node.getAttribute("width")),
+                y + float(node.getAttribute("height")))
+
+    ix0, iy0, ix1, iy1 = box(inner)
+    ox0, oy0, ox1, oy1 = box(outer)
+    assert ox0 < ix0 and oy0 < iy0 and ox1 > ix1 and oy1 > iy1
+    # ... and the two labels are on rows of their own
+    rows = {node.getAttribute("y") for node in
+            xml.dom.minidom.parseString(svg).getElementsByTagName("text")
+            if node.firstChild.data.startswith("x num_")}
+    assert len(rows) == 2
+
+
+def test_two_brackets_side_by_side_are_both_innermost():
+    diagram = SequenceDiagram({"a": "A"})
+    with diagram.repeat("x 2"):
+        diagram.step(Block("a", "one", "gate"))
+    with diagram.repeat("x 3"):
+        diagram.step(Block("a", "two", "gate"))
+    assert diagram.repeat_levels() == [0, 0]
+
+
+def test_a_single_bracket_keeps_its_geometry():
+    """Nesting must not move a figure that has none: the committed SVGs of the
+    documents are compared byte for byte."""
+    diagram = SequenceDiagram({"drive": "q.xy"})
+    with diagram.repeat("x N", swept="num_rounds"):
+        diagram.step(Block("drive", "x180", "gate"))
+    svg = render_svg(diagram)
+    assert '<rect x="64.2" y="50" width="64" height="76" rx="4"' in svg
+    assert 'y="40"' in svg  # the bracket label's baseline

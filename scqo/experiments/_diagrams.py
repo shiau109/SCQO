@@ -8,13 +8,50 @@ Kept here so that two experiments drawing the same thing draw it the same way.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from ..parameters import Parameters
 from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.flux import FLUX_AXIS
 from ._capabilities.qubit_reset import reset_step
 
 #: lane sets, by role. Copy before mutating: ``SequenceDiagram(dict(READOUT_ONLY))``.
 READOUT_ONLY = {"readout": "q.ro"}
 DRIVE_READOUT = {"drive": "q.xy", "readout": "q.ro"}
+
+
+def flux_lane(params: Parameters) -> str:
+    """The label of the flux lane: the target's own line, or the SOURCE line
+    when ``flux_component`` names another entity's (the crosstalk vocabulary:
+    the measured qubit is the target, the other line the source)."""
+    foreign = getattr(params, "flux_component", None) is not None
+    return "source.z" if foreign else "q.z"
+
+
+def drive_flux_readout(params: Parameters) -> dict[str, str]:
+    """Drive, flux and readout lanes of a flux experiment on a driven qubit."""
+    return {"drive": "q.xy", "flux": flux_lane(params), "readout": "q.ro"}
+
+
+def echo_steps(diagram: SequenceDiagram, arm: Callable[[], None], *,
+               drive: str = "drive") -> None:
+    """The Hahn echo's three pulses. ``arm()`` adds each of the two idle arms
+    between them: a plain wait, or a wait under a flux pulse."""
+    diagram.step(Block(drive, "x90", "gate"))
+    arm()
+    diagram.step(Block(drive, "x180", "gate"))
+    arm()
+    diagram.step(Block(drive, "x90", "gate"))
+
+
+def flux_pulse_idle_step(diagram: SequenceDiagram, label: str, time_axis: str, *,
+                         note: str | None = None, drive: str = "drive",
+                         flux: str = "flux") -> None:
+    """An idle with a flux pulse held for all of it. The pulse's amplitude is
+    the flux axis and its length is the idle, so it carries both axes."""
+    diagram.step(
+        Block(drive, label, "wait", swept=time_axis),
+        Block(flux, "flux pulse", "square", swept=(FLUX_AXIS, time_axis), note=note))
 
 
 def depletion_step(diagram: SequenceDiagram, *, readout: str = "readout") -> None:

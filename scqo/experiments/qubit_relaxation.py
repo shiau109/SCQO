@@ -17,19 +17,24 @@ from pydantic import Field
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -59,6 +64,23 @@ class QubitRelaxation(Experiment):
 
     name: ClassVar[str] = "qubit_relaxation"
     writes: ClassVar[tuple[str, ...]] = ("t1_s", "thermalization_time_s")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *CALIBRATED_PI_PULSE, *CALIBRATED_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        "t1_stderr_s": "the fit's standard error on T1",
+        "amplitude": "the fitted size of the decay, in the units of the reduced signal",
+        "offset": "the level the decay settles to",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRelaxationParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        diagram.step(Block("drive", "wait", "wait", swept="wait_time_ns"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Excite with a pi pulse, wait a swept delay and measure; fits the exponential "
         "decay and proposes t1_s as a physical parameter (sample physics, no instrument "

@@ -39,19 +39,29 @@ from ._capabilities.amplitude import (
     attach_absolute_amp,
 )
 from ._capabilities.drive_line import DriveLineParameters, drive_view
-from ._capabilities.mapped_readout import MappedReadoutParameters, mapped_population
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.mapped_readout import (
+    MEMBER_LANES,
+    MappedReadoutParameters,
+    mapped_measure_steps,
+    mapped_population,
+)
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -83,6 +93,37 @@ class QubitPowerRabi(Experiment):
 
     name: ClassVar[str] = "qubit_power_rabi"
     writes: ClassVar[tuple[str, ...]] = ("pi_amp",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("pi_amp",
+                    "the swept amplitude is a factor of it, so the true pi pulse has "
+                    "to fall inside the window", seed_ok=True),
+        Requirement("drive_freq_hz",
+                    "the pulse has to be on resonance: off it the oscillation is "
+                    "faster and shallower, and its first extremum is not a pi pulse"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_amp_prefactor": "the factor of the stored amplitude at which the fitted "
+                             "oscillation reaches its first extremum",
+        "old_pi_amp": "the pi amplitude the run started from",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitPowerRabiParameters) -> SequenceDiagram:
+        mapped = params.readout_member is not None
+        lanes = ({"drive": "q.xy", **MEMBER_LANES} if mapped else dict(DRIVE_READOUT))
+        diagram = SequenceDiagram(lanes)
+        # mapped: thermal only (the Parameters refuse active), and the wait is
+        # the member's - still one idle before the pulse
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate", swept=AMP_AXIS,
+                           note="played at the stored pi_amp times the swept factor"))
+        if mapped:
+            mapped_measure_steps(diagram)
+        else:
+            measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi "
         "oscillation to recalibrate the drive channel's pi_amp. use_state_discrimination "

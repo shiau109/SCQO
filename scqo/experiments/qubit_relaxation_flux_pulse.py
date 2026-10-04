@@ -30,19 +30,24 @@ from ._capabilities.flux import (
     flux_anchor_v,
     flux_sweep,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import drive_flux_readout, flux_pulse_idle_step
+from ._requires import CALIBRATED_PI_PULSE, CALIBRATED_READOUT, FLUX_PULSE_ORIGIN
 from ._sim import stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -75,6 +80,31 @@ class QubitRelaxationFluxPulse(Experiment):
     """Measure qubit relaxation time T1 vs Z flux PULSE amplitude (idle-relative)."""
 
     name: ClassVar[str] = "qubit_relaxation_flux_pulse"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        FLUX_PULSE_ORIGIN, *CALIBRATED_PI_PULSE, *CALIBRATED_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        "flux_bias_v": "the flux excursions that were swept, in the order the fit "
+                       "holds them: the x axis of every list below",
+        "t1": "the fitted T1 at each excursion, in seconds",
+        "t1_stderr": "the fit's standard error on each T1",
+        "amplitude": "the fitted size of each decay",
+        "offset": "the level each decay settles to",
+        "old_idle_flux": "the idle flux the run started from: the origin of the "
+                         "excursions",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRelaxationFluxPulseParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        if params.prepare_state == 1:
+            diagram.step(Block("drive", "x180", "gate"))
+        flux_pulse_idle_step(
+            diagram, "wait", "wait_time_ns",
+            note="an excursion from idle_flux, as long as the wait")
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, "
         "0 = stay parked — and a wait delay after excitation, fitting T1 decay "

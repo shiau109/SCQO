@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="568.9" height="307" viewBox="0 0 568.9 307" role="img">
+<rect x="0.5" y="0.5" width="567.9" height="306" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="64.2" y="72" width="387.7" height="160" rx="4" fill="none" stroke="#8c959f" stroke-dasharray="4 3"/>
+<text x="258.1" y="62" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#8c959f" text-anchor="middle">x num_averages</text>
+<rect x="60.2" y="50" width="395.7" height="185" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="258.1" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x num_blocks  (block_idx)</text>
+<text x="52.2" y="114" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
+<path d="M62.2,120 H554.9" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="52.2" y="198" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>
+<path d="M62.2,204 H554.9" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M74.2,110 H179" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M69.2,110 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M184,110 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="126.6" y="103" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M203,120 C218,120 216.2,94 225,94 C233.8,94 232.1,120 247,120 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="225" y="88" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">x180</text>
+<path d="M271,110 H352.6" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M266,110 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M357.6,110 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="311.8" y="103" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">t0 + m dt<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<rect x="371.6" y="178" width="75.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="409.3" y="195.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<text x="62.2" y="253" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  played three times in turn, with m = 0, 1 and 3: the delays are interleaved</text>
+<text x="62.2" y="270" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  discriminated; per block the instrument turns the three populations into one rate</text>
+<rect x="62.2" y="278" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="82.2" y="287" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>

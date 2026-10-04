@@ -26,11 +26,15 @@ from pydantic import Field, model_validator
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_DISCRIMINATOR, CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 #: the three delays of one block are ``t0 + DELAY_MULTS * dt`` — the 1:3
@@ -93,6 +97,37 @@ class QubitT1Ade(Experiment):
     """Backend-agnostic ADE T1 tracking; the QM driver supplies probe()."""
 
     name: ClassVar[str] = "qubit_t1_ade"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *CALIBRATED_PI_PULSE, *CALIBRATED_READOUT, *CALIBRATED_DISCRIMINATOR)
+    extracts: ClassVar[dict[str, str]] = {
+        "t1_median_s": "the median T1 over the blocks that gave a valid estimate",
+        "t1_sigma_median_s": "the median of the per-block error bars the instrument "
+                             "computed (the analytic shot-noise sigma), as a time",
+        "t1_boot_sigma_median_s": "the same from the host's bootstrap over the "
+                                  "recorded shots - the independent check",
+        "n_blocks": "how many blocks were measured",
+        "n_valid": "how many of them fell inside the closed form's validity range",
+        "n_clipped": "how many did not: their streamed value is a floor, not an "
+                     "estimate",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitT1AdeParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        with diagram.repeat("x num_blocks", swept="block_idx"):
+            with diagram.repeat("x num_averages"):
+                reset_step(diagram, params)
+                diagram.step(Block("drive", "x180", "gate"))
+                diagram.step(Block(
+                    "drive", "t0 + m dt", "wait",
+                    note="played three times in turn, with m = 0, 1 and 3: the "
+                         "delays are interleaved"))
+                diagram.step(Block(
+                    "readout", "readout", "acquire",
+                    note="discriminated; per block the instrument turns the three "
+                         "populations into one rate"))
+        return diagram
+
     description: ClassVar[str] = (
         "Track T1 vs laboratory time: each block measures P(|1>) at three "
         "interleaved delays t0/t0+dt/t0+3dt and the instrument computes the "

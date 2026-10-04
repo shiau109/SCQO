@@ -40,7 +40,9 @@ from ..contract import DatasetContract
 from ..estimate_inputs import acquisition_note, note_acquisition
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from ._capabilities.flux import (
     END_FLUX_PULSE_DESC,
@@ -51,15 +53,18 @@ from ._capabilities.flux import (
     flux_sweep,
     foreign_flux_source,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     population_row,
     readout_vars,
     signal_rename,
 )
+from ._diagrams import drive_flux_readout, flux_pulse_idle_step
 from ._flux_component import FluxComponentParameters
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 
@@ -139,6 +144,66 @@ class QubitRamseyFluxPulse(Experiment):
     name: ClassVar[str] = "qubit_ramsey_flux_pulse"
     writes: ClassVar[tuple[str, ...]] = (
         "drive_freq_hz", "f_01_hz", "f_q_max_hz", "flux_offset", "idle_flux")
+    #: the pi/2 pulse itself is not here: which knob holds its amplitude differs
+    #: per backend (BACKLOG I19), so each driver's subclass adds its own. The
+    #: arch facts that orient the virtual detuning are optional, so they are
+    #: the document's prose and not a requirement.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("idle_flux",
+                    "the flux window is an excursion from it, and both pi/2 pulses "
+                    "and the readout are played there"),
+        Requirement("drive_freq_hz",
+                    "every fringe is measured against it; at the idle point the "
+                    "qubit has to sit on it"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "question": "which reading was asked for: 'apex' (park_frequency_hz unset) "
+                    "or 'park'",
+        "flux_offset_from_idle": "the apex as an excursion from the idle flux the run "
+                                 "started from; absent when the window did not hold "
+                                 "the apex",
+        "flux_offset_stderr": "the fit's standard error on the apex flux",
+        "f_q_max_stderr_hz": "the fit's standard error on the apex frequency",
+        "idle_flux_stderr": "the fit's standard error on the proposed idle flux",
+        "df_dflux_hz_per_v": "the slope of f01 against flux at the proposed idle "
+                             "point: 0 at the apex",
+        "curvature_hz_per_v2": "the curvature of the local quadratic",
+        "n_valid_points": "how many flux points gave a usable fringe frequency",
+        "old_idle_flux": "the idle flux the run started from: the origin of the "
+                         "swept axis",
+        "old_drive_freq_hz": "the drive frequency every fringe was measured against",
+        "ramp_detuning_hz": "the SIGNED virtual detuning that was applied",
+        "ramp_sign_from": "where that sign came from: 'facts' (predicted from the "
+                          "stored arch) or 'default' (no arch facts: the apex case)",
+        "apex_not_bracketed": "1 when the window did not hold the apex",
+        "park_out_of_window": "1 when no flux inside the window gives "
+                              "park_frequency_hz",
+        "fold_suspected": "1 when the fringe frequencies look folded about zero; "
+                          "the run is then FAILED",
+        "multi_target_context": "1 when several targets ran together, which makes "
+                                "the run record-only",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRamseyFluxPulseParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "y90", "gate"))
+        if params.flux_buffer_ns:
+            diagram.step(Block("drive", "buffer", "wait"))
+        flux_pulse_idle_step(
+            diagram, "idle", "idle_time_ns",
+            note="an excursion from idle_flux, as long as the idle")
+        if params.flux_buffer_ns:
+            diagram.step(Block("drive", "buffer", "wait"))
+        diagram.step(Block(
+            "drive", "x90", "gate",
+            note="its phase is ramped with the idle: a virtual detuning of signed "
+                 "size frequency_detuning_hz"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Ramsey fringe vs a z PULSE played during the idle (relative to idle_flux, "
         "0 = stay parked): the pi/2 pulses and the readout stay at the idle point, so "

@@ -21,13 +21,17 @@ from ._capabilities.detuning import (
     DriveDetuningSweepParameters,
     drive_detuning_sweep,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
 from ._overlap import OVERLAP_FIELD_DESCS
+from ._requires import CALIBRATED_READOUT, DRIVE_CHAIN, DRIVE_WINDOW_CENTRE
 from ._window import window_bounds
 from ._sim import stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from ._drive_power import drive_power_boundary
 
@@ -97,6 +101,39 @@ class QubitSpectroscopy(Experiment):
 
     name: ClassVar[str] = "qubit_spectroscopy"
     writes: ClassVar[tuple[str, ...]] = ("drive_freq_hz", "f_01_hz")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        DRIVE_WINDOW_CENTRE, DRIVE_CHAIN, *CALIBRATED_READOUT)
+    extracts: ClassVar[dict[str, str]] = {
+        "peak_detuning_hz": "where the chosen peak sits, measured from the drive "
+                            "frequency the run started from",
+        "fwhm_hz": "the full width at half maximum of the chosen peak",
+        "n_peaks": "how many peaks the fit found; the strongest one is chosen",
+        "old_drive_freq_hz": "the drive frequency the run started from",
+    }
+    #: the overlap mode is a different SEQUENCE, so the document shows it as a
+    #: second diagram
+    doc_variants: ClassVar[dict[str, dict]] = {"overlap": {"readout_overlap": True}}
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitSpectroscopyParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        if not params.readout_overlap:
+            diagram.step(Block(
+                "drive", "saturation", "tone", swept="detuning_hz",
+                note="drive_len_ns long, and over before the readout tone starts"))
+            diagram.step(Block("readout", "readout", "acquire"))
+            return diagram
+        # one column: the two are simultaneous. Nothing bounds drive_len_ns
+        # against the tone (._overlap), so the drive may also start before it.
+        diagram.step(
+            Block("drive", "saturation", "tone", swept="detuning_hz",
+                  note="drive_len_ns long, ending together with the readout tone"),
+            Block("readout", "readout", "acquire",
+                  note="the tone runs acq_start_ns before the integration starts"
+                  if params.acq_start_ns else None))
+        return diagram
+
     description: ClassVar[str] = (
         "Sweep a weak saturation drive around drive_freq_hz and fit the response peaks; "
         "the strongest peak recalibrates the drive channel's drive_freq_hz (coarse "

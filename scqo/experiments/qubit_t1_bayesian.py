@@ -29,11 +29,15 @@ from pydantic import Field, model_validator
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
 from ..estimate_inputs import acquisition_note, note_acquisition
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_DISCRIMINATOR, CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 #: the shortest adaptive wait the update law is applied to, seconds — below
@@ -143,6 +147,59 @@ class QubitT1Bayesian(Experiment):
     """Backend-agnostic adaptive Bayesian T1; the QM driver supplies probe()."""
 
     name: ClassVar[str] = "qubit_t1_bayesian"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *CALIBRATED_PI_PULSE,
+        *CALIBRATED_READOUT,
+        *CALIBRATED_DISCRIMINATOR,
+        Requirement("fidelity_g",
+                    "the update's readout-error model: 1 - fidelity_g is the chance "
+                    "of reading 1 after preparing 0"),
+        Requirement("fidelity_e",
+                    "the update's readout-error model: 1 - fidelity_e is the chance "
+                    "of reading 0 after preparing 1"),
+        Requirement("t1_s", "the mean of the prior every block starts from",
+                    when=("t1_prior_s", None), seed_ok=True),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "t1_median_s": "the median over the blocks of the final adaptive estimate",
+        "k_final_median": "the median final shape of the posterior; its relative "
+                          "width is about 1 / sqrt(k)",
+        "t1_prior_s": "the prior mean the blocks started from",
+        "t1_lin_s": "T1 from the interleaved non-adaptive shots, fitted as an "
+                    "ordinary decay (interleaved_validation only)",
+        "t1_lin_ratio": "the adaptive median over that fitted T1 "
+                        "(interleaved_validation only)",
+        "validation_disagrees": "1 when the two differ by more than the check "
+                                "allows (interleaved_validation only)",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitT1BayesianParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        with diagram.repeat("x num_blocks", swept="block_idx"):
+            reset_step(diagram, params)  # once per block, not per shot
+            with diagram.repeat("x num_probes"):
+                diagram.step(Block("drive", "x180", "gate"))
+                diagram.step(Block(
+                    "drive", "c T1_est", "wait",
+                    note="the wait is adaptive_c times the T1 estimate so far"))
+                diagram.step(Block(
+                    "readout", "readout", "acquire",
+                    note="discriminated; the instrument updates the estimate from "
+                         "this one shot"))
+                diagram.step(Block("drive", "x180 if e", "gate"))
+                if params.interleaved_validation:
+                    if params.active_reset_per_probe:
+                        reset_step(diagram, params)
+                    diagram.step(Block("drive", "x180", "gate"))
+                    diagram.step(Block(
+                        "drive", "grid wait", "wait",
+                        note="the non-adaptive check: the next wait of a linear "
+                             "grid, min_wait_ns to max_wait_ns"))
+                    diagram.step(Block("readout", "readout", "acquire"))
+                    diagram.step(Block("drive", "x180 if e", "gate"))
+        return diagram
+
     description: ClassVar[str] = (
         "Track T1 vs laboratory time with per-shot adaptive Bayesian "
         "estimation (Berritta et al., arXiv:2506.09576): each single shot "

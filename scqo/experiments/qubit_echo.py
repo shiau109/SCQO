@@ -16,19 +16,24 @@ from pydantic import Field
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import DRIVE_READOUT, echo_steps
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -51,6 +56,29 @@ class QubitEcho(Experiment):
 
     name: ClassVar[str] = "qubit_echo"
     writes: ClassVar[tuple[str, ...]] = ("t2_echo_s",)
+    #: the bundle's two lines are about the refocusing x180. The pi/2 pulses
+    #: are not here: which knob holds their amplitude differs per backend
+    #: (BACKLOG I19), so each driver's subclass adds its own.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz", "all three pulses have to be on resonance"),
+        Requirement("pi_amp", "the refocusing x180 has to be a full pi pulse"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "t2_echo_stderr_s": "the fit's standard error on T2 echo",
+        "amplitude": "the fitted size of the decay, in the units of the reduced signal",
+        "offset": "the level the decay settles to",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitEchoParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        echo_steps(diagram, lambda: diagram.step(
+            Block("drive", "tau / 2", "wait", swept="wait_time_ns")))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time; fits "
         "the exponential envelope and proposes t2_echo_s as a physical parameter "

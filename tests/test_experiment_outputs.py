@@ -141,6 +141,47 @@ def test_an_experiment_may_restate_a_mixin_line_with_its_own_reason():
     assert [req.why for req in lines] == ["its own reason"]
 
 
+def test_a_condition_the_parameters_refuse_is_not_a_requirement():
+    """`qubit_thermal_population` rejects reset_method='active' (an active reset
+    removes what it measures), so what an active reset needs is not listed."""
+    cls = CORE["qubit_thermal_population"]
+    with pytest.raises(ValueError, match="refused"):
+        cls.Parameters(targets=["q"], reset_method="active")
+    conditions = {req.condition() for req in collect(cls)}
+    assert "reset_method=active" not in conditions
+    assert "reset_method=thermal" in conditions
+    # ... while a carrier that allows the setting keeps the lines
+    assert "reset_method=active" in {
+        req.condition() for req in collect(CORE["qubit_relaxation"])}
+
+
+def test_an_unconditional_need_supersedes_a_conditional_one_for_the_same_field():
+    """`qubit_t1_ade` discriminates every shot: its threshold is needed always,
+    so the reset mixin's 'with reset_method=active' line for it says nothing."""
+    lines = [req for req in collect(CORE["qubit_t1_ade"])
+             if req.field == "readout_threshold"]
+    assert [req.when for req in lines] == [None]
+    # the active reset's OTHER need is still conditional
+    depletion = [req for req in collect(CORE["qubit_t1_ade"])
+                 if req.field == "readout_depletion_s"]
+    assert [req.condition() for req in depletion] == ["reset_method=active"]
+
+
+def test_a_class_with_required_parameters_of_its_own_keeps_every_condition():
+    """The refusal test needs a baseline that validates; without one a failure
+    could not be pinned on the setting, so nothing is dropped."""
+    from pydantic import Field
+
+    class Needy(CORE["qubit_relaxation"].Parameters):
+        must_be_given: int = Field(..., description="no default")
+
+    class Carrier(CORE["qubit_relaxation"]):
+        Parameters = Needy
+
+    assert {req.condition() for req in collect(Carrier)} == {
+        req.condition() for req in collect(CORE["qubit_relaxation"])}
+
+
 def test_the_join_gives_providers_and_dependents():
     classes = list(CORE.values())
     assert "qubit_spectroscopy" in writers(classes)["drive_freq_hz"]
