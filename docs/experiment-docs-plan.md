@@ -606,7 +606,8 @@ class Experiment(ABC):
 | 2 | 單比特頻率與相干，其餘 13 個 | 完成（理論留空），見 §14 |
 | 3 | 閘校正與基準測試，6 個 | 完成（理論留空），見 §15 |
 | 4 | 磁通線的時間對齊與失真，3 個 | 完成（理論留空），見 §17 |
-| 5 到 8 | 見 §7 | 未開始 |
+| 5 | Stark 位移、參數式驅動、電荷宇稱，6 個 | 完成（理論留空），見 §18 |
+| 6 到 8 | 見 §7 | 未開始 |
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -750,6 +751,10 @@ class Experiment(ABC):
 - 只有一個後端有 probe 的實驗（`qubit_pi_pulse_error`、`qubit_xyz_delay`），文件要不要寫明（§15.4、§17.4）。
 - 核心的實驗登錄說明裡還有描述後端的句子（兩個 cryoscope 寫了「兩個後端都有 probe」「Qblox 只有方波」），
   要不要一併搬到驅動的後端註記（§17.4）。
+- 三份文件的預期結果圖不是用預設參數畫的（§18.4）：`qubit_parametric_drive_time` 開了鑑別，
+  兩個 parity 實驗把紀錄時間縮成 2 秒。文件裡都有寫明；這個做法請過目。
+- `qubit_parametric_drive_time` 的預設是不鑑別，但它的估計器只有鑑別後的資料才有意義。
+  要不要把預設改成鑑別，或在沒有鑑別時拒絕執行（§18.4）。
 
 **發現但沒有修的問題（都在 `BACKLOG.md`）**
 
@@ -761,6 +766,9 @@ class Experiment(ABC):
 - I39：`qubit_xyz_delay` 的模擬把峰畫在已存的延遲上，接受一次就把延遲加倍（只影響模擬）。
 - I19 第 4 批補了兩條：`qubit_ramsey_cryoscope` 兩個後端在磁通脈衝前後留的時間不同；
   `qubit_spectroscopy_cryoscope` 兩邊對頻譜脈衝振幅的防護不是同一個問題。
+- I19 第 5 批補了一條：`qubit_parity_switch_discrete` 補滿週期的等待，兩個後端的時間格點不同。
+- I32、F12、F18：原本就在，第 5 批文件的 Traps 有引用（`qubit_parametric_drive_time` 回報的「最佳頻率」不是共振點、
+  速率的單位不是 Hz；`best_peak_amplitude` 永遠是正的；Stark 訊號不超過一圈的規則沒有程式在把關）。
 
 **還沒做的功能**
 
@@ -821,3 +829,59 @@ class Experiment(ABC):
 4. 兩個 cryoscope 的 Traps 裡有三條是從程式推出來的，不是硬體上記錄過的：
    「閒置點不在拱頂時，頻率換算成磁通的關係不成立」、「紀錄結束時還沒安定的成分會被併進安定值」、
    「已經套用濾波器時量到的是殘餘」。硬體上實際遇過的狀況（例如先長後短的順序）要請你補。
+
+## 18. 第 5 批實作紀錄（2026-10-04）：Stark 位移、參數式驅動、電荷宇稱，六個實驗
+
+`qubit_resonator_stark`、`qubit_stark_phase_echo`、`qubit_parametric_drive_amp`、`qubit_parametric_drive_time`、
+`qubit_parity_switch_continuous`、`qubit_parity_switch_discrete`。連同前面的，51 個裡有 38 個有文件。
+三個版本庫都有改，做法與前幾批相同。
+
+### 18.1 為了這一批加進產圖腳本的東西
+
+核心的繪圖與需求機制這次沒有改；第 4 批加的「脈衝跨欄持續」在 `qubit_resonator_stark` 用上了
+（Stark 訊號從上升等待一直維持到飽和驅動結束）。改的是 `scripts/update_docs.py`：
+
+- **前置實驗可以帶參數。** 兩個 parity 實驗要先有電荷宇稱的分裂量，這個值只有 `ramsey_model=beat` 的
+  `qubit_ramsey` 會量。`FIGURE_PREREQUISITES` 的項目現在可以是「實驗名稱」或「（名稱, 參數）」。
+  這一批新增三組：`qubit_resonator_stark` 先跑 `resonator_spectroscopy`（取得 depletion 時間）；
+  兩個 parity 實驗先跑 `resonator_spectroscopy`、`single_shot_readout`、beat 模型的 `qubit_ramsey`。
+- **新增 `FIGURE_PARAMETERS`：某個實驗的預期結果圖用哪些參數畫。** 只給兩種情況用，文件要在圖旁邊寫明：
+  - 示範裝置跑不動預設值。兩個 parity 實驗預設錄 30 秒；示範裝置一發只有 2.5 us，30 秒要一千多萬發，
+    超過 `max_num_shots` 而被拒絕。圖改用 `record_time_s=2`。
+  - 估計器不是設計給預設值讀的。`qubit_parametric_drive_time` 預設不鑑別，但它的擬合要的是 |e> 的佔據機率，
+    用原始 I/Q 算出來的速率沒有物理意義。圖改用 `use_state_discrimination=true`。
+
+### 18.2 驅動端的宣告
+
+- **QM**：`qubit_stark_phase_echo` 與兩個 parity 實驗加上 `pi_amp_x90`。六個類別都有後端註記，重點是：
+  - `qubit_resonator_stark`：Stark 訊號是把讀出操作拉長並縮放，所以倍率要小於 2；驅動線與共振腔必須在不同的運算核心，
+    否則兩個訊號會被排成先後，圖上完全沒有位移（硬體上還沒驗證過，`BACKLOG.md` 的待驗清單有這一條）；
+    depletion 時間還是 16 ns 出廠值時會被拒絕。
+  - `qubit_stark_phase_echo`：Stark 操作以它存的長度播放，不拉長；倍率要小於 2。
+  - 兩個參數式驅動：訊號是磁通線的常數操作，掛在這次執行臨時加進設定的振盪器上，不改動存檔；`x180` 與訊號之間有 200 ns 等待。
+  - 兩個 parity 實驗：目標一個接一個量；回報的週期沒有算進定序器對齊的幾十 ns。
+- **Qblox**：兩個 parity 實驗加上 `pi_amp`。三個類別有後端註記：`qubit_resonator_stark`（絕對振幅不能超過輸出滿刻度）、
+  兩個 parity 實驗（擷取格數上限：連續版 300 萬發，離散版 150 萬個週期）。
+- `qubit_stark_phase_echo` 與兩個參數式驅動只有 QM 有 probe。
+
+### 18.3 對照程式時發現並順手改掉的兩處文字
+
+兩處都是說明文字與程式不一致，沒有改任何行為。
+
+1. **`qubit_stark_phase_echo` 的登錄說明把第一個脈衝寫成 `X90`。** 模組說明、QM 的 probe、估計器都是 `Y90`
+   （這樣 Stark 訊號關掉時相位是 0）。說明已改成 `Y90`。
+2. **`qubit_parametric_drive_amp` 的 `estimate()` 裡有一行註解說「負值代表佔據機率下降」。**
+   同一個檔案的結果說明與 scqat 都寫明擬合振幅永遠是正的（下降的線會先翻轉再擬合）。註解已改成一致。
+
+### 18.4 待你過目（已加進 §16）
+
+1. **三份文件的預期結果圖不是預設參數畫的**（§18.1）。文件裡都寫了用的參數與原因。
+2. **`qubit_parametric_drive_time` 的預設值與它的估計器不相容。** 預設不鑑別，結果是一組看起來正常、
+   實際上沒有意義的速率，而且執行不會失敗。文件的「執行前」與 Traps 都有寫，但更根本的做法是改預設或直接拒絕。
+3. **這一批引用了三條既有的 BACKLOG 項目**：I32（`_time` 回報的最佳頻率不是共振點、三個速率的單位是 1/s 不是 Hz、
+   參數圖上的參考線畫在 1 而模型的臨界值是 1/2）、F12（`best_peak_amplitude` 分不出峰與谷）、
+   F18（Stark 訊號不超過一圈只靠操作程序把關）。文件照實寫了現況。
+4. **兩個 parity 實驗的 Traps 都來自程式裡的說明文字**（讀出錯誤的放大倍率、偶數 `idle_multiple` 沒有訊號、
+   紀錄長度與可見的最低速率）。chipA 上實際量到的數字（例如速率約 2 Hz、週期 30 us）我沒有寫進文件，
+   因為那是硬體紀錄，該由你決定要不要放。
+5. **`qubit_resonator_stark` 還沒有在硬體上跑過**，文件的 `validated` 寫的是 `offline`。

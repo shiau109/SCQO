@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**32 of 51 registered experiments are documented.**
+**38 of 51 registered experiments are documented.**
 
 ## Shared
 
@@ -21,6 +21,10 @@ Device-level calibration and characterization, for every chip and operator.
 | [qubit_drag_equator](qubit_drag_equator/README.md) | Sweep the DRAG beta coefficient under two sequences that both end on the equator: x180 then y90, and y180 then x90 (two x90 / two y90 in place of the pi pulse for target_gate='x90'). | offline |
 | [qubit_echo](qubit_echo/README.md) | Hahn echo (X90 - tau/2 - X - tau/2 - X90) over a swept total idle time | offline |
 | [qubit_echo_flux_pulse](qubit_echo_flux_pulse/README.md) | Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, 0 = stay parked — and a total wait delay in a Hahn echo sequence, fitting T2_echo decay at each flux point to map out the T2_echo spectrum. | offline |
+| [qubit_parametric_drive_amp](qubit_parametric_drive_amp/README.md) | Parametric-drive resonance map: excite the qubit, then modulate its own flux (z) line with an RF tone of swept frequency and amplitude for a FIXED user-given driving time, and read the qubit back. | offline |
+| [qubit_parametric_drive_time](qubit_parametric_drive_time/README.md) | Parametric-drive chevron: excite the qubit, then modulate its own flux (z) line with an RF tone of swept frequency at a FIXED user-given amplitude, hold it for a SWEPT driving time, and read the qubit back. | offline |
+| [qubit_parity_switch_continuous](qubit_parity_switch_continuous/README.md) | Fixed-sequence charge-parity monitor: y90 - idle - x90 - measure repeated as back-to-back single shots for record_time_s (the shot count is derived from it, since the spectrum's lowest frequency is 8 / record_time_s and THAT is what sets how slow a rate is measurable), idle = 1 / (2 x parity_delta_f_hz) (the drive channel's stored beat splitting from a ramsey_model='beat' qubit_ramsey | offline |
+| [qubit_parity_switch_discrete](qubit_parity_switch_discrete/README.md) | Two-measurement charge-parity monitor: per cycle M1 - depletion wait - x90 - idle - y90 - M2 - pad, repeated at the fixed period cycle_period_ns (None = minimal). | offline |
 | [qubit_pi_pulse_error](qubit_pi_pulse_error/README.md) | Sweep pi-pulse amplitude factor across repeated X180 gate sequences (X^1, X^3, X^5...) to amplify and precisely calibrate the pi pulse amplitude. | offline |
 | [qubit_power_rabi](qubit_power_rabi/README.md) | Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi oscillation to recalibrate the drive channel's pi_amp. | offline |
 | [qubit_ramsey](qubit_ramsey/README.md) | Two pi/2 pulses separated by a swept idle time with an artificial drive detuning | offline |
@@ -29,10 +33,12 @@ Device-level calibration and characterization, for every chip and operator.
 | [qubit_ramsey_phasor](qubit_ramsey_phasor/README.md) | Two pi/2 pulses separated by a LOG-spaced idle time, with the closing pulse's phase swept through a full turn at every idle point. | offline |
 | [qubit_relaxation](qubit_relaxation/README.md) | Excite with a pi pulse, wait a swept delay and measure | offline |
 | [qubit_relaxation_flux_pulse](qubit_relaxation_flux_pulse/README.md) | Sweep a Z PULSE amplitude — RELATIVE to the flux line's idle_flux, 0 = stay parked — and a wait delay after excitation, fitting T1 decay at each flux point to map out the T1 spectrum. | offline |
+| [qubit_resonator_stark](qubit_resonator_stark/README.md) | Qubit spectroscopy under a Stark tone: a tone on the readout channel (readout_freq_hz, amplitude = amp_prefactor x readout_amp) fills the resonator | offline |
 | [qubit_spectroscopy](qubit_spectroscopy/README.md) | Sweep a weak saturation drive around drive_freq_hz and fit the response peaks | offline |
 | [qubit_spectroscopy_cryoscope](qubit_spectroscopy_cryoscope/README.md) | Reconstruct the flux line's LONG-TIME (microsecond) step response by qubit spectroscopy vs wait-time into a parked flux pulse, and fit it to a sum of exponentials. | offline |
 | [qubit_spectroscopy_flux_pulse](qubit_spectroscopy_flux_pulse/README.md) | 2D qubit spectroscopy vs PULSED flux (bias applied only during the drive | offline |
 | [qubit_sqrb](qubit_sqrb/README.md) | Single Qubit Randomized Benchmarking (SQRB) to measure average gate fidelity. | offline |
+| [qubit_stark_phase_echo](qubit_stark_phase_echo/README.md) | AC-Stark phase echo: a Hahn echo (Y90 - wait(D) - X180 - stark(D) - close - readout) with an off-resonant Stark tone filling the second free-evolution arm (the first arm is an idle of the same duration D). | offline |
 | [qubit_t1_ade](qubit_t1_ade/README.md) | Track T1 vs laboratory time: each block measures P(\|1>) at three interleaved delays t0/t0+dt/t0+3dt and the instrument computes the closed-form decay rate + analytic sigma in real time (ADE, arXiv:2602.11912 — SPAM cancels, no confusion matrix). | offline |
 | [qubit_t1_bayesian](qubit_t1_bayesian/README.md) | Track T1 vs laboratory time with per-shot adaptive Bayesian estimation (Berritta et al., arXiv:2506.09576): each single shot waits tau = c * T1_est from the current posterior and updates it in real time (u = 1/k parametrization), reaching a T1 estimate with a shrinking credible interval in ~num_probes shots per block. | offline |
 | [qubit_thermal_population](qubit_thermal_population/README.md) | Prepare \|g> only and record every readout shot's I/Q point, then split the cloud against the readout channel's STORED \|g>/\|e> blob centers to get the residual excited-state population at idle — the chip's thermal population, written back as the mode fact n_th. | offline |
@@ -55,4 +61,4 @@ None yet.
 
 ## Not documented yet
 
-`pair_coupler_crossing_pulse`, `pair_coupler_spectroscopy_swap`, `pair_coupler_spectroscopy_zz`, `pair_swap_angle`, `pair_swap_chevron`, `pair_swap_flux_map`, `pair_zz_coupler`, `qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`, `qubit_parametric_drive_amp`, `qubit_parametric_drive_time`, `qubit_parity_switch_continuous`, `qubit_parity_switch_discrete`, `qubit_resonator_stark`, `qubit_stark_phase_echo`
+`pair_coupler_crossing_pulse`, `pair_coupler_spectroscopy_swap`, `pair_coupler_spectroscopy_zz`, `pair_swap_angle`, `pair_swap_chevron`, `pair_swap_flux_map`, `pair_zz_coupler`, `qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`

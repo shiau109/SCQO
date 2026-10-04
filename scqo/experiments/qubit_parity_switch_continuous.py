@@ -80,10 +80,14 @@ from .._scqat import per_qubit_results
 from ..contract import DatasetContract
 from ._capabilities.state_readout import SHOT_STATE_ALT, StateReadoutParameters, shot_state_vars
 from ._depletion import READOUT_DEPLETION_NS_DESC, depletion_wait_ns
+from ._diagrams import DRIVE_READOUT, depletion_step
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ..parameters import TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 #: (dataset variable, readout-channel monitor) for the pinned discrimination
@@ -152,6 +156,72 @@ _MISSING_REFERENCE = (
 #: fallback estimate when the corresponding knob was never calibrated.
 _NOMINAL_READOUT_S = 2e-6
 _NOMINAL_PI2_S = 40e-9
+
+
+def _stored_centres(why_g: str, why_e: str) -> tuple[Requirement, ...]:
+    """The four stored cloud centres, needed on the I/Q path only."""
+    iq_path = ("use_state_discrimination", False)
+    return (
+        Requirement("pos_g_i", why_g, when=iq_path),
+        Requirement("pos_g_q", why_g, when=iq_path),
+        Requirement("pos_e_i", why_e, when=iq_path),
+        Requirement("pos_e_q", why_e, when=iq_path),
+    )
+
+
+#: what both parity monitors need. The pi/2 pulses are not here: which knob
+#: holds their amplitude differs per backend (BACKLOG I19), so each driver's
+#: subclass adds its own. The depletion line differs per variant.
+_PARITY_REQUIRES: tuple[Requirement, ...] = (
+    Requirement("parity_delta_f_hz",
+                "the fixed idle is half a period of this splitting (a per-run "
+                "idle_time_ns replaces it)"),
+    Requirement("drive_freq_hz",
+                "the drive has to sit midway between the two parity branches, "
+                "where an accepted beat-model qubit_ramsey puts it"),
+    *_stored_centres(
+        "the stored centre of the |g> cloud: each shot is assigned to the nearer "
+        "centre",
+        "the stored centre of the |e> cloud: each shot is assigned to the nearer "
+        "centre"),
+    *CALIBRATED_READOUT,
+)
+
+#: the fit keys both parity monitors report and never write
+_PARITY_EXTRACTS: dict[str, str] = {
+    "psd_corner_hz": "the corner frequency of the fitted spectrum; the rate is pi "
+                     "times this",
+    "psd_amplitude": "the fitted low-frequency plateau of the spectrum",
+    "psd_white_floor": "the fitted flat floor of the spectrum",
+    "n_parity_switches": "how many times the parity series changes value",
+    "p_switch": "the fraction of consecutive parity samples that differ; 0.5 means "
+                "they are independent and no rate can be read",
+    "p_parity_odd": "the fraction of samples in the odd parity; about 0.5 is "
+                    "healthy and says nothing about the rate",
+    "psd_freq_min_hz": "the lowest frequency of the spectrum, 8 / the record "
+                       "time: the slowest rate the run can see",
+    "psd_contrast": "the plateau over the floor; below 3 there is no knee and "
+                    "the run fails",
+    "corner_margin_low": "the corner frequency over the lowest frequency; below "
+                         "about 5 a longer record is needed",
+    "psd_fit_residual": "the rms residual of the spectrum fit, in the logarithm",
+    "mapping_fidelity": "how faithfully the sequence maps the parity onto the "
+                        "readout, 1 being perfect",
+    "mapping_fidelity_floor": "the same from the floor alone; only with "
+                              "psd_model=independent, else NaN",
+    "mapping_fidelity_ratio": "the plateau estimate over the floor estimate; only "
+                              "with psd_model=independent, else NaN",
+    "shot_period_s": "the time from one parity sample to the next: the time base "
+                     "the rate is counted in",
+    "record_time_s": "the length of the record that was taken: the number of "
+                     "samples times shot_period_s",
+    "requested_record_time_s": "the record_time_s that was asked for",
+    "idle_time_ns": "the idle that was played",
+    "parity_delta_f_hz": "the stored splitting the idle was derived from; NaN "
+                         "when idle_time_ns was given",
+    "outlier_probability": "the fraction of shots far from both stored centres; "
+                           "reported on the I/Q path only",
+}
 
 
 class _ParitySwitchParameters(TargetSelection, StateReadoutParameters):
@@ -257,6 +327,41 @@ class QubitParitySwitchContinuous(Experiment):
 
     name: ClassVar[str] = "qubit_parity_switch_continuous"
     writes: ClassVar[tuple[str, ...]] = ("parity_rate_hz",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *_PARITY_REQUIRES,
+        Requirement("readout_depletion_s",
+                    "the only wait between two shots, so it is part of the shot "
+                    "period the rate is counted in (a per-run readout_depletion_ns "
+                    "replaces it)"),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        **_PARITY_EXTRACTS,
+        "idle_multiple": "the idle_multiple the run was taken with",
+    }
+
+    @staticmethod
+    def _idle_note(params) -> str:
+        """What the fixed idle of these Parameters is, for the diagram."""
+        if params.idle_time_ns is not None:
+            return "fixed: idle_time_ns"
+        multiple = int(getattr(params, "idle_multiple", 1))
+        return (f"fixed: {multiple} / (2 x parity_delta_f_hz), from the stored "
+                f"parity splitting")
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitParitySwitchContinuousParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        with diagram.repeat("x shots", swept="shot_idx"):
+            diagram.step(Block("drive", "y90", "gate"))
+            diagram.step(Block("drive", "idle", "wait", note=cls._idle_note(params)))
+            diagram.step(Block("drive", "x90", "gate"))
+            diagram.step(Block(
+                "readout", "readout", "acquire",
+                note="every shot is kept; no qubit reset follows, only the "
+                     "depletion wait"))
+            depletion_step(diagram)
+        return diagram
+
     description: ClassVar[str] = (
         "Fixed-sequence charge-parity monitor: y90 - idle - x90 - measure repeated as "
         "back-to-back single shots for record_time_s (the shot count is derived from it, "

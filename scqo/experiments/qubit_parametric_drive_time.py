@@ -49,20 +49,25 @@ from pydantic import Field, model_validator
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
 )
+from ._diagrams import drive_flux_readout
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 from ._window import refuse_zero_width, window_bounds
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
+from .qubit_parametric_drive_amp import PARAMETRIC_REQUIRES
 
 
 class QubitParametricDriveTimeParameters(TargetSelection, AveragingParameters,
@@ -147,6 +152,36 @@ class QubitParametricDriveTime(Experiment):
     """Backend-agnostic parametric-drive chevron. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_parametric_drive_time"
+    requires: ClassVar[tuple[Requirement, ...]] = PARAMETRIC_REQUIRES
+    extracts: ClassVar[dict[str, str]] = {
+        "n_freq": "how many drive frequencies were measured",
+        "n_decoh_ok": "at how many of them the fit converged; at least one makes "
+                      "the run SUCCESSFUL",
+        "n_underdamped": "at how many the fitted exchange oscillates instead of "
+                         "only decaying",
+        "best_parametric_freq_hz": "the frequency with the largest best_ep_metric; "
+                                   "not the resonance (BACKLOG I32)",
+        "best_ep_metric": "8 lambda^2 / gamma^2 at that frequency: how coherent "
+                          "the exchange is there",
+        "best_gamma_hz": "the fitted loss rate there; despite the name an angular "
+                         "rate in 1/s (BACKLOG I32)",
+        "best_lambda_hz": "the fitted coupling rate there; an angular rate in 1/s",
+        "best_delta_hz": "the fitted residual detuning there; an angular rate in "
+                         "1/s",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitParametricDriveTimeParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        diagram.step(Block(
+            "flux", "flux tone", "tone",
+            swept=("parametric_freq_hz", "drive_time_ns"),
+            note="an RF tone on top of idle_flux, at the amplitude parametric_amp_v"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Parametric-drive chevron: excite the qubit, then modulate its own flux (z) line "
         "with an RF tone of swept frequency at a FIXED user-given amplitude, hold it for a "

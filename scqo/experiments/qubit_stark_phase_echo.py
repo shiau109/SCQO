@@ -62,18 +62,23 @@ from ..contract import DatasetContract
 # MRO, and this window is a factor of a named OPERATION's baked amplitude, not of a
 # target knob, which is exactly why this experiment is not an amplitude carrier.
 from ._capabilities.amplitude import ABS_AMP_COORD, ABS_AMP_LABEL
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     population_row,
     readout_vars,
     signal_rename,
 )
+from ._diagrams import DRIVE_READOUT
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -127,8 +132,49 @@ class QubitStarkPhaseEcho(Experiment):
     """Backend-agnostic AC-Stark phase echo. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_stark_phase_echo"
+    #: the pi/2 pulses are not here: which knob holds their amplitude differs per
+    #: backend (BACKLOG I19), so each driver's subclass adds its own. The stark
+    #: operation is a vendor operation, not a catalog field, so the document's
+    #: prose names it.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the echo pulses are played on resonance, and the stark tone "
+                    "stark_detuning_hz away from this frequency"),
+        Requirement("pi_amp",
+                    "the x180 in the middle has to be a full pi pulse, or the "
+                    "static detuning is not refocused"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "amp_2pi_factor": "the amplitude factor at which the measured phase first "
+                          "reaches a full turn; NaN when the swept window does not "
+                          "reach it",
+        "amp_2pi_digital": "the same point as an absolute amplitude; NaN when the "
+                           "backend did not report the stark operation's amplitude",
+        "stark_coeff_rad_per_amp2": "the slope of the phase against the amplitude "
+                                    "factor squared: the small-drive coefficient",
+        "intercept_rad": "that straight line's value at amplitude 0",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitStarkPhaseEchoParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "y90", "gate"))
+        diagram.step(Block("drive", "idle", "wait",
+                           note="as long as the stark operation"))
+        diagram.step(Block("drive", "x180", "gate"))
+        diagram.step(Block(
+            "drive", params.stark_operation, "square", swept="stark_amp",
+            note="detuned from the drive frequency by stark_detuning_hz"))
+        diagram.step(Block(
+            "drive", "x90 / -y90", "gate", swept="meas_basis",
+            note="basis 0 closes with x90 and reads sin; basis 1 with -y90, cos"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
-        "AC-Stark phase echo: a Hahn echo (X90 - wait(D) - X180 - stark(D) - close - readout) "
+        "AC-Stark phase echo: a Hahn echo (Y90 - wait(D) - X180 - stark(D) - close - readout) "
         "with an off-resonant Stark tone filling the second free-evolution arm (the first arm is "
         "an idle of the same duration D). The echo refocuses static dephasing, so the surviving "
         "phase is the AC-Stark shift the tone imprints. The phase is read in two bases (close with "

@@ -37,19 +37,33 @@ from pydantic import Field, model_validator
 
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
 )
+from ._diagrams import drive_flux_readout
+from ._requires import CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._window import refuse_zero_width, window_bounds
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
+
+#: what both parametric-drive maps need (the time sibling imports it)
+PARAMETRIC_REQUIRES: tuple[Requirement, ...] = (
+    *CALIBRATED_PI_PULSE,
+    Requirement("idle_flux",
+                "the tone modulates the flux around this standing bias, which sets "
+                "the qubit frequency being modulated"),
+    *CALIBRATED_READOUT,
+)
 
 
 class QubitParametricDriveAmpParameters(TargetSelection, AveragingParameters,
@@ -129,6 +143,33 @@ class QubitParametricDriveAmp(Experiment):
     """Backend-agnostic parametric-drive map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_parametric_drive_amp"
+    requires: ClassVar[tuple[Requirement, ...]] = PARAMETRIC_REQUIRES
+    extracts: ClassVar[dict[str, str]] = {
+        "n_peaks": "how many lines the row-by-row fits found over the whole map",
+        "n_good": "how many of those lines were kept; at least one makes the run "
+                  "SUCCESSFUL",
+        "n_outlier": "how many were dropped as outliers",
+        "best_parametric_freq_hz": "the frequency of the strongest kept line; "
+                                   "absent when no line was kept",
+        "best_parametric_amp_v": "the amplitude row that line was found in",
+        "best_fwhm_hz": "that line's fitted width; a real line is a small fraction "
+                        "of the swept window",
+        "best_peak_amplitude": "that line's fitted height, always positive: a dip "
+                               "is inverted before the fit",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitParametricDriveAmpParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x180", "gate"))
+        diagram.step(Block(
+            "flux", "flux tone", "tone",
+            swept=("parametric_amp_v", "parametric_freq_hz"),
+            note="an RF tone on top of idle_flux, drive_time_ns long"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Parametric-drive resonance map: excite the qubit, then modulate its own flux (z) "
         "line with an RF tone of swept frequency and amplitude for a FIXED user-given "
@@ -236,8 +277,9 @@ class QubitParametricDriveAmp(Experiment):
                 "n_outlier": int(r["n_outlier"]),
             }
             if good.any():
-                # the strongest KEPT resonance: rank by |fitted amplitude|,
-                # keep the sign in the report (negative = population dip).
+                # the strongest KEPT resonance, ranked by fitted amplitude. That
+                # amplitude is positive for a dip too: fit_peaks inverts a dip
+                # trace before fitting (the Result docstring; BACKLOG F12).
                 amps = np.asarray(r["peak_amplitude"], dtype=float)
                 idx = int(np.flatnonzero(good)[np.argmax(np.abs(amps[good]))])
                 fit["best_parametric_freq_hz"] = float(

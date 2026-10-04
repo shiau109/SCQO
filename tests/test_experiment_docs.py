@@ -50,10 +50,6 @@ UNDOCUMENTED = frozenset({
     "pair_swap_flux_map", "pair_zz_coupler",
     "qc_n_stark_amp", "qc_n_swap_amp", "qc_n_swap_tomography",
     "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
-    "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
-    "qubit_parity_switch_continuous", "qubit_parity_switch_discrete",
-    "qubit_resonator_stark",
-    "qubit_stark_phase_echo",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))
@@ -182,6 +178,29 @@ def test_doc_variants_are_valid_parameters(name):
             f"{name}: variant {variant!r} becomes a file name - lower case, "
             f"digits and underscores only")
         docs.doc_params(cls, variant)  # raises on an unknown field or bad value
+
+
+def test_figure_tables_name_documented_experiments_and_valid_parameters(update_docs):
+    """`FIGURE_PREREQUISITES` / `FIGURE_PARAMETERS` are only exercised by
+    `update_docs.py --figures`, which no test runs: a renamed experiment or
+    parameter there would surface the next time someone redraws a figure."""
+    for name, earlier in update_docs.FIGURE_PREREQUISITES.items():
+        assert name in DOCUMENTED, name
+        for entry in earlier:
+            first, settings = (entry, {}) if isinstance(entry, str) else entry
+            assert first in CORE, f"{name}: prerequisite {first!r} is not registered"
+            CORE[first].Parameters(targets=["q"], **settings)
+    for name, settings in update_docs.FIGURE_PARAMETERS.items():
+        assert name in DOCUMENTED, name
+        assert settings, f"{name}: an empty entry says nothing"
+        CORE[name].Parameters(targets=["q"], **settings)
+        text = docs.doc_path(name).read_text(encoding="utf-8")
+        figure = text.split("## Expected result", 1)[1].split("## Traps", 1)[0]
+        for field, value in settings.items():
+            shown = str(value).lower() if isinstance(value, bool) else f"{value:g}"
+            assert f"{field}={shown}" in figure, (
+                f"{name}: its figure is drawn with {field}={shown}; the document "
+                f"has to say so beside the figure")
 
 
 def test_generated_files_are_current(update_docs):

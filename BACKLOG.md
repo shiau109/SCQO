@@ -894,6 +894,16 @@ provenance or a trap a user can walk into, **low** = hygiene.
     operation stored on that drive line, Qblox one above the DAC's full scale - and the
     x180's area is read from the stored envelope on QM and computed from the DRAG gaussian
     on Qblox. (Qblox refusing the smooth `drive_shape`s by name is the allowed kind.)
+- 2026-10-04, fifth batch of documents (same plan, section 18), each stated in the driver's
+  `backend_notes`:
+  - The two parity monitors: the pi/2 knob split of `qubit_ramsey` holds here too
+    (declared per driver in `requires`). `qubit_parity_switch_discrete` pads its cycle on
+    a 4 ns grid with a 16 ns floor on QM and on a 1 ns grid on Qblox, so one
+    `cycle_period_ns` gives periods up to 16 ns apart; each probe reports the period it
+    played, so the rate is right on both.
+  - `qubit_resonator_stark` plays the same sequence on both (pinned by each driver's
+    timing test); what differs is the amplitude bound (QM: `amp_prefactor` below 2, QUA's
+    amplitude scale; Qblox: the absolute amplitude within the output's full scale).
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 

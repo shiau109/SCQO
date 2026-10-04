@@ -572,7 +572,11 @@ left empty.)
   alone); a PNG is only checked to exist. A figure is generated exactly when the
   document links it; `<variant>` in a file name is a key of the class's `doc_variants`.
   An experiment that refuses to start on a device nothing has measured names what to
-  run and accept first in `scripts/update_docs.py` `FIGURE_PREREQUISITES`.
+  run and accept first in `scripts/update_docs.py` `FIGURE_PREREQUISITES` (an entry may
+  carry parameters: the parity monitors need a beat-model Ramsey). One whose defaults
+  the demo device cannot hold, or whose estimator is meant to be read at another
+  setting, names the parameters of its figure in `FIGURE_PARAMETERS`, and its document
+  says so beside the figure.
 - **Every `Contract.sweeps` axis is marked `swept` in the diagram**, and a probe whose
   pulse order changes updates the diagram in the same commit. Pieces several
   experiments draw alike are shared: a capability's own in its module (`reset_step`,

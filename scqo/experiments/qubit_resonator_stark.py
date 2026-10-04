@@ -38,7 +38,9 @@ from ..contract import DatasetContract
 from ..estimate_inputs import note_acquisition
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram, held
 from . import register
 from ._capabilities.amplitude import (
     ABS_AMP_COORD,
@@ -59,9 +61,11 @@ from ._capabilities.detuning import (
     DriveDetuningSweepParameters,
     drive_detuning_sweep,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._depletion import READOUT_DEPLETION_NS_DESC
+from ._diagrams import DRIVE_READOUT, depletion_step
 from ._drive_power import drive_power_boundary
+from ._requires import CALIBRATED_READOUT, DRIVE_CHAIN
 from ._sim import stable_seed
 from ._stark_tone import StarkWindows, stark_windows
 from ._window import window_bounds
@@ -134,6 +138,66 @@ class QubitResonatorStark(Experiment):
     """Backend-agnostic Stark-tone spectroscopy map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = "qubit_resonator_stark"
+    #: chi_hz only turns the shift into a photon number (NaN without it), so it
+    #: is the document's prose and not a requirement.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the detuning window is counted from it, and the qubit line with "
+                    "no photons has to fall inside that window"),
+        Requirement("readout_freq_hz",
+                    "the Stark tone and the readout are both played at it"),
+        Requirement("readout_amp",
+                    "the Stark tone's amplitude is amp_prefactor times this one, so "
+                    "factor 1 is the readout's own amplitude"),
+        Requirement("readout_depletion_s",
+                    "the wait before the drive, for the photons to build up, and "
+                    "before the readout, for them to leave (a per-run "
+                    "readout_depletion_ns replaces it)"),
+        DRIVE_CHAIN,
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "stark_shift_at_readout_hz": "the fitted shift of the qubit line per "
+                                     "amp_prefactor squared: the shift the readout's "
+                                     "own amplitude causes",
+        "stark_shift_at_readout_err_hz": "the fit's standard error on that shift",
+        "stark_hz_per_amp2": "the same slope per absolute amplitude squared",
+        "zero_photon_freq_hz": "the qubit line with no photons in the resonator: "
+                               "the fit's value at amplitude 0",
+        "zero_photon_detuning_hz": "the same line as a detuning from drive_freq_hz",
+        "broadening_at_readout_hz": "the fitted growth of the linewidth per "
+                                    "amp_prefactor squared",
+        "fwhm_zero_photon_hz": "the fitted linewidth at amplitude 0",
+        "n_readout": "the photon number at amp_prefactor 1, from the shift and "
+                     "chi_hz; NaN when chi_hz is not stored",
+        "photons_per_amp2": "the photon number per absolute amplitude squared; NaN "
+                            "when chi_hz is not stored",
+        "chi_hz_used": "the chi_hz the photon numbers were computed with",
+        "n_rows_fit": "how many amplitude rows entered the fit of the shift",
+        "rms_residual_hz": "the rms distance of those rows' line centres from the "
+                           "fitted shift",
+        "old_drive_freq_hz": "the drive frequency the detuning axis is counted from",
+        "old_readout_amp": "the readout amplitude the factor multiplied",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitResonatorStarkParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        reset_step(diagram, params)
+        diagram.step(
+            Block("drive", "ring-up", "wait",
+                  note="one depletion wait, for the photon number to settle"),
+            Block("readout", "Stark tone", "tone", swept=AMP_AXIS,
+                  note="at the readout frequency; amp_prefactor times readout_amp"))
+        diagram.step(
+            Block("drive", "saturation", "tone", swept=DETUNING_AXIS,
+                  note="drive_len_ns long; it ends together with the Stark tone"),
+            held("readout"))
+        depletion_step(diagram)
+        diagram.step(Block("readout", "readout", "acquire",
+                           note="the standard readout, the same in every row"))
+        return diagram
+
     description: ClassVar[str] = (
         "Qubit spectroscopy under a Stark tone: a tone on the readout channel "
         "(readout_freq_hz, amplitude = amp_prefactor x readout_amp) fills the "

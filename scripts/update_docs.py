@@ -264,10 +264,33 @@ def stale_doc_files(wanted: dict[Path, str]) -> list[Path]:
 #: run, for the few experiments that refuse to start on a device nothing has
 #: measured yet. It is the calibration order of the document's "Before running
 #: it" table, played once - not a second place to keep that order: an entry is
-#: needed only where the experiment has a hard gate.
-FIGURE_PREREQUISITES: dict[str, tuple[str, ...]] = {
+#: needed only where the experiment has a hard gate. An entry is an experiment
+#: name, or ``(name, parameters)`` where the gate is opened by a non-default run.
+_BEAT_RAMSEY = ("qubit_ramsey", {"ramsey_model": "beat"})
+FIGURE_PREREQUISITES: dict[str, tuple[str | tuple[str, dict], ...]] = {
     # refuses without the stored |g> / |e> centres
     "qubit_thermal_population": ("single_shot_readout",),
+    # refuses without a governed depletion wait (the Stark tone's ring-up)
+    "qubit_resonator_stark": ("resonator_spectroscopy",),
+    # refuse without the depletion wait (the shot cadence), the stored centres
+    # (the trace discrimination) and the parity splitting (the fixed idle)
+    "qubit_parity_switch_continuous": (
+        "resonator_spectroscopy", "single_shot_readout", _BEAT_RAMSEY),
+    "qubit_parity_switch_discrete": (
+        "resonator_spectroscopy", "single_shot_readout", _BEAT_RAMSEY),
+}
+
+#: Parameters a document's simulated figure is drawn with, under the variant's
+#: own. Only for an experiment whose defaults the demo device cannot hold or
+#: that are not the setting its estimator is meant to be read at - and the
+#: document says so beside the figure.
+FIGURE_PARAMETERS: dict[str, dict] = {
+    # the fit reads a population: on raw I/Q its rates are not physical
+    "qubit_parametric_drive_time": {"use_state_discrimination": True},
+    # the demo's shot is a few us long, so the default 30 s record is more shots
+    # than max_num_shots allows
+    "qubit_parity_switch_continuous": {"record_time_s": 2.0},
+    "qubit_parity_switch_discrete": {"record_time_s": 2.0},
 }
 
 
@@ -303,10 +326,12 @@ def write_expected_figures(names: list[str]) -> int:
                           scqo_dir=tmp / "scqo", data_root=tmp / "data",
                           device_name="demo", setup_name="sim", cooldown_id="cd1")
         targets = default_targets(session, cls.name)[:1]
-        for earlier in FIGURE_PREREQUISITES.get(cls.name, ()):
-            ran = session.run(earlier, {"targets": targets}, update="apply")
+        for entry in FIGURE_PREREQUISITES.get(cls.name, ()):
+            earlier, settings = (entry, {}) if isinstance(entry, str) else entry
+            ran = session.run(earlier, {"targets": targets, **settings}, update="apply")
             if ran.get("error"):
                 raise RuntimeError(f"prerequisite {earlier}: {ran['error']}")
+        overrides = {**FIGURE_PARAMETERS.get(cls.name, {}), **overrides}
         out = session.run(cls.name, {"targets": targets, **overrides}, update="none")
         if out.get("error"):
             raise RuntimeError(out["error"])

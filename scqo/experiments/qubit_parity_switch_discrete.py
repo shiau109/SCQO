@@ -63,12 +63,17 @@ from pydantic import Field
 from .._scqat import per_qubit_results
 from ..contract import DatasetContract
 from ._capabilities.state_readout import SHOT_STATE_ALT, shot_state_vars
+from ._diagrams import DRIVE_READOUT, depletion_step
 from ._sim import stable_seed
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 from .qubit_parity_switch_continuous import (
     _NOMINAL_PI2_S,
     _NOMINAL_READOUT_S,
+    _PARITY_EXTRACTS,
+    _PARITY_REQUIRES,
     QubitParitySwitchContinuous,
     _ParitySwitchParameters,
 )
@@ -121,6 +126,43 @@ class QubitParitySwitchDiscrete(QubitParitySwitchContinuous):
 
     name: ClassVar[str] = "qubit_parity_switch_discrete"
     writes: ClassVar[tuple[str, ...]] = ("parity_rate_hz",)
+    # stated here in full: the class inherits from the continuous monitor, whose
+    # depletion line, idle_multiple key and sequence are not this variant's
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *_PARITY_REQUIRES,
+        Requirement("readout_depletion_s",
+                    "the wait after the first measurement, for its photons to leave "
+                    "before the pulses, and part of the cycle period (a per-run "
+                    "readout_depletion_ns replaces it)"),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        **_PARITY_EXTRACTS,
+        "p_intercycle_flip": "how often a cycle's first measurement differs from "
+                             "the previous cycle's second; 0 is clean, and it "
+                             "spoils no parity sample",
+        "p_m1_high": "the fraction of first measurements that read |1>",
+        "p_m2_high": "the fraction of second measurements that read |1>",
+        "cycle_period_ns": "the cycle_period_ns that was asked for; NaN when unset",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitParitySwitchDiscreteParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        with diagram.repeat("x cycles", swept="shot_idx"):
+            diagram.step(Block("readout", "M1", "acquire", swept="meas_idx",
+                               note="meas_idx 0: projects the qubit onto a pole"))
+            depletion_step(diagram)
+            diagram.step(Block("drive", "x90", "gate"))
+            diagram.step(Block("drive", "idle", "wait", note=cls._idle_note(params)))
+            diagram.step(Block("drive", "y90", "gate"))
+            diagram.step(Block("readout", "M2", "acquire", swept="meas_idx",
+                               note="meas_idx 1: differs from M1 when the parity is "
+                                    "odd"))
+            if params.cycle_period_ns is not None:
+                diagram.step(Block("readout", "pad", "wait",
+                                   note="fills the cycle to cycle_period_ns"))
+        return diagram
+
     description: ClassVar[str] = (
         "Two-measurement charge-parity monitor: per cycle M1 - depletion wait - x90 - "
         "idle - y90 - M2 - pad, repeated at the fixed period cycle_period_ns (None = "
