@@ -52,11 +52,8 @@ UNDOCUMENTED = frozenset({
     "qc_swap_flux_stark", "qc_trotter_compensation", "qc_unidirectional_trotter",
     "qubit_parametric_drive_amp", "qubit_parametric_drive_time",
     "qubit_parity_switch_continuous", "qubit_parity_switch_discrete",
-    "qubit_ramsey_cryoscope",
     "qubit_resonator_stark",
-    "qubit_spectroscopy_cryoscope",
     "qubit_stark_phase_echo",
-    "qubit_xyz_delay",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))

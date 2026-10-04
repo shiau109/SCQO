@@ -87,7 +87,9 @@ from pydantic import Field, field_validator, model_validator
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram, held
 from ._capabilities.detuning import (
     DETUNING_AXIS,
     END_DRIVE_DETUNING_DESC,
@@ -96,15 +98,18 @@ from ._capabilities.detuning import (
     DriveDetuningSweepParameters,
     drive_detuning_sweep,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import drive_flux_readout
 from ._distortion_hint import print_apply_hint, run_id_of
+from ._requires import CALIBRATED_READOUT
 from ._time_grid import log_time_axis_ns
 from ._sim import iq_from_population, stable_seed
 from . import register
@@ -281,6 +286,55 @@ class QubitSpectroscopyCryoscope(Experiment):
 
     name: ClassVar[str] = "qubit_spectroscopy_cryoscope"
     writes: ClassVar[tuple[str, ...]] = ("distortion_amp", "distortion_tau_s")
+    #: flux_per_phi0 only improves the centring (a nominal curvature stands in
+    #: for it), so it is the document's prose and not a requirement.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("idle_flux",
+                    "the parked flux is an excursion from this standing bias, where "
+                    "the reset and the readout happen"),
+        Requirement("drive_freq_hz",
+                    "the drive is centred on the frequency predicted for the parked "
+                    "flux, counted from this one"),
+        Requirement("pi_amp",
+                    "the spectroscopy pulse is given the area of the x180: its "
+                    "amplitude"),
+        Requirement("pi_duration_s",
+                    "the spectroscopy pulse is given the area of the x180: its "
+                    "length"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "a_dc": "the level the fitted step response settles to; 1 by construction, "
+                "since the response is divided by its own tail",
+        "rms_residual": "the rms distance between the step response and the fit",
+        "n_components": "how many exponential components the fit kept; not always "
+                        "as many as fit_start_fractions lists",
+        "center_offset_hz": "the detuning the drive was parked at, measured from "
+                            "drive_freq_hz: the predicted shift of the qubit under "
+                            "the flux pulse",
+        "n_peaks_found": "at how many wait times a spectroscopy line was found",
+        "old_idle_flux": "the standing bias the flux pulse rode on",
+        "flux_pulse_amp_v": "the amplitude of the flux pulse that was played",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitSpectroscopyCryoscopeParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        diagram.step(
+            Block("drive", "wait", "wait", swept=WAIT_AXIS),
+            Block("flux", "flux pulse", "square",
+                  note="an excursion from idle_flux, released 100 ns after the "
+                       "drive and before the readout"))
+        # the envelope the tone is built with: a flat one, or a shaped pulse
+        shape = "square" if params.drive_shape == "square" else "gate"
+        diagram.step(
+            Block("drive", "drive", shape, swept=DETUNING_AXIS,
+                  note="a weak pulse with the area of the x180, drive_len_ns long"),
+            held("flux"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Reconstruct the flux line's LONG-TIME (microsecond) step response by qubit "
         "spectroscopy vs wait-time into a parked flux pulse, and fit it to a sum of "

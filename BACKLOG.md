@@ -881,6 +881,19 @@ provenance or a trap a user can walk into, **low** = hygiene.
   - `qubit_sqrb`: the identity Clifford is an idle one pi pulse long on QM and nothing at
     all on Qblox, so a Clifford averages 1.875 pulses on one and 44/24 on the other, while
     scqat divides by 1.875 for both.
+- 2026-10-04, fourth batch of documents (same plan, section 17), each stated in the driver's
+  `backend_notes`:
+  - `qubit_ramsey_cryoscope`: the margins around the flux pulse differ. QM starts it 16 ns
+    after the first x90 and plays the second x90 `max_duration_ns + 16` ns after the first,
+    so the longest pulse ends exactly as the second x90 begins; Qblox starts it at the end
+    of the first x90 and leaves `max_duration_ns + 8` ns. The time the falling edge has to
+    settle before the second x90 therefore differs by 8 ns at every duration. The pi/2 knob
+    split of `qubit_ramsey` holds here too (declared per driver in `requires`).
+  - `qubit_spectroscopy_cryoscope`: the guard on the spectroscopy pulse's amplitude is not
+    the same question on the two sides - QM refuses a pulse louder than the loudest
+    operation stored on that drive line, Qblox one above the DAC's full scale - and the
+    x180's area is read from the stored envelope on QM and computed from the DRAG gaussian
+    on Qblox. (Qblox refusing the smooth `drive_shape`s by name is the allowed kind.)
 - Done when: each item is either aligned (one realization, the other driver changed) or
   declared as an optional capability refused by name, and CLAUDE.md states what the code does.
 
@@ -1142,6 +1155,20 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   runs can be corrected offline by doubling the coordinate.
 - Done when: the builder labels `8 * cycles`, a generated-QUA test pins the axis against the
   played arm length, and any stored `t2_echo` spectrum taken before the fix is marked.
+
+### I39 `qubit_xyz_delay.simulate()` draws the peak AT the stored delay: an accept doubles it (low)
+- Found 2026-10-04 while documenting it (`docs/experiment-docs-plan.md` section 17).
+  Reproduced on the simulated backend: with `z_q0.flux_delay_s` set to 5 ns, two runs with
+  `update="apply"` propose 10.0 ns and then 20.1 ns.
+- `scqo/experiments/qubit_xyz_delay.py::simulate` centres the triangle on the line's stored
+  `flux_delay_s`, and `estimate()` reports `old + fitted`, so the proposal is twice the
+  stored value. The comment says the opposite ("so a re-run after accept sees the peak move
+  to 0"). On an instrument the peak sits at the REMAINING misalignment, which the stored
+  delay reduces. Hardware runs are not affected; the practice mode teaches the wrong
+  behaviour for any line whose delay is not 0 (the demo device's is 0, so no test sees it).
+- Where: `simulate()` (a hidden true delay per target, the peak at `true - stored`); a test
+  that accepts once and finds the second run's `delay_shift_s` near 0.
+- Done when: an accepted simulated run brings the next run's peak to 0, pinned by that test.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qc_n_swap_tomography` (landed 2026-10-01). DONE on 5Q4C the same day for both 040 swaps at

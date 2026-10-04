@@ -13,9 +13,11 @@ import xml.dom.minidom
 import pytest
 
 from scqo.sequence_diagram import (
+    HELD_LABEL,
     MAX_NOTE_CHARS,
     Block,
     SequenceDiagram,
+    held,
     render_svg,
 )
 
@@ -114,6 +116,10 @@ def test_a_long_note_widens_the_figure_instead_of_leaving_it():
     (lambda: SequenceDiagram({"a": "A"}).step(Block("a", "x"), Block("a", "y")),
      "at most one block per lane"),
     (lambda: render_svg(SequenceDiagram({"a": "A"})), "nothing to draw"),
+    (lambda: SequenceDiagram({"a": "A"}).step(held("a")), "continues nothing"),
+    (lambda: Block("a", HELD_LABEL, "square", swept="axis", held=True),
+     "takes its axis and footnote from it"),
+    (lambda: _gate_then_held(), "a gate cannot be held"),
 ])
 def test_malformed_diagrams_are_refused_by_name(build, message):
     with pytest.raises(ValueError, match=message):
@@ -199,6 +205,62 @@ def test_two_brackets_side_by_side_are_both_innermost():
     with diagram.repeat("x 3"):
         diagram.step(Block("a", "two", "gate"))
     assert diagram.repeat_levels() == [0, 0]
+
+
+def _gate_then_held() -> None:
+    diagram = SequenceDiagram({"a": "A"})
+    diagram.step(Block("a", "x180", "gate"))
+    diagram.step(held("a"))
+
+
+def _pulse_rects(svg: str) -> list[tuple[float, float]]:
+    """(x, width) of every solid pulse rectangle, left to right."""
+    rects = [node for node in xml.dom.minidom.parseString(svg).getElementsByTagName("rect")
+             if node.getAttribute("stroke-width") == "1.4"
+             and not node.getAttribute("stroke-dasharray")]
+    return sorted((float(n.getAttribute("x")), float(n.getAttribute("width")))
+                  for n in rects)
+
+
+def test_a_held_block_is_drawn_as_one_shape_across_its_steps():
+    """A flux pulse that stays on while the drive lane waits and then plays:
+    one rectangle from the first column to the end of the last, one label."""
+    def build(hold: bool) -> SequenceDiagram:
+        diagram = SequenceDiagram({"drive": "q.xy", "flux": "q.z"})
+        diagram.step(Block("drive", "wait", "wait", swept="wait_time_ns"),
+                     Block("flux", "flux pulse", "square", note="held to the end"))
+        diagram.step(Block("drive", "drive", "square"),
+                     *([held("flux")] if hold else []))
+        diagram.step(Block("drive", "after", "square"))
+        return diagram
+
+    diagram = build(hold=True)
+    assert diagram.held_through(0, "flux") == 1
+    assert diagram.held_through(1, "drive") == 1     # nothing holds it
+    assert diagram.swept_axes() == {"wait_time_ns"}
+    assert diagram.notes() == ["held to the end"]
+
+    svg = render_svg(diagram)
+    assert HELD_LABEL not in svg
+    assert svg.count(">flux pulse<") == 1
+    (flux_x, flux_w), = [r for r in _pulse_rects(svg) if r not in _pulse_rects(
+        render_svg(build(hold=False)))]
+    drives = [r for r in _pulse_rects(svg) if r != (flux_x, flux_w)]
+    # the flux pulse starts with the wait column and ends with the drive pulse
+    assert flux_x < drives[0][0]
+    assert flux_x + flux_w == pytest.approx(drives[0][0] + drives[0][1])
+    # ... and holding it widens no column
+    assert svg.split('width="', 1)[1].split('"', 1)[0] == render_svg(
+        build(hold=False)).split('width="', 1)[1].split('"', 1)[0]
+
+
+def test_a_held_run_may_span_more_than_two_steps():
+    diagram = SequenceDiagram({"a": "A", "b": "B"})
+    diagram.step(Block("a", "tone", "tone"), Block("b", "one", "gate"))
+    diagram.step(held("a"), Block("b", "two", "gate"))
+    diagram.step(held("a"), Block("b", "three", "gate"))
+    assert diagram.held_through(0, "a") == 2
+    xml.dom.minidom.parseString(render_svg(diagram))
 
 
 def test_a_single_bracket_keeps_its_geometry():

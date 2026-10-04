@@ -56,6 +56,10 @@ class Block:
     swept: str | tuple[str, ...] | None = None
     #: a footnote, numbered and printed under the lanes
     note: str | None = None
+    #: True when this is the block on the same lane in the PREVIOUS step, still
+    #: playing: the two are drawn as one shape across both columns. Build one
+    #: with :func:`held`; it carries no label, axis or footnote of its own.
+    held: bool = False
 
     def __post_init__(self) -> None:
         if self.shape not in SHAPES:
@@ -68,6 +72,10 @@ class Block:
                 f"note on block {self.label!r} is {len(self.note)} characters; keep "
                 f"a footnote within {MAX_NOTE_CHARS} - it is drawn on one line, and "
                 f"the explanation belongs in the document's text")
+        if self.held and (self.swept is not None or self.note):
+            raise ValueError(
+                "a held block continues the previous step's block and takes its "
+                "axis and footnote from it; mark those on the block it continues")
 
 
     @property
@@ -76,6 +84,17 @@ class Block:
         if self.swept is None:
             return ()
         return (self.swept,) if isinstance(self.swept, str) else tuple(self.swept)
+
+
+#: the label a held block carries; it is never drawn
+HELD_LABEL = "(held)"
+
+
+def held(lane: str) -> Block:
+    """The block on ``lane`` in the previous step, still playing through this
+    one: a flux pulse that stays on while the drive lane waits and then plays.
+    The renderer draws the run as ONE shape spanning its columns."""
+    return Block(lane, HELD_LABEL, "square", held=True)
 
 
 @dataclass(frozen=True)
@@ -94,7 +113,9 @@ class SequenceDiagram:
 
     ``lanes`` maps a lane key to the label drawn beside it, top to bottom.
     Every ``step()`` is one time column; the blocks passed to it are
-    simultaneous, at most one per lane.
+    simultaneous, at most one per lane. A block that keeps playing while
+    another lane moves on to its next step is continued there with
+    ``held(lane)``.
     """
 
     def __init__(self, lanes: dict[str, str]) -> None:
@@ -121,7 +142,37 @@ class SequenceDiagram:
                     f"two blocks on lane {block.lane!r} in one step; a step holds "
                     f"at most one block per lane")
             seen.add(block.lane)
+            if block.held:
+                before = self.steps[-1] if self.steps else ()
+                source = next((b for b in before if b.lane == block.lane), None)
+                if source is None:
+                    raise ValueError(
+                        f"a held block on lane {block.lane!r} continues nothing: the "
+                        f"previous step has no block on that lane")
+                if self._source_shape(len(self.steps) - 1, block.lane) == "gate":
+                    raise ValueError(
+                        f"a gate cannot be held over a further step (lane "
+                        f"{block.lane!r}): it is drawn at a fixed width; use a "
+                        f"shape drawn by its envelope")
         self.steps.append(tuple(blocks))
+
+    def _source_shape(self, index: int, lane: str) -> str:
+        """The shape of the block a held run on ``lane`` started from, looking
+        back from step ``index``."""
+        while True:
+            block = next(b for b in self.steps[index] if b.lane == lane)
+            if not block.held:
+                return block.shape
+            index -= 1
+
+    def held_through(self, index: int, lane: str) -> int:
+        """The last step the block on ``lane`` at step ``index`` plays through:
+        ``index`` itself unless the following steps hold it."""
+        last = index
+        while last + 1 < len(self.steps) and any(
+                b.lane == lane and b.held for b in self.steps[last + 1]):
+            last += 1
+        return last
 
     @contextmanager
     def repeat(self, label: str, *, swept: str | None = None) -> Iterator[None]:
@@ -314,6 +365,8 @@ def render_svg(diagram: SequenceDiagram) -> str:
     for step in diagram.steps:
         need = 0.0
         for block in step:
+            if block.held:  # drawn by the block it continues; asks for no width
+                continue
             label_w = _text_w(block.label, _FONT) + (9 if block.note else 0)
             need = max(need, label_w, *(_text_w(axis, _SMALL) for axis in block.axes))
         widths.append(max(_COL_MIN, need + 2 * _INSET + 10))
@@ -369,7 +422,11 @@ def render_svg(diagram: SequenceDiagram) -> str:
 
     for k, step in enumerate(diagram.steps):
         for block in step:
-            out += _block_svg(block, edges[k], edges[k + 1], base[block.lane],
+            if block.held:
+                continue
+            # one shape from this column to the end of the last step holding it
+            end = edges[diagram.held_through(k, block.lane) + 1]
+            out += _block_svg(block, edges[k], end, base[block.lane],
                               marker.get(block.note or "", ""))
 
     y = lanes_bottom + _NOTE_LINE

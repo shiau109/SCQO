@@ -40,16 +40,21 @@ from pydantic import Field, field_validator
 from ..contract import DatasetContract
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._distortion_hint import print_apply_hint, run_id_of
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import drive_flux_readout
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from . import register
 
@@ -143,6 +148,43 @@ class QubitRamseyCryoscope(Experiment):
 
     name: ClassVar[str] = "qubit_ramsey_cryoscope"
     writes: ClassVar[tuple[str, ...]] = ("distortion_amp", "distortion_tau_s")
+    #: the pi/2 pulse itself is not here: which knob holds its amplitude differs
+    #: per backend (BACKLOG I19), so each driver's subclass adds its own.
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("idle_flux",
+                    "the flux pulse is an excursion from this standing bias, where "
+                    "both pi/2 pulses and the readout are played"),
+        Requirement("drive_freq_hz",
+                    "both pi/2 pulses have to be on resonance at the idle flux"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "a_dc": "the level the fitted step response settles to; 1 by construction, "
+                "since the response is divided by its own tail",
+        "rms_residual": "the rms distance between the step response and the fit",
+        "n_components": "how many exponential components the fit kept; not always "
+                        "as many as fit_start_fractions lists",
+        "old_idle_flux": "the standing bias the flux pulse rode on",
+        "flux_pulse_amp_v": "the amplitude of the flux pulse that was played",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitRamseyCryoscopeParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "x90", "gate"))
+        diagram.step(Block(
+            "flux", "flux pulse", "square", swept=DURATION_AXIS,
+            note="an excursion from idle_flux, at the start of the idle"))
+        diagram.step(Block(
+            "drive", "pad", "wait", swept=DURATION_AXIS,
+            note="fills the idle to one fixed length, set by max_duration_ns"))
+        diagram.step(Block(
+            "drive", "x90", "gate", swept=FRAME_AXIS,
+            note="its phase is stepped through one full turn"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Reconstruct the flux line's step response with a Ramsey phase-tomography "
         "sequence — a flux pulse of swept DURATION (1 ns resolution) between two "

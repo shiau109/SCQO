@@ -28,15 +28,20 @@ from ._capabilities.qubit_reset import QubitResetParameters
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     readout_vars,
     signal_rename,
     population_row,
 )
+from ._diagrams import drive_flux_readout, prepared_state_steps
+from ._requires import CALIBRATED_READOUT
 from ._sim import stable_seed
 from ._time_grid import time_axis_ns
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
 from ..experiment import Experiment
+from ..sequence_diagram import Block, SequenceDiagram
 from . import register
 
 
@@ -75,6 +80,46 @@ class QubitXyzDelay(Experiment):
 
     name: ClassVar[str] = "qubit_xyz_delay"
     writes: ClassVar[tuple[str, ...]] = ("flux_delay_s",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("drive_freq_hz",
+                    "the x180 has to be on resonance at the idle flux, so that only "
+                    "the flux pulse can make it miss"),
+        Requirement("pi_amp",
+                    "the x180 has to be a full pi pulse: it prepares |e>, and its "
+                    "failure under the flux pulse is the signal"),
+        Requirement("pi_duration_s",
+                    "the flux pulse is made as long as the x180, and this length "
+                    "is the half-width of the fitted triangle"),
+        Requirement("idle_flux",
+                    "the flux pulse rides on this standing bias, where the x180 "
+                    "and the readout were calibrated"),
+        Requirement("flux_delay_s",
+                    "the fitted shift is added to the delay the line already has",
+                    seed_ok=True),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "delay_shift_s": "the fitted position of the peak: how much later the flux "
+                         "pulse has to be played for the two pulses to coincide",
+        "delay_std_s": "the fit's standard error on that position",
+        "snr": "the height of the triangle over the scatter of the points far from "
+               "it",
+        "old_flux_delay_s": "the delay the line had during the run; the proposed "
+                            "value is this plus the shift",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params: QubitXyzDelayParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram(drive_flux_readout(params))
+        prepared_state_steps(diagram, params)
+        diagram.step(
+            Block("drive", "x180", "gate"),
+            Block("flux", "flux pulse", "square", swept="relative_time_ns",
+                  note="as long as the x180 and slid across it; at 0 the two are "
+                       "played together"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Slide a fixed X180 XY pulse and a same-length Z (flux) pulse past each "
         "other at 1 ns resolution for two preparations (|e> via x180, |g> via "

@@ -577,7 +577,9 @@ left empty.)
   pulse order changes updates the diagram in the same commit. Pieces several
   experiments draw alike are shared: a capability's own in its module (`reset_step`,
   `measure_step`, `mapped_measure_steps`), the rest in `experiments/_diagrams.py`.
-  Repeat brackets nest (a block of shots around a repeated pair).
+  Repeat brackets nest (a block of shots around a repeated pair). A pulse that keeps
+  playing while another lane moves to its next step is continued with `held(lane)`
+  and drawn as one shape (a flux pulse held through a wait and the drive after it).
 - **Equations**: inline `$...$`, display in a fenced `math` block. GitHub runs Markdown
   over inline math first, so write `T_2^{\ast}` rather than a literal `*` and avoid
   backslash-punctuation (`\,` `\!` `\{`) there.
