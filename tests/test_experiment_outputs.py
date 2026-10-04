@@ -154,7 +154,11 @@ def test_catalog_carries_requires_and_writes():
     assert entry["writes"] == list(CORE["qubit_ramsey"].writes)
     assert entry["requires"][0] == {
         "field": "drive_freq_hz",
-        "why": CORE["qubit_ramsey"].requires[0].why, "when": None}
+        "why": CORE["qubit_ramsey"].requires[0].why, "when": None, "seed_ok": False}
+    seeded = next(e for e in catalog() if e["name"] == "resonator_spectroscopy")
+    assert seeded["requires"][0] == {
+        "field": "readout_freq_hz", "why": "the swept window is centred on it",
+        "when": None, "seed_ok": True}
     assert {"field": "thermalization_time_s",
             "when": "reset_method=thermal"}.items() <= next(
         r for r in entry["requires"] if r["field"] == "thermalization_time_s").items()

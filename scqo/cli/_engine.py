@@ -322,7 +322,8 @@ def _schema_epilog(experiment: str, config_path: str | None) -> str:
         lines += ["", "needs these device values first:"]
         for req in entry["requires"]:
             only = f"  [only with {req['when']}]" if req.get("when") else ""
-            lines.append(f"  {req['field']:26s} {req['why']}{only}")
+            seed = "  [a starting value is enough]" if req.get("seed_ok") else ""
+            lines.append(f"  {req['field']:26s} {req['why']}{seed}{only}")
     if entry.get("writes"):
         lines += ["", "may propose: " + ", ".join(entry["writes"])]
     if entry.get("backend_notes"):

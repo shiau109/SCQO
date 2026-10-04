@@ -72,6 +72,19 @@ def test_repeat_bracket_carries_its_swept_count():
     assert "x N  (num_rounds)" in render_svg(diagram)
 
 
+def test_one_block_may_carry_two_swept_axes():
+    """A readout swept in frequency AND power is one pulse, so both axes are
+    marked on it and both names are drawn under it."""
+    diagram = SequenceDiagram({"readout": "q.ro"})
+    block = Block("readout", "readout", "acquire", swept=("power_dbm", "detuning_hz"))
+    diagram.step(block)
+    assert block.axes == ("power_dbm", "detuning_hz")
+    assert Block("readout", "readout").axes == ()
+    assert diagram.swept_axes() == {"power_dbm", "detuning_hz"}
+    svg = render_svg(diagram)
+    assert ">power_dbm<" in svg and ">detuning_hz<" in svg
+
+
 def test_every_shape_renders():
     diagram = SequenceDiagram({"a": "lane"})
     for shape in ("gate", "square", "flattop", "tone", "acquire", "wait", "offset"):

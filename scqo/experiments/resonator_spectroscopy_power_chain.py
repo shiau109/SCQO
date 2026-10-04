@@ -32,6 +32,10 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import SequenceDiagram
+from ._punchout import PUNCHOUT_EXTRACTS, punchout_diagram
+from ._requires import READOUT_WINDOW_CENTRE
 
 
 class ResonatorSpectroscopyPowerChainParameters(TargetSelection, AveragingParameters,
@@ -97,6 +101,13 @@ class ResonatorSpectroscopyPowerChain(Experiment):
     name: ClassVar[str] = "resonator_spectroscopy_power_chain"
     writes: ClassVar[tuple[str, ...]] = (
         "readout_freq_hz", "readout_power_dbm", "f_dress0_hz", "f_bare_hz", "g_hz", "g_coeff")
+    requires: ClassVar[tuple[Requirement, ...]] = (READOUT_WINDOW_CENTRE,)
+    extracts: ClassVar[dict[str, str]] = PUNCHOUT_EXTRACTS
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        return punchout_diagram(
+            "one compile and run per power point: the output chain is re-solved each time")
     description: ClassVar[str] = (
         "Careful punchout that STEPS THE OUTPUT CHAIN (QM full_scale_power_dbm / Qblox "
         "output_att) per power point, holding the digital amplitude ~0.5 for best SNR (slow: "

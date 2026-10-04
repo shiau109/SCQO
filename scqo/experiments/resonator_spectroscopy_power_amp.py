@@ -33,6 +33,10 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import SequenceDiagram
+from ._punchout import PUNCHOUT_EXTRACTS, punchout_diagram
+from ._requires import READOUT_WINDOW_CENTRE
 
 
 class ResonatorSpectroscopyPowerAmpParameters(TargetSelection, AveragingParameters,
@@ -101,6 +105,13 @@ class ResonatorSpectroscopyPowerAmp(Experiment):
     name: ClassVar[str] = "resonator_spectroscopy_power_amp"
     writes: ClassVar[tuple[str, ...]] = (
         "readout_freq_hz", "readout_power_dbm", "f_dress0_hz", "f_bare_hz", "g_hz", "g_coeff")
+    requires: ClassVar[tuple[Requirement, ...]] = (READOUT_WINDOW_CENTRE,)
+    extracts: ClassVar[dict[str, str]] = PUNCHOUT_EXTRACTS
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        return punchout_diagram(
+            "one program: the digital amplitude steps down from max_power_dbm")
     description: ClassVar[str] = (
         "Fast punchout: solves the output chain for max_power_dbm once (recorded boundary "
         "write, reverted after), then sweeps the digital readout AMPLITUDE down from it in ONE "

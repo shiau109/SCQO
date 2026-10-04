@@ -305,7 +305,9 @@ scqo/
                   #   README.md = the index, DEPENDENCIES.md = field -> written by /
                   #   required by
     _requires.py  # requirement bundles experiments include explicitly
-                  #   (CALIBRATED_READOUT)
+                  #   (CALIBRATED_READOUT, CALIBRATED_PI_PULSE, READOUT_WINDOW_CENTRE)
+    _diagrams.py  # sequence-diagram fragments several experiments share (lane
+                  #   sets, depletion_step, prepared_state_steps)
     _capabilities/  # one module per capability: the canonical Parameters mixin + contract
                     #   fragment + sim/estimate helpers (state_readout.py,
                     #   flux.py = the swept flux window in TWO FRAMES sharing one axis
@@ -540,7 +542,8 @@ left empty.)
   ride its Parameters mixin (`REQUIRES`) and reach every carrier; shared bundles live in
   `experiments/_requires.py` and are included EXPLICITLY — never derived from
   `required_operations`, since a bring-up experiment requires an operation precisely in
-  order to calibrate it. The *Before running it* and *Outputs* sections are GENERATED
+  order to calibrate it. What such an experiment needs of the field it measures is a
+  place to start, which is `Requirement(..., seed_ok=True)`. The *Before running it* and *Outputs* sections are GENERATED
   from these between `<!-- BEGIN generated: ... -->` markers; `catalog()` and
   `scqo run <name> --help` carry the same data.
 - **The calibration order is computed.** Joining every `requires` with every `writes` on

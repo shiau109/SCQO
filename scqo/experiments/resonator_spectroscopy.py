@@ -27,6 +27,10 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import READOUT_ONLY, depletion_step
+from ._requires import READOUT_WINDOW_CENTRE
 
 
 class ResonatorSpectroscopyParameters(TargetSelection, AveragingParameters,
@@ -84,6 +88,27 @@ class ResonatorSpectroscopy(Experiment):
     name: ClassVar[str] = "resonator_spectroscopy"
     writes: ClassVar[tuple[str, ...]] = (
         "readout_freq_hz", "readout_depletion_s", "f_dress0_hz", "f_bare_hz", "kappa_tot_hz")
+    #: a punched-out run finds the BARE resonator and proposes other fields
+    doc_variants: ClassVar[dict[str, dict]] = {"bare": {"dip_branch": "bare"}}
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        READOUT_WINDOW_CENTRE,
+        Requirement("readout_power_dbm",
+                    "decides which dip this is: the dressed resonator at low power, "
+                    "the bare one above punchout", seed_ok=True),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "dip_detuning_hz": "where the dip sits in the swept window, relative to the "
+                           "readout frequency the run started from",
+        "old_readout_freq_hz": "the readout frequency the run started from",
+        "dip_branch": "which resonator frequency the dip was taken to be: dress0 or bare",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(READOUT_ONLY))
+        diagram.step(Block("readout", "readout", "acquire", swept="detuning_hz"))
+        depletion_step(diagram)
+        return diagram
     description: ClassVar[str] = (
         "Sweep readout frequency around each resonator and locate the "
         "transmission dip; updates each target's readout channel "

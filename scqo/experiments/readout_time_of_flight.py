@@ -74,6 +74,8 @@ from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
 from ._sim import stable_seed
 from ._tof_hint import HOOK, print_apply_hint
 
@@ -149,6 +151,38 @@ class ReadoutTimeOfFlight(Experiment):
     """Backend-agnostic readout time of flight from the raw digitizer trace."""
 
     name: ClassVar[str] = "readout_time_of_flight"
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("readout_amp",
+                    "the pulse whose arrival is timed is played at this amplitude, "
+                    "scaled by readout_amp_factor", seed_ok=True),
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "time_of_flight_ns": "the delay to write into the vendor field: the arrival, "
+                             "rounded onto the instrument's timing grid",
+        "arrival_ns": "the unrounded arrival of the pulse edge",
+        "delta_ns": "time_of_flight_ns minus the delay the channel carried",
+        "window_start_ns": "where the acquisition window opened, the frame the "
+                           "arrival was measured in",
+        "old_delay_ns": "the delay the channel carried before the run",
+        "grid_ns": "the timing grid the result was rounded onto",
+        "rise_time_ns": "how long the edge takes to rise",
+        "plateau_snr": "the plateau height over the baseline noise",
+        "arrival_unresolved": "1 when no edge stands out of the noise",
+        "arrival_at_edge": "1 when the edge sits at the very start of the window, so "
+                           "the true arrival may be earlier",
+        "adc_saturated": "1 when the trace reaches the digitizer's full scale (NaN "
+                         "when the backend declares no full scale)",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram({"readout": "q.ro out", "adc": "q.ro in"})
+        diagram.step(
+            Block("readout", "readout pulse", "square"),
+            Block("adc", "raw trace", "acquire", swept="readout_time_ns",
+                  note="the window opens window_start_ns after the pulse starts; "
+                       "the edge in the trace is the delay"))
+        return diagram
     description: ClassVar[str] = (
         "Measure the readout round-trip delay — the time between emitting a "
         "readout pulse and seeing it arrive at the digitizer — by recording the "

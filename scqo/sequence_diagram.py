@@ -50,8 +50,10 @@ class Block:
     #: the text drawn with it: an operation name ("x90", "readout") or a role
     label: str
     shape: str = "gate"
-    #: the sweep AXIS this block varies with - a ``Contract.sweeps`` name
-    swept: str | None = None
+    #: the sweep AXIS this block varies with - a ``Contract.sweeps`` name, or a
+    #: tuple of them when one pulse carries two (a readout swept in frequency
+    #: AND power)
+    swept: str | tuple[str, ...] | None = None
     #: a footnote, numbered and printed under the lanes
     note: str | None = None
 
@@ -66,6 +68,14 @@ class Block:
                 f"note on block {self.label!r} is {len(self.note)} characters; keep "
                 f"a footnote within {MAX_NOTE_CHARS} - it is drawn on one line, and "
                 f"the explanation belongs in the document's text")
+
+
+    @property
+    def axes(self) -> tuple[str, ...]:
+        """The swept axes as a tuple, empty when the block is fixed."""
+        if self.swept is None:
+            return ()
+        return (self.swept,) if isinstance(self.swept, str) else tuple(self.swept)
 
 
 @dataclass(frozen=True)
@@ -133,7 +143,7 @@ class SequenceDiagram:
 
     def swept_axes(self) -> set[str]:
         """Every sweep axis some block or repeat bracket is marked with."""
-        axes = {block.swept for step in self.steps for block in step if block.swept}
+        axes = {axis for step in self.steps for block in step for axis in block.axes}
         axes |= {rep.swept for rep in self.repeats if rep.swept}
         return axes
 
@@ -263,9 +273,9 @@ def _block_svg(block: Block, x0: float, x1: float, base: float,
         label_y = low - 6
 
     out.append(_text(mid, label_y, block.label, fill=stroke, sup=marker))
-    if block.swept:
-        out.append(_text(mid, base + 15, block.swept, size=_SMALL, fill=_ACCENT,
-                         family=_MONO))
+    for row, axis in enumerate(block.axes):
+        out.append(_text(mid, base + 15 + row * (_SMALL + 2), axis, size=_SMALL,
+                         fill=_ACCENT, family=_MONO))
     return out
 
 
@@ -284,7 +294,7 @@ def render_svg(diagram: SequenceDiagram) -> str:
         need = 0.0
         for block in step:
             label_w = _text_w(block.label, _FONT) + (9 if block.note else 0)
-            need = max(need, label_w, _text_w(block.swept or "", _SMALL))
+            need = max(need, label_w, *(_text_w(axis, _SMALL) for axis in block.axes))
         widths.append(max(_COL_MIN, need + 2 * _INSET + 10))
     left = _PAD + gutter
     edges = [left]

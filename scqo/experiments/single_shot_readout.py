@@ -25,6 +25,10 @@ from ..parameters import TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import DRIVE_READOUT, prepared_state_steps
+from ._requires import CALIBRATED_PI_PULSE, CALIBRATED_READOUT
 
 
 class SingleShotReadoutParameters(TargetSelection, QubitResetParameters):
@@ -53,6 +57,31 @@ class SingleShotReadout(Experiment):
     name: ClassVar[str] = "single_shot_readout"
     writes: ClassVar[tuple[str, ...]] = (
         "fidelity_g", "fidelity_e", "pos_g_i", "pos_g_q", "pos_e_i", "pos_e_q")
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        *CALIBRATED_READOUT, *CALIBRATED_PI_PULSE)
+    extracts: ClassVar[dict[str, str]] = {
+        "readout_fidelity": "the mean of the two per-state fidelities",
+        "assign_e_prep_g": "COUNTED: the fraction of |g>-prepared shots assigned |e> "
+                           "(thermal population plus blob overlap)",
+        "assign_g_prep_e": "COUNTED: the fraction of |e>-prepared shots assigned |g> "
+                           "(decay during readout plus blob overlap)",
+        "pop_e_prep_g": "FITTED: the weight of the |e> blob in the |g>-prepared "
+                        "shots, with the overlap removed",
+        "pop_g_prep_e": "FITTED: the weight of the |g> blob in the |e>-prepared shots",
+        "outlier_probability": "the fraction of shots belonging to neither blob",
+        "mean_g_i": "the |g> blob centre, I (stored as pos_g_i)",
+        "mean_g_q": "the |g> blob centre, Q (stored as pos_g_q)",
+        "mean_e_i": "the |e> blob centre, I (stored as pos_e_i)",
+        "mean_e_q": "the |e> blob centre, Q (stored as pos_e_q)",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        with diagram.repeat("x num_shots", swept="shot_idx"):
+            prepared_state_steps(diagram, params)
+            diagram.step(Block("readout", "readout", "acquire"))
+        return diagram
     description: ClassVar[str] = (
         "Prepare |g> and |e> and record every readout shot's I/Q point; a two-Gaussian "
         "mixture gives the per-state assignment fidelities (stored as the readout "

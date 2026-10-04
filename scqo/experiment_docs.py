@@ -299,6 +299,13 @@ def render_requires_block(cls, classes) -> str:
             "no shared experiment; set it by hand (`scqo set`) or by a "
             "backend's own writeback")
 
+    def use(req) -> str:
+        # a seed_ok line is what a bring-up experiment asks of the field it
+        # is about to measure, so say it is not a calibration that is wanted
+        return _cell(req.why) + (
+            "; a starting value is enough (the design value will do)"
+            if req.seed_ok else "")
+
     always = [r for r in cls.requirements() if r.applies(defaults)]
     other = [r for r in cls.requirements() if not r.applies(defaults)]
     begin, end = block_markers("requires")
@@ -317,7 +324,7 @@ def render_requires_block(cls, classes) -> str:
         for req in always:
             note = f" (with the default `{req.condition()}`)" if req.when else ""
             lines.append(f"| `{req.field}` | {reqs.field_owner(req.field)} | "
-                         f"{_cell(req.why)}{note} | {provider(req.field)} |")
+                         f"{use(req)}{note} | {provider(req.field)} |")
     else:
         lines += ["", "With the default parameters it needs no device value "
                       "beyond what its target kind guarantees."]
@@ -327,7 +334,7 @@ def render_requires_block(cls, classes) -> str:
                   "|---|---|---|---|---|"]
         for req in other:
             lines.append(f"| `{req.condition()}` | `{req.field}` | "
-                         f"{reqs.field_owner(req.field)} | {_cell(req.why)} | "
+                         f"{reqs.field_owner(req.field)} | {use(req)} | "
                          f"{provider(req.field)} |")
     lines += ["",
               "A backend may need more than this - a knob only it consumes. "
@@ -363,12 +370,9 @@ def render_outputs_block(cls, classes) -> str:
                   "| fit key | meaning |", "|---|---|"]
         lines += [f"| `{key}` | {_cell(meaning)} |"
                   for key, meaning in cls.extracts.items()]
-    waiting = reqs.dependents(classes)
-    enables = sorted({name for field in cls.writes for name in waiting.get(field, ())}
-                     - {cls.name})
-    if enables:
-        lines += ["", "Experiments that require one of these fields: "
-                      + _names(enables) + "."]
+    # Who NEEDS these fields is deliberately not listed here: that set grows
+    # with every experiment that declares a requirement, and a document should
+    # not change because another experiment did. DEPENDENCIES.md carries it.
     lines.append(end)
     return "\n".join(lines)
 

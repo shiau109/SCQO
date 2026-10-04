@@ -19,6 +19,7 @@ from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from . import register
+from ..sequence_diagram import Block, SequenceDiagram
 from ._sim import stable_seed
 
 
@@ -89,6 +90,22 @@ class BroadbandResonatorSpectroscopy(Experiment):
     """Backend-agnostic broadband resonator spectroscopy; a driver adds ``probe()``."""
 
     name: ClassVar[str] = "broadband_resonator_spectroscopy"
+    extracts: ClassVar[dict[str, str]] = {
+        "dips": "every candidate dip: rank, frequency, width, loaded Q, depth and "
+                "whether its fit succeeded",
+        "resonator_frequencies_hz": "the candidate frequencies, in ascending order",
+        "num_dips_found": "how many dips met the prominence and noise criteria",
+        "num_dips_requested": "how many were asked for (num_dips, else one per "
+                              "resonator the roster declares)",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram({"readout": "feedline"})
+        diagram.step(Block(
+            "readout", "readout", "acquire", swept="frequency_hz",
+            note="the LO steps through sub-bands; the tone sweeps inside each one"))
+        return diagram
     description: ClassVar[str] = (
         "Sweep readout frequency across a wideband range by stepping LO "
         "sub-bands, detect transmission dips, and mark the candidate resonator "

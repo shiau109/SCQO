@@ -31,6 +31,8 @@ import numpy as np
 
 from ._capabilities.flux import standing_flux_v
 from ._transmon_estimate import g_coeff_from_g, g_hz_from_pull
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import READOUT_ONLY, depletion_step
 
 #: where a punchout's coupling came from, recorded per target in ``fit``.
 G_PUNCHOUT = "punchout"   # the run's own Lamb shift + the standing drive freq
@@ -121,3 +123,34 @@ def propose_branches(experiment, target: str, fit: Dict[str, Any]) -> None:
         value = fit.get(field)
         if value is not None and np.isfinite(value):
             setattr(res_view, field, float(value))
+
+
+# ------------------------------------------------------------ the documents
+#: the record-only fit keys both punchouts report (``Experiment.extracts``)
+PUNCHOUT_EXTRACTS = {
+    "optimal_power_dbm": "the power chosen as the working point; proposed as "
+                         "readout_power_dbm",
+    "frequency_shift_hz": "the proposed readout frequency minus the one the run "
+                          "started from",
+    "old_readout_power_dbm": "the readout power the run started from",
+    "old_readout_freq_hz": "the readout frequency the run started from",
+    "lamb_shift_hz": "f_dress0_hz minus f_bare_hz: how far the qubit pulls its resonator",
+    "dress_max_power_dbm": "the highest power at which the dip is still the dressed "
+                           "resonator (a property of the setup chain, not of the chip)",
+    "bare_min_power_dbm": "the lowest power at which the dip has fully punched out",
+    "branch_success": "1 when both branches were resolved",
+    "old_idle_flux": "the flux bias the dressed frequency was measured at",
+    "g_source": "where the coupling came from: 'punchout', or 'none' when there is no "
+                "calibrated drive frequency to turn the Lamb shift into g",
+}
+
+
+def punchout_diagram(note: str) -> SequenceDiagram:
+    """The sequence both punchouts play: one readout swept in frequency AND
+    power, then the depletion wait. ``note`` says how the power axis is realized,
+    which is the only thing the two carriers differ in."""
+    diagram = SequenceDiagram(dict(READOUT_ONLY))
+    diagram.step(Block("readout", "readout", "acquire",
+                       swept=("power_dbm", "detuning_hz"), note=note))
+    depletion_step(diagram)
+    return diagram

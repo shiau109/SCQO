@@ -45,7 +45,7 @@ CORE = {obj.name: obj for obj in (getattr(registry, n) for n in registry.__all__
 #: document means deleting its name here, and a new experiment never joins it -
 #: it ships with its document (CLAUDE.md, promotion checklist).
 UNDOCUMENTED = frozenset({
-    "broadband_qubit_spectroscopy", "broadband_resonator_spectroscopy",
+    "broadband_qubit_spectroscopy",
     "pair_coupler_crossing_pulse", "pair_coupler_spectroscopy_swap",
     "pair_coupler_spectroscopy_zz", "pair_swap_angle", "pair_swap_chevron",
     "pair_swap_flux_map", "pair_zz_coupler",
@@ -61,10 +61,6 @@ UNDOCUMENTED = frozenset({
     "qubit_spectroscopy_cryoscope", "qubit_spectroscopy_flux_pulse", "qubit_sqrb",
     "qubit_stark_phase_echo", "qubit_t1_ade", "qubit_t1_bayesian",
     "qubit_thermal_population", "qubit_tomography", "qubit_xyz_delay",
-    "readout_frequency", "readout_power", "readout_time_of_flight",
-    "resonator_spectroscopy", "resonator_spectroscopy_flux",
-    "resonator_spectroscopy_power_amp", "resonator_spectroscopy_power_chain",
-    "single_shot_readout",
 })
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))
@@ -278,6 +274,17 @@ def test_blocks_are_filled_from_the_declarations_and_only_they_change():
     assert "| `detuning_error_hz` |" in filled
     # a document without markers is left alone (check_doc reports it instead)
     assert docs.with_blocks("no markers\n", cls, classes) == "no markers\n"
+
+
+def test_a_starting_value_requirement_says_so():
+    """A bring-up experiment needs of the field it measures only a place to
+    start; the block must not read as if a calibration were wanted."""
+    cls, classes = CORE["resonator_spectroscopy"], list(CORE.values())
+    row = next(line for line in docs.render_requires_block(cls, classes).splitlines()
+               if line.startswith("| `readout_freq_hz`"))
+    assert "a starting value is enough" in row
+    ramsey = docs.render_requires_block(CORE["qubit_ramsey"], classes)
+    assert "a starting value is enough" not in ramsey
 
 
 def test_a_table_cell_never_breaks_its_row():

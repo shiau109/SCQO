@@ -30,6 +30,10 @@ from ..parameters import TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import DRIVE_READOUT, prepared_state_steps
+from ._requires import CALIBRATED_PI_PULSE
 
 
 class ReadoutFrequencyParameters(TargetSelection, QubitResetParameters,
@@ -89,6 +93,33 @@ class ReadoutFrequency(Experiment):
     name: ClassVar[str] = "readout_frequency"
     writes: ClassVar[tuple[str, ...]] = (
         "readout_freq_hz", "f_dress0_hz", "f_dress1_hz", "chi_hz")
+    #: the dip fit adds the resonator facts to what the run proposes
+    doc_variants: ClassVar[dict[str, dict]] = {
+        "dip_fit": {"dip_fit_method": "lorentzian"}}
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("readout_freq_hz",
+                    "the swept window is centred on it, so it must already be on "
+                    "the dip"),
+        Requirement("readout_power_dbm",
+                    "the best frequency is found for the power in use"),
+        *CALIBRATED_PI_PULSE,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "frequency_shift_hz": "the proposed readout frequency minus the one the run "
+                              "started from",
+        "best_fidelity": "the single-shot fidelity at the chosen frequency (NaN in "
+                         "average mode)",
+        "best_separation": "the distance between the two state blobs at the chosen "
+                           "frequency",
+        "old_readout_freq_hz": "the readout frequency the run started from",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        prepared_state_steps(diagram, params)
+        diagram.step(Block("readout", "readout", "acquire", swept="detuning_hz"))
+        return diagram
     description: ClassVar[str] = (
         "Sweep the readout detuning reading |g> and |e>; picks the best frequency and "
         "updates the readout channel's readout_freq_hz. readout_mode='shot' records "

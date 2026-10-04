@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**1 of 51 registered experiments are documented.**
+**10 of 51 registered experiments are documented.**
 
 ## Shared
 
@@ -14,7 +14,16 @@ Device-level calibration and characterization, for every chip and operator.
 
 | experiment | what it does | validated |
 |---|---|---|
+| [broadband_resonator_spectroscopy](broadband_resonator_spectroscopy/README.md) | Sweep readout frequency across a wideband range by stepping LO sub-bands, detect transmission dips, and mark the candidate resonator frequencies determined from components.toml without updating device state. | offline |
 | [qubit_ramsey](qubit_ramsey/README.md) | Two pi/2 pulses separated by a swept idle time with an artificial drive detuning | offline |
+| [readout_frequency](readout_frequency/README.md) | Sweep the readout detuning reading \|g> and \|e> | offline |
+| [readout_power](readout_power/README.md) | Sweep the readout-amplitude prefactor reading \|g> and \|e> | offline |
+| [readout_time_of_flight](readout_time_of_flight/README.md) | Measure the readout round-trip delay — the time between emitting a readout pulse and seeing it arrive at the digitizer — by recording the RAW ADC trace with the acquisition window opened as early as the instrument allows. | offline |
+| [resonator_spectroscopy](resonator_spectroscopy/README.md) | Sweep readout frequency around each resonator and locate the transmission dip | offline |
+| [resonator_spectroscopy_flux](resonator_spectroscopy_flux/README.md) | 2D resonator spectroscopy vs ABSOLUTE flux bias (the probe sets the line's DC offset per point, so the window is DAC volts, not an excursion from idle_flux): tracks the dip at every flux and fits its flux dependence with a selectable model (analysis_method='dispersive' or 'sine') | offline |
+| [resonator_spectroscopy_power_amp](resonator_spectroscopy_power_amp/README.md) | Fast punchout: solves the output chain for max_power_dbm once (recorded boundary write, reverted after), then sweeps the digital readout AMPLITUDE down from it in ONE hardware program. | offline |
+| [resonator_spectroscopy_power_chain](resonator_spectroscopy_power_chain/README.md) | Careful punchout that STEPS THE OUTPUT CHAIN (QM full_scale_power_dbm / Qblox output_att) per power point, holding the digital amplitude ~0.5 for best SNR (slow: one compile+run cycle per point | offline |
+| [single_shot_readout](single_shot_readout/README.md) | Prepare \|g> and \|e> and record every readout shot's I/Q point | offline |
 
 ## Project `MpembaEP_trotter`
 
@@ -24,4 +33,4 @@ None yet.
 
 ## Not documented yet
 
-`broadband_qubit_spectroscopy`, `broadband_resonator_spectroscopy`, `pair_coupler_crossing_pulse`, `pair_coupler_spectroscopy_swap`, `pair_coupler_spectroscopy_zz`, `pair_swap_angle`, `pair_swap_chevron`, `pair_swap_flux_map`, `pair_zz_coupler`, `qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`, `qubit_deterministic_benchmarking`, `qubit_drag_alternating`, `qubit_drag_equator`, `qubit_echo`, `qubit_echo_flux_pulse`, `qubit_parametric_drive_amp`, `qubit_parametric_drive_time`, `qubit_parity_switch_continuous`, `qubit_parity_switch_discrete`, `qubit_pi_pulse_error`, `qubit_power_rabi`, `qubit_ramsey_cryoscope`, `qubit_ramsey_flux_pulse`, `qubit_ramsey_phasor`, `qubit_relaxation`, `qubit_relaxation_flux_pulse`, `qubit_resonator_stark`, `qubit_spectroscopy`, `qubit_spectroscopy_cryoscope`, `qubit_spectroscopy_flux_pulse`, `qubit_sqrb`, `qubit_stark_phase_echo`, `qubit_t1_ade`, `qubit_t1_bayesian`, `qubit_thermal_population`, `qubit_tomography`, `qubit_xyz_delay`, `readout_frequency`, `readout_power`, `readout_time_of_flight`, `resonator_spectroscopy`, `resonator_spectroscopy_flux`, `resonator_spectroscopy_power_amp`, `resonator_spectroscopy_power_chain`, `single_shot_readout`
+`broadband_qubit_spectroscopy`, `pair_coupler_crossing_pulse`, `pair_coupler_spectroscopy_swap`, `pair_coupler_spectroscopy_zz`, `pair_swap_angle`, `pair_swap_chevron`, `pair_swap_flux_map`, `pair_zz_coupler`, `qc_n_stark_amp`, `qc_n_swap_amp`, `qc_n_swap_tomography`, `qc_swap_flux_stark`, `qc_trotter_compensation`, `qc_unidirectional_trotter`, `qubit_deterministic_benchmarking`, `qubit_drag_alternating`, `qubit_drag_equator`, `qubit_echo`, `qubit_echo_flux_pulse`, `qubit_parametric_drive_amp`, `qubit_parametric_drive_time`, `qubit_parity_switch_continuous`, `qubit_parity_switch_discrete`, `qubit_pi_pulse_error`, `qubit_power_rabi`, `qubit_ramsey_cryoscope`, `qubit_ramsey_flux_pulse`, `qubit_ramsey_phasor`, `qubit_relaxation`, `qubit_relaxation_flux_pulse`, `qubit_resonator_stark`, `qubit_spectroscopy`, `qubit_spectroscopy_cryoscope`, `qubit_spectroscopy_flux_pulse`, `qubit_sqrb`, `qubit_stark_phase_echo`, `qubit_t1_ade`, `qubit_t1_bayesian`, `qubit_thermal_population`, `qubit_tomography`, `qubit_xyz_delay`

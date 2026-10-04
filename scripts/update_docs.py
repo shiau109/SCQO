@@ -286,7 +286,8 @@ def write_expected_figures(names: list[str]) -> int:
         return len(unknown)
 
     def simulate(cls, overrides: dict, tmp: Path) -> list[Path]:
-        roster, design, vendor = demo_device()
+        # tunable, so the flux experiments have a flux line to sweep
+        roster, design, vendor = demo_device(tunable=True)
         session = Session(SimulatedBackend(vendor), roster, design=design,
                           scqo_dir=tmp / "scqo", data_root=tmp / "data",
                           device_name="demo", setup_name="sim", cooldown_id="cd1")
@@ -314,7 +315,12 @@ def write_expected_figures(names: list[str]) -> int:
             tmp = Path(tempfile.mkdtemp(prefix="scqo-docs-"))
             try:
                 figures = simulate(cls, overrides, tmp)
-                matches = [f for f in figures if wanted in f.stem] if wanted else figures
+                # the stem itself, or its tail after the estimator's own prefix
+                # ("time_domain" picks ramsey_time_domain) - never a substring,
+                # which six of readout_frequency's figures would share
+                matches = [f for f in figures
+                           if f.stem == wanted or f.stem.endswith("_" + wanted)
+                           ] if wanted else figures
                 if len(matches) != 1:
                     print(f"{name}: expected_figure={wanted!r} selects "
                           f"{[f.stem for f in matches]} of {[f.stem for f in figures]}; "

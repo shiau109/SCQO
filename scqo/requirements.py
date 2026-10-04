@@ -60,6 +60,11 @@ class Requirement:
     #: ``(parameter, value)`` when the need exists only for that setting;
     #: None = always
     when: tuple[str, Any] | None = None
+    #: True = a STARTING value is enough - the standing one, or the design
+    #: value ``Experiment.anchor()`` falls back to. This is what a bring-up
+    #: experiment needs of the very field it exists to measure: somewhere to
+    #: centre its window, not a calibrated number.
+    seed_ok: bool = False
 
     def applies(self, params) -> bool:
         """Whether these Parameters put the requirement in force."""
@@ -73,7 +78,8 @@ class Requirement:
         return f"{name}={str(value).lower() if isinstance(value, bool) else value}"
 
     def as_dict(self) -> dict:
-        return {"field": self.field, "why": self.why, "when": self.condition() or None}
+        return {"field": self.field, "why": self.why,
+                "when": self.condition() or None, "seed_ok": self.seed_ok}
 
 
 def collect(cls) -> tuple[Requirement, ...]:

@@ -36,6 +36,10 @@ from ..parameters import TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import DRIVE_READOUT, prepared_state_steps
+from ._requires import CALIBRATED_PI_PULSE
 
 
 class ReadoutPowerParameters(TargetSelection, QubitResetParameters,
@@ -76,6 +80,27 @@ class ReadoutPower(Experiment):
 
     name: ClassVar[str] = "readout_power"
     writes: ClassVar[tuple[str, ...]] = ("readout_amp",)
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("readout_freq_hz",
+                    "the tone has to sit on the dip while its amplitude is swept"),
+        Requirement("readout_amp", "the sweep is a factor of this stored amplitude"),
+        *CALIBRATED_PI_PULSE,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "opt_amp_prefactor": "the chosen factor of the stored amplitude",
+        "best_fidelity": "the single-shot fidelity at the chosen amplitude (NaN in "
+                         "average mode)",
+        "best_separation": "the distance between the two state blobs at the chosen "
+                           "amplitude",
+        "old_readout_amp": "the readout amplitude the run started from",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram(dict(DRIVE_READOUT))
+        prepared_state_steps(diagram, params)
+        diagram.step(Block("readout", "readout", "acquire", swept="amp_prefactor"))
+        return diagram
     description: ClassVar[str] = (
         "Sweep the readout-amplitude prefactor reading |g> and |e>; picks the best "
         "amplitude and updates the readout channel's readout_amp. readout_mode='shot' "

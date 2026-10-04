@@ -555,3 +555,53 @@ class Experiment(ABC):
   SCQO 這邊與另一個工作階段都改到的檔案現在是三個：`experiments/__init__.py`、`CLAUDE.md`、`BACKLOG.md`。
   它的新實驗 `qubit_ramsey_flux_crosstalk_pulse` 合併後要補 `writes`（有寫回的話測試會指名）
   並加進 `UNDOCUMENTED` 或直接寫文件。
+
+## 13. 第 1 批實作紀錄（2026-10-04）：共振腔與讀出，九個實驗
+
+`resonator_spectroscopy`、`resonator_spectroscopy_flux`、`resonator_spectroscopy_power_amp`、
+`resonator_spectroscopy_power_chain`、`broadband_resonator_spectroscopy`、`readout_frequency`、
+`readout_power`、`readout_time_of_flight`、`single_shot_readout`。連同樣板，51 個裡有 10 個有文件。
+只動了 SCQO，兩個驅動這一批沒有改。
+
+### 13.1 每個實驗做了什麼
+
+- `sequence_diagram`、`requires`、`extracts`，需要時加 `doc_variants`（`writes` 上一輪已補）。
+- 文件八節：Purpose、Pulse sequence、Expected result、Traps、References 是手寫的；
+  Before running it 與 Outputs 是產生的；**Theory 一律留空**，只寫一行 *To be written.*。
+- 序列圖與預期結果圖都是產生的。九張預期結果圖我逐張看過，「怎麼讀圖」的文字是對著圖寫的。
+
+### 13.2 為了這一批加進核心的東西
+
+- **`Requirement.seed_ok`**：§12.3 留下的那個層級。開機實驗對它要量的欄位只需要一個起始值
+  （現值，或 `design.toml` 的設計值），文件與 `--help` 會明講「有起始值就夠」。
+  `resonator_spectroscopy` 對 `readout_freq_hz` 就是這種需求。
+- **一個方塊可以標兩個掃描軸**：punchout 的讀出脈衝同時掃頻率與功率。
+- **`experiments/_diagrams.py`**：共用的示意圖片段（讀出後的等待、先重設再視情況打 `x180`）。
+- **`experiments/_requires.py`** 多兩組：`CALIBRATED_PI_PULSE`、`READOUT_WINDOW_CENTRE`。
+- **挑預期結果圖的規則改成比對檔名結尾**：`readout_frequency` 的六張圖檔名都含 `fidelity`，子字串比對挑不出來。
+- **產圖用的示範裝置改成可調頻的**：否則磁通實驗沒有磁通線可掃。
+
+### 13.3 與之前不同的地方
+
+- **Outputs 區塊不再列「哪些實驗需要這些欄位」。** 第一次產生時 `resonator_spectroscopy` 那一行列了 45 個實驗，
+  而且只要任何實驗新增一條需求，這一行就會變。這正是 §1 原則 2 要避免的事，所以拿掉；完整的反查在
+  `DEPENDENCIES.md`。「由誰提供」那一欄保留。
+
+### 13.4 待你過目
+
+1. **Traps 一節只寫了我能從程式與欄位說明確認的事。** 硬體上實際遇過、我不知道的問題需要你補。
+2. **`validated` 九份都寫 `offline`。** 哪些在哪顆晶片上驗證過，請你填。
+3. **前置條件是我讀程式後列的。** 請特別看 `readout_frequency`、`readout_power`、`single_shot_readout`
+   三個：我列了讀出頻率、讀出功率或振幅、驅動頻率、`pi_amp`。
+4. **這一批沒有加後端註記。** `BACKLOG.md` I19 記著兩個後端在 `resonator_spectroscopy` 的差異
+   （兩次量測之間的等待不同；`readout_amplitude` 這個參數兩邊都沒有讀）。這些是待修的不一致，
+   我沒有寫進核心文件，也沒有寫成驅動的註記。
+
+### 13.5 批次進度
+
+| 批 | 內容 | 狀態 |
+|---|---|---|
+| 樣板 | `qubit_ramsey` | 完成 |
+| 1 | 讀出與共振腔，9 個 | 完成（理論留空） |
+| 2 | 單比特頻率與相干，其餘 13 個 | 未開始 |
+| 3 到 8 | 見 §7 | 未開始 |

@@ -51,6 +51,10 @@ from ..parameters import AveragingParameters, TargetSelection
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._diagrams import depletion_step
+from ._requires import READOUT_WINDOW_CENTRE
 from ._flux_component import FluxComponentParameters
 
 
@@ -389,6 +393,34 @@ class ResonatorSpectroscopyFlux(Experiment):
     writes: ClassVar[tuple[str, ...]] = (
         "flux_offset", "flux_per_phi0", "idle_flux", "readout_freq_hz", "f_bare_hz", "g_hz",
         "g_coeff")
+    requires: ClassVar[tuple[Requirement, ...]] = (READOUT_WINDOW_CENTRE,)
+    extracts: ClassVar[dict[str, str]] = {
+        "sweet_spot_res_hz": "the resonator dip at the upper sweet spot; proposed as "
+                             "readout_freq_hz",
+        "sweet_spot_low_flux_v": "the flux of the LOWER sweet spot, half a period away",
+        "sweet_spot_low_res_hz": "the resonator dip at the lower sweet spot",
+        "n_good_flux": "how many flux points kept a usable dip",
+        "old_readout_freq_hz": "the readout frequency the run started from",
+        "old_idle_flux": "the idle flux the run started from",
+        "f_q_max_hz": "dispersive method: the arch top the fit took as an input "
+                      "(never proposed here)",
+        "ec_hz": "dispersive method: the charging energy the fit took as an input",
+        "f_q_max_source": "dispersive method: where that arch top came from; "
+                          "'assumed' withholds f_bare_hz and g_hz",
+        "f_bare_source": "dispersive method: whether the bare frequency was pinned "
+                         "to a stored measurement or left free",
+    }
+
+    @classmethod
+    def sequence_diagram(cls, params) -> SequenceDiagram:
+        diagram = SequenceDiagram({"flux": "q.z", "readout": "q.ro"})
+        diagram.step(
+            Block("flux", "flux bias", "offset", swept="flux_bias_v",
+                  note="an absolute DC level on the flux line, held while the "
+                       "frequency is swept"),
+            Block("readout", "readout", "acquire", swept="detuning_hz"))
+        depletion_step(diagram)
+        return diagram
     description: ClassVar[str] = (
         "2D resonator spectroscopy vs ABSOLUTE flux bias (the probe sets the line's "
         "DC offset per point, so the window is DAC volts, not an excursion from "
