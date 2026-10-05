@@ -1166,6 +1166,9 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - It also relies on `q2.z.intermediate_frequency` being 0, not None, in the 5Q4C state.json:
   with None the generated config has no z oscillator and the macro fails at compile (the
   chain shells do not apply the probes' `ensure_flux_oscillators` patch).
+- Since 2026-10-01 q3 carries a `ParametricReset` too (355.0 MHz, `q3.z.intermediate_frequency`
+  set to 0 for it). q3.z also plays other flux pulses (partial swaps), so a program that resets
+  q3 and then plays one of them on q3.z hits this.
 - Done when: `apply()` restores the element's IF after the play (or refuses a z line without
   an oscillator), pinned by a test over the compiled program.
 
@@ -1200,6 +1203,16 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   first suspects.
 - Done when: the loss is explained (e.g. vs stark amplitude and detuning with the swap off)
   and the chain's sink model carries it, or the tone is reshaped so it vanishes.
+
+### I37 `ParametricReset` has no ring-down wait (medium)
+- Found 2026-10-01 writing `procedures/qubit-resonator-sideband-swap`. The sideband swap
+  empties the qubit into its readout resonator; the photon then leaves at kappa. At the
+  first zero a large part of the energy is still in the resonator (5Q4C q2: ~20 %,
+  1/kappa 42 ns; q3 at 100 ns, measured 2026-10-01: 59 %, ~400 ns to fall below 1 %).
+  `scqo_qm/components/macros/parametric_reset_macro.py` plays the pulse and returns, so a
+  readout or a gate on the same qubit right after it sees the photon's dispersive shift.
+- Done when: the macro waits a stored ring-down time after the pulse (or its `duration`
+  includes it), and the reset's reported length is pulse + ring-down.
 
 ### I38 The QM gateway simulator shows the flux DC levels on the wrong ports (low)
 - 2026-10-04, while checking `source_lead_time_ns` on the gateway simulator (5Q4C): the
