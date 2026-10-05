@@ -2,7 +2,8 @@
 
 > 計畫文件（2026-09-27）。內容只有三個直接讀 coupler 的實驗該怎麼設計；其餘相關工作記在 BACKLOG F24。
 > §3 實驗 1 已於 2026-09-27 實作並上機（5Q4C q1_q2、q2_q3，只有 QM 版）；§4 實驗 3 已於同日實作並上機（只有
-> QM 版，estimator v2 也上機驗證過）；§5 實驗 2 的規格已核可（π 先用 x180）。
+> QM 版，estimator v2 也上機驗證過）；§5 實驗 2 的規格已核可（π 先用 x180）。§8 是 F24 最後一項：串擾矩陣的
+> fact 家、catalog 註記與 procedure `coupler-park`（規格待核可）。
 > 驗證用的腳本與原始結果在 `scqat/temp/coupler_scan/`（gitignored），run 標記為 `coupler-scan`。
 
 ## 1. 三個實驗
@@ -612,3 +613,189 @@ m 的定義：coupler 線每 1 V 等效於 qubit 自己的線 +m V，所以 apex
   的 target 與 probe 形狀。
 - **`pair_swap_flux_map`、`pair_swap_chevron`**：`coupler_flux_v` 軸的意思（疊在 coupler idle 上的脈衝振幅），
   以及透過 `JointPopulationMixin` 讀成 `joint_population`。
+
+## 8. 串擾矩陣的 fact 家（F24 最後一項；規格 2026-09-27，待核可）
+
+F24 的 Done when 只剩「串擾矩陣（含 coupler 欄）有 fact 的家」，加上同一條目欠的兩件事：catalog 註記、
+procedure `coupler-park`。本節只寫這三件事。
+
+### 8.1 已決定（使用者 2026-09-27，不再討論）
+
+- 串擾矩陣存成 **fact**（role fact → physical.json），**不做任何自動補償**（F29 延後）。
+- 每個 (target, source) 一個 scalar，名字 `flux_crosstalk__<source>`，放在 **target 的 flux channel** 上，例如
+  `q1_z.flux_crosstalk__q1_q2_c_z`。不用平行 list：catalog 的規則是 `float[]` 永遠不對齊 entity。
+- 值 m 的定義：source 線的 DC 移動 1 V，作用在 target 的 SQUID 上等於 target 自己的線 +m V，所以 target 的
+  apex **位置**移動 −m·ΔV_source。存成小數（5.45 % 存 0.0545）。§6.1 的兩個數字就是照這個定義量的：coupler
+  0.16 → 0.08 V（ΔV = −80 mV），q1 apex 移動 +4.36 mV → m = +0.0545；q3 +5.73 mV → m = +0.0716。
+
+### 8.2 現有機制：每個 entity 的合法欄位集合怎麼編出來
+
+- `roster._compile()` 在 roster 展開之後，替每個 entity 算出一個確切、有限的合法欄位集合（`Roster._legal`，
+  每個欄位附上它為何合法）。來源有三種：kind catalog 的靜態欄位；composite 上每個宣告的 operation 由
+  `OP_KNOBS` 產生的全名 knob（`iswap_coupler_flux`）；多 target channel 上的 fact 改成 `__<target>` 實例
+  （廣播 coil 的 `coil_z.flux_per_phi0__q1`）。
+- 之後所有驗證都只是查集合：`Store.check()` 透過 `Roster.spec()`；`scqo set` 透過 `Session.set_values` →
+  `Roster.resolve_field()`（`q1.<field>` 依序找 q1 自己 → q1 的 default channel → q1 的 resonator）；accept 與
+  suggestion capture 用 `fields_of()`；design.toml 用 `fields_of(design=True)`。沒有任何地方靠解析名字判斷合法性；
+  只有錯誤訊息會解析名字，好說出確切原因（`spec()` 已經這樣反推 OP_KNOBS 的 operation 名）。
+- `__<param>` 文法（greenfield-schema §6）本來就保留給「以另一個 roster entity 為參數、對照現存 entity 集合驗證」
+  的欄位，目前唯一的用途是 `__<target>`。entity 名字不准含 `__`（`_check_name`），所以
+  `flux_crosstalk__q1_q2_c_z` 只有一種切法。
+
+**結論**：只要把新 family 編進 `_legal`，stores、`scqo set`、accept、`scqo state`、viewer、history、provenance
+都會直接接受，不必各自改。
+
+### 8.3 設計：per-source fact family
+
+**catalog.py**
+
+- `ChannelKind` 加一個欄位 `per_source: dict[str, FieldSpec]`（預設空）。語意：kind K 的 channel 上，family
+  `<base>` 會替 roster 裡**每一條其他的** kind K channel `<source>` 各產生一個 `<base>__<source>`。放在 kind 上，
+  是因為 catalog 的原則是「每個 kind 擁有自己完整的欄位表」。只有 flux 宣告：
+
+  ```python
+  per_source={
+      "flux_crosstalk": FieldSpec("", "<見下>", role="fact", portable=False),
+  },
+  ```
+
+  - unit `""`：兩條線都是 V，比值沒有單位。
+  - role fact；portable False：它是兩條線各自輸出鏈的比值，換儀器就會變，跟 `flux_per_phi0` 同理；
+    design_ok False：量出來的值，不是設計目標；shape float。
+  - doc（英文，`scqo state --fields` 會印）寫這些：只講 DC；m 的定義與 −m·ΔV 的符號；pulse 的串擾可能不同
+    （每條線的 pulse/DC 比 g 不一樣，§6.2）；只存不用，沒有任何寫入路徑拿它補償；帶正負號的 m 要從 target 的
+    apex **位置**在兩個 source 偏壓下量，把 target 停在 apex 再掃 source 只能得到 |m|。
+- `_validate_catalog()` 加三條 lint：
+  1. per-source family 只能是 role fact、shape float、design_ok False。knob 需要替每個 roster 產生的名字找 vendor
+     home，陣列則違反「`float[]` 不對齊 entity」。
+  2. base 名放進既有的唯一性檢查：不能跟任何 channel kind 的欄位同名，也不能跟 mode 欄位重疊。這就是 default
+     addressing 依賴的那條不變式。
+  3. 靜態欄位名和 base 名都不准含 `__`，因為它保留給文法。現在沒有人違反，只是把它變成一條檢查。
+
+**roster.py `_compile()`**（Channel 分支）
+
+- 帶這個 fact 的 channel 是**單一 target** 的 channel：對每一條 kind 相同、名字不同的 channel 加一個 `f"{base}__{src}"`，why 寫
+  `channel kind 'flux', source 'q1_q2_c_z'`。retired 的 source 也算進去，名字要能繼續解析，已存的值才不會變成孤兒。
+- 帶這個 fact 的 channel 是**多 target** 的 channel（廣播 coil）：**不產生** family。m 的單位是「target 自己那條線」，一條線對上
+  好幾顆 SQUID 時，每個 target 都有自己的 m，需要兩個參數（`__<source>__<target>`）。現在沒有任何 roster 有多
+  target 的 flux channel（5Q4C、chipA 都沒有），所以先拒絕並說明原因，真的需要時再用 append 的方式加。多 target
+  channel **當 source** 是合法的（`q1_z.flux_crosstalk__coil_z`）。
+- 自己對自己不合法：一條線對自己 SQUID 的轉移函數就是 `flux_per_phi0` / `flux_offset`。
+- 數量：5Q4C 有 9 條 flux channel（q1_z…q5_z、q1_q2_c_z…q4_q5_c_z），每條 8 格，共 72 個合法欄位；
+  chipA 沒有 flux channel，一個也沒有。
+
+**roster.py 的確切錯誤訊息**（查集合沒找到時才解析名字，跟 OP_KNOBS 分支同一個模式）
+
+| 寫法 | 訊息要點 |
+|---|---|
+| `q1_z.flux_crosstalk__q1_z` | 一條線不會對自己串擾；它對自己的轉移函數是 `flux_per_phi0` |
+| `q1_z.flux_crosstalk__q1_xy` | `q1_xy` 是 drive channel，source 必須是 flux channel |
+| `q1_z.flux_crosstalk__q1_q2_c` | `q1_q2_c` 是 mode；source 要寫 flux channel 的名字，did you mean `q1_q2_c_z`?（用 roster 的 default flux channel 提示） |
+| `q1_z.flux_crosstalk__nope` | roster 裡沒有 `nope` |
+| `coil_z.flux_crosstalk__q1_z` | 多 target channel 不帶 per-source fact（理由同上） |
+| `q1.flux_crosstalk`（`resolve_field`，沒寫 source） | 這是 per-source family，請寫 `q1.flux_crosstalk__<source flux channel>`，並列出可用的 source |
+
+### 8.4 各介面怎麼顯示、怎麼處理
+
+| 介面 | 行為 | 要改嗎 |
+|---|---|---|
+| `scqo set q1.flux_crosstalk__q1_q2_c_z=0.0545` | 經 q1 的閉包找到 default flux channel q1_z；寫進 physical.json；ChangeRecord 的 store=physical、沒有 run_id，所以 provenance 是 `manual` | 不用 |
+| `scqo set` 的 will-write 表、`scqo state --physical` / `--sources` / `--history` | 跟其他 fact 一樣一格一行；但這幾張表的 field 欄寬固定 18/20/18/16，25 字的名字會把數值擠歪 | 欄寬改成由該表的資料算出來（`_print_state` 已經這樣做，註解說的就是這個問題） |
+| `scqo state`（預設） | 只顯示 scqo_state.json 的 knob/monitor，fact 本來就不在這裡 | 不用 |
+| `scqo state --fields [--json]` | 按 kind 列靜態 catalog；family 不在 `spec.fields` 裡，所以看不到 | flux 那段多一行 `flux_crosstalk__<source>`，註明「每條其他 flux channel 一格」；JSON 同一行帶 `"per_source": true` |
+| viewer 的 setup 頁、device 的 fact 矩陣、trends | 讀 store 和 history.sqlite 的 key；不在 catalog 順序裡的欄位排在該 entity 的 catalog 欄位後面（sorted）；unit 在 `FIELD_UNITS` 查不到就給 `""`，剛好正確 | 不用 |
+| design.toml | design_ok False，走既有的訊息「measured — it lives in physical.json」 | 不用 |
+| 凍結的 estimate 輸入（dataset.nc attrs） | 所有 physical fact 都會嵌入，有值的格子一起進去 | 不用 |
+| 驅動（scqo-qm / scqo-qblox） | fact 不推送，fieldmap 本來就不綁 fact（`flux_offset` 等同理） | 不用 |
+| lock / freeze | 只凍結 entity 的 signature，不凍結欄位集合；新增一條 flux channel 只會替其他 channel 多出格子，是 append | 不用 |
+
+不做 target × source 的矩陣視圖：現在只有兩格有值，等 F28 的寫入者出現再說。
+
+### 8.5 catalog 註記（F24 欠的 (a)）
+
+- `flux_offset`（flux channel）的 doc 加一句：它只在**其他 flux 線目前的 idle_flux** 下成立，coupler 尤其如此；
+  另一條線 DC 移動 ΔV，它就移動 −m·ΔV（該格 `flux_crosstalk__<source>`）。
+- `f_q_max_hz`（flux_transmon）的 doc 加一句：它只在**相鄰 coupler 目前的偏壓**下成立；coupler 的 Lamb shift
+  會改變 arch 頂點的高度。
+- flux ChannelKind 的 doc 加一句：per-source 的串擾格子也住在這裡。
+- 5Q4C 的數字只寫在 procedure 裡，不進 catalog。
+
+### 8.6 procedure `coupler-park`（F24 欠的 (b)）
+
+`procedures/coupler-park/PROCEDURE.md`，照 `procedures/README.md` 的格式，英文（跟另外三個 procedure 一樣）。
+`validated: unverified`：規則來自 2026-09-26/27 的硬體證據，但整個流程還沒照著跑過一次。
+
+- **目標**：每個 coupler 停在選定的常駐偏壓；coupler 移動波及的每顆 qubit 都在**之後**重新 park。
+- **Physics in brief**：coupler 線把 qubit apex 的**位置**推動它自己變化量的 5–7 %（5Q4C q1_q2_c：q1 5.45 %，
+  q3 7.16 %，q3 甚至不是它的鄰居），qubit 之間約 1 %。qubit-frequency-park 的目標是 0.2 mV，所以 coupler 只要
+  移動約 3 mV（0.2 / 0.072）以上，整顆晶片的 qubit park 都可能失效；超過約 15 mV 就超出 ±1 mV 的容忍。coupler
+  還會透過 Lamb shift 移動鄰居 apex 的**高度**（q1：0.16 → 0.08 V 時 +524 kHz），所以 `f_q_max_hz`、`f_01_hz`、
+  `drive_freq_hz` 也會過期。順序因此是先 coupler、後 qubit，不能反過來。
+- **Prerequisites**：qubit 至少 park 過一次（arch fact 存在）；讀出可用。
+- **Step 1 選偏壓**：準則由使用者指定，procedure 不替他選。
+  - J=0：從 `pair_swap_flux_map` 手動讀（F27，目前沒有寫入者；5Q4C q1_q2_c 的 0.16 V 是 2026-09-15 這樣挑的）。
+  - ZZ=0：`pair_zz_coupler`。**不要 accept 它的 `idle_flux` 提議**（I26：它把脈衝振幅當絕對偏壓寫回），要手算
+    舊 idle 加零點。
+  - 指定的 coupler 頻率：用 `pair_coupler_crossing_pulse` 的 arch 反推初值，再在那個偏壓用
+    `pair_coupler_spectroscopy_zz` 確認。q1_q2_c 的 arch 低了 0.26 GHz；0.16 V 附近斜率約 9 MHz/mV。
+- **Step 2 移動 coupler**：一次一條，`scqo set <c>_z.idle_flux=<v>`（要操作者同意），記下每條的 ΔV_c。
+- **Step 3 預測 qubit 的位移**：Δ_q = −Σ_c m(q←c)·ΔV_c，用已存的 `q_z.flux_crosstalk__<c>_z`。缺格子的
+  (q, c) 一律當作被波及（沒量過不代表小，q3 就是反例）。|Δ_q| ≤ 0.2 mV 的 qubit 不用動。這一步只讀 fact
+  做預測，不寫任何值，所以不算補償（F29）。
+- **Step 4 重新 park**：被波及的 qubit 一顆一顆跑 qubit-frequency-park 的 Step 3–4；|Δ_q| > 12 mV（超出 fine
+  park 預設的 ∓12 mV 視窗）時先跑它的 Step 2。qubit 之間只有約 1 %，跑一輪就夠。
+- **Step 5 驗證 coupler**：在最終偏壓跑 `pair_coupler_spectroscopy_zz`，accept `f_01_hz`。如果準則是 ZZ=0，qubit
+  重新 park 之後再跑一次 `pair_zz_coupler`，因為 ZZ=0 點跟著 qubit 頻率走；零點有移動就回 Step 2，再做一輪。
+- **Traps**：先 park qubit 再動 coupler；只重新 park pair 的兩個成員（q3 是反例）；accept `pair_zz_coupler` 的
+  `idle_flux`（I26）；把 arch 預測的 coupler 頻率當真（q1_q2_c 低 0.26 GHz）。
+- **Typical values**（5Q4C cd2，2026-09-27）：q1_q2_c 0.16 V、f01 7.05695 GHz；q2_q3_c 0.06 V、f01 7.15550 GHz；
+  q3_q4_c、q4_q5_c 0 V（未量）。m：q1←q1_q2_c +5.45 %、q3←q1_q2_c +7.16 %；qubit 之間約 1 %。例：2026-09-27
+  把 q1_q2_c 從 0.16 移到 0.15 V（ΔV = −10 mV），會讓 q1 apex +0.55 mV、q3 +0.72 mV，兩者都超過 0.2 mV
+  （當天有移回 0.16 V）。
+- **Evidence**：§6.1 的 `coupler-scan` runs（2026-09-26）；實驗 1/2/3 在 2026-09-27 的 runs。
+- **Open issues**：F27、F28、F29、I26；q3_q4_c 與 q4_q5_c 還沒量過。
+- 一併修改：`procedures/README.md` 的索引加一行；qubit-frequency-park 的 Prerequisite 1、Step 6、Open issues
+  改指向新的 fact 與 coupler-park。
+
+### 8.7 手動輸入的值（落地後，你同意才寫進 D:\qpu_data_dev）
+
+| 格子 | 值 | 來源 |
+|---|---|---|
+| `q1_z.flux_crosstalk__q1_q2_c_z` | 0.0545 | §6.1，DC，2026-09-26 |
+| `q3_z.flux_crosstalk__q1_q2_c_z` | 0.0716 | 同上 |
+
+```
+scqo set q1_z.flux_crosstalk__q1_q2_c_z=0.0545 q3_z.flux_crosstalk__q1_q2_c_z=0.0716
+```
+
+- **qubit 之間的格子（約 1 %）不輸入**：2026-09-26 只順手量到頻率斜率（動 q1 的線，q2 −1.9 kHz/mV、q3
+  −1.5 kHz/mV），沒有每一格帶正負號的 m。
+- **q2←q1_q2_c 不輸入**：q2 的原始曲線混了 Lamb shift，沒有量 apex 位置。
+
+### 8.8 測試（SCQO）
+
+- `tests/test_model_catalog.py`：三條 lint（非 fact / `float[]` / design_ok 的 family 被拒；base 名跟靜態欄位
+  撞名被拒；名字含 `__` 被拒）。
+- `tests/test_model_roster.py`：用檔內 EXAMPLE roster（q1_z、q2_z、q1_q2_c_z）確認 q1_z 有
+  `__q2_z` 與 `__q1_q2_c_z`，沒有 `__q1_z`，也沒有 drive channel 當 source；COIL roster 裡 `coil_z` 沒有
+  family、`q1_z` 有 `__coil_z`；retired 的 source 仍合法；§8.3 表裡每一種確切錯誤各一個；`resolve_field` 的
+  `q1.flux_crosstalk__q1_q2_c_z` 路由到 q1_z，沒寫 source 時有提示。
+- `tests/test_model_session.py`（或 stores）：`set_values` 寫進 physical.json、ChangeRecord 的 store=physical、
+  provenance `manual`；寫進 state store 被拒。
+- `tests/test_model_design.py`：design.toml 裡的這種格子被拒，訊息指向 physical.json。
+- `tests/test_cli_fields.py`：`scqo state --fields --json` 的 flux kind 有 per-source 那一行。
+- CLI 欄寬：`--physical` 表在 25 字的名字下仍然對齊。
+
+### 8.9 施工
+
+- 只動 SCQO：`scqo/catalog.py`、`scqo/roster.py`、`scqo/cli/state.py`、`scqo/cli/set.py`、上面的測試、
+  `docs/greenfield-schema.md`（§6：`__<param>` 文法的第二個用途、flux 的 fact 表、刪掉「no flux-crosstalk
+  family」那句）、procedures（§8.6）、BACKLOG、本文件。
+- 驗證：catalog.py 與 roster.py 是 shared core，所以在 SCQO 自己的 env 跑**全套**
+  `uv run --extra viewer pytest -q`，預期 0 skip；再跑 `python scripts/update_docs.py`（沒有新實驗，預期無變化）。
+  驅動不改，但它們 LIVE import catalog，所以在 `.venv-qm` 跑一次 scqo-qm 全套當回歸檢查，不改任何檔。
+- BACKLOG：F24 的 Done when 達成後，**保留 F24 這個編號**，但縮成只剩使用者延後的項目（g_c 的 DC 參考、q1_q2_c
+  arch 偏低 0.26 GHz、盲點 (b)、q3_q4_c/q4_q5_c）。很多地方引用「F24 (b)」，換編號會讓這些引用斷掉。F28/F29 的
+  指標改成新的 fact 名字與 procedure。
+- 依 pathspec commit，`git show --stat` 驗證；最後寫一個 fragment `RELEASES.d/flux-crosstalk-facts.toml`
+  （kind additive、validated offline）。不 push、不 release。
