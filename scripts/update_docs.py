@@ -325,18 +325,24 @@ def write_expected_figures(names: list[str]) -> int:
         return len(unknown)
 
     def simulate(cls, overrides: dict, tmp: Path) -> list[Path]:
+        # what the class's Parameters have no default for; a chain experiment
+        # also names its targets there, and they are the chain of the device
+        given = dict(cls.doc_parameters)
+        chain = given.pop("targets", None)
         # tunable, so the flux experiments have a flux line to sweep
-        roster, design, vendor = demo_device(tunable=True)
+        roster, design, vendor = (
+            demo_device(tuple(chain), tunable=True, chain=True) if chain
+            else demo_device(tunable=True))
         session = Session(SimulatedBackend(vendor), roster, design=design,
                           scqo_dir=tmp / "scqo", data_root=tmp / "data",
                           device_name="demo", setup_name="sim", cooldown_id="cd1")
-        targets = default_targets(session, cls.name)[:1]
+        targets = list(chain) if chain else default_targets(session, cls.name)[:1]
         for entry in FIGURE_PREREQUISITES.get(cls.name, ()):
             earlier, settings = (entry, {}) if isinstance(entry, str) else entry
             ran = session.run(earlier, {"targets": targets, **settings}, update="apply")
             if ran.get("error"):
                 raise RuntimeError(f"prerequisite {earlier}: {ran['error']}")
-        overrides = {**FIGURE_PARAMETERS.get(cls.name, {}), **overrides}
+        overrides = {**given, **FIGURE_PARAMETERS.get(cls.name, {}), **overrides}
         out = session.run(cls.name, {"targets": targets, **overrides}, update="none")
         if out.get("error"):
             raise RuntimeError(out["error"])

@@ -609,7 +609,9 @@ class Experiment(ABC):
 | 5 | Stark 位移、參數式驅動、電荷宇稱，6 個 | 完成（理論留空），見 §18 |
 | 6 | 一對量子位元與耦合器，7 個 `pair_*` | 完成（理論留空），見 §19 |
 | 7 | 重複交換與 Stark 補償，4 個（`qc_n_*`、`qc_swap_flux_stark`） | 完成（理論留空），見 §20 |
-| 8 | 專案 `MpembaEP_trotter`，2 個 | 未開始 |
+| 8 | 專案 `MpembaEP_trotter`，2 個 | 完成（理論留空），見 §21 |
+
+51 個登錄的實驗都有文件了。`UNDOCUMENTED` 清單已經清空，之後新增的實驗必須帶著文件一起進來。
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -775,6 +777,15 @@ class Experiment(ABC):
   或至少讓 `qc_n_stark_amp` 在 `min_osc_period` 貼近 2 時不判定成功（§20.4）。
 - `qc_n_swap_amp` 的登錄說明寫「能更精細地找到正確的振幅」，但 `pair_swap_chevron` 的模組說明指出重複交換圖的峰不是共振點。
   文件採用後者，登錄說明要不要改（§20.4）。
+- 兩個鏈實驗的拓撲參數沒有預設值，文件的圖改用類別上新增的 `doc_parameters` 來畫（§21.1）。
+  這是加在基底類別 `Experiment` 上的新屬性，請過目這個做法。
+- 「有就用、沒有也能跑」的輸入現在無法宣告。`qc_unidirectional_trotter` 會讀兩個交換操作的 `theta_rad` 來畫理想曲線，
+  也會讀 T1、T2*；`requires` 的定義是「一定要先對」，所以這些只寫在文件的文字裡，
+  相依表上 `theta_rad` 顯示「沒有實驗需要它」。要不要加一種「選用」的需求（§21.4）。
+- `qc_unidirectional_trotter` 的預期結果圖沒有理論曲線：示範裝置沒有宣告部分交換的操作，也沒有存角度。
+  要不要讓示範裝置帶這些值，或換成硬體的圖（§21.4）。
+- `qc_unidirectional_trotter` 的序列圖是帶著 sink 上一個補償訊號畫的（預設沒有補償訊號，圖上就不會有 Stark 那一步）。
+  文件有寫明（§21.2）。
 
 **發現但沒有修的問題（都在 `BACKLOG.md`）**
 
@@ -792,6 +803,8 @@ class Experiment(ABC):
   `pair_zz_coupler` 的 `idle_time_ns` 是單臂時間但說明沒講清楚）。
 - I41 第 7 批補了兩條：`qc_n_swap_amp` 的登錄說明與 `pair_swap_chevron` 的說法相反；
   三個要用部分交換的實驗預設卻是完整交換。
+- I34、F16、F18、I36：原本就在，第 8 批文件的 Traps 有引用（多個量子位元的初態下摘要沒有意義；
+  回合的實際長度沒有記錄；Stark 視窗不超過一圈沒有程式把關；強的 Stark 訊號會多損失布居）。
 - F15、F16、F18、I36：原本就在，第 7 批文件的 Traps 有引用（角度沒有誤差棒；回合的實際長度沒有記錄；
   Stark 視窗不超過一圈沒有程式把關；強的 Stark 訊號每回合多損失布居）。
 - I26、I21、F24：原本就在，第 6 批文件的 Traps 有引用（`pair_zz_coupler` 把脈衝振幅當成絕對偏壓寫回；
@@ -1031,3 +1044,66 @@ probe 沒有改。
 5. **硬體數字沒有放進文件。** 只引用了程序文件與 BACKLOG 已經寫下的事實：弧形擬合的角度相對斷層掃描最多低 18 %、
    單一回合時高 10 %；強 Stark 訊號下每回合的損失是 T1 預測的三到四倍；週期角度每次執行約有 0.007 rad 的散布。
    四個實驗都在 5Q4C 上跑過，`validated` 仍然寫 `offline`，等你填。
+
+## 21. 第 8 批實作紀錄（2026-10-05）：專案 `MpembaEP_trotter`，兩個實驗
+
+`qc_unidirectional_trotter` 與 `qc_trotter_compensation`。至此 51 個登錄的實驗都有文件。
+這兩個實驗只有 QM 有 probe，所以只動了 SCQO 與 scqo-qm。兩份文件在索引裡歸在專案 `MpembaEP_trotter` 底下，不在共用清單裡。
+
+### 21.1 為了這一批補的機制：`doc_parameters`
+
+這兩個實驗的 `first_pair`、`second_pair`、`reset_qubit`（補償掃描還有 `compensation_target`）沒有預設值，
+目標也不是單一量子位元，而是整條鏈。原本的文件機制一律用「預設參數加一個佔位目標」來畫圖，遇到必填參數就建不出參數物件。
+
+做法是在基底類別 `Experiment` 加一個類別屬性 `doc_parameters`：文件的圖用哪些值來補上沒有預設值的參數。
+三個地方會讀它：
+
+- `experiment_docs.doc_params`：畫序列圖用的參數。
+- `scripts/update_docs.py`：模擬預期結果圖。屬性裡如果有 `targets`，就改用三個量子位元的示範鏈裝置，並以這些目標執行。
+- `tests/test_experiment_docs.py`：檢查 active 重設的畫法與圖參數表時建參數物件的地方。
+
+兩個類別共用一組值 `DOC_CHAIN`（示範裝置的鏈 q0 → q1 → q2，重設 q1），名稱是示範裝置自己的；
+序列圖上只出現角色名稱（`first_pair.z`、`reset_qubit.z`、`chain.xy`、`chain.ro`），不出現裝置名稱。
+其他 49 個實驗的 `doc_parameters` 是空的，畫出來的圖逐位元組不變。
+
+`UNDOCUMENTED` 清單清空後，有一個測試原本取清單的第一個名字，改寫成兩個：
+沒有宣告序列圖的類別會以名稱拒絕（用測試自己定義的類別），以及每個登錄的實驗都有自己的序列圖。
+
+### 21.2 序列圖
+
+兩個實驗共用 `chain_sequence_diagram`：重設、初態、重複 N 次的回合、全鏈讀出。
+回合是第一對的操作、第二對的操作、relay 的重設、Stark 訊號；有 `operation_gap_ns` 時前三個後面各有一段等待。
+操作名稱是 `idle` 的那一步畫成等待。補償掃描把 Stark 那一步標成掃描軸 `compensation_amp`。
+
+`qc_unidirectional_trotter` 預設沒有補償訊號，回合裡就不會畫 Stark 那一步。
+為了讓文件的圖呈現完整的回合，它的 `doc_parameters` 多放了一個 sink 上的補償值；模擬的預期結果圖不受影響。
+
+### 21.3 驅動端的宣告（QM）
+
+兩個類別都有後端註記：操作都是存在 QUAM 裡、照存的設定播放；回合的每一步之後都有全域對齊；
+Stark 訊號用切換中頻的方式偏離共振；一個回合比各段相加多約 20 ns 的程式開銷；`idle` 步驟等待的長度；
+`swap_coupler_flux` 的換算；active 重設時每個被重設的量子位元都需要鑑別器。probe 沒有改。
+
+**同時修正了第 6、7 批的一個不一致。** 那兩批我在十一個 QM 類別的後端註記裡手寫了「拒絕 `reset_method=active`」。
+§14.3 早就定了不寫這種註記：能不能用 active 重設是由驅動類別的屬性決定的，手寫的句子會過期。
+這一批把那十一行移掉了，其他註記不變。
+
+### 21.4 待你過目（已加進 §16）
+
+1. **`doc_parameters` 是加在共用核心上的新屬性**（`scqo/experiment.py`）。只有文件機制讀它，執行實驗時不會用到。
+2. **選用的輸入無法宣告。** 鏈實驗讀 `theta_rad`、T1、T2* 來畫理論曲線，沒有也能跑。
+   現在只能寫在文字裡，計算出來的相依表看不到這層關係。
+3. **`qc_unidirectional_trotter` 的預期結果圖沒有理論曲線**，只有三條量測曲線。
+4. **硬體數字只引用程序文件已經寫下的。** 補償值在幾小時內從 0.23 漂到 0.33、最亮像素偏離脊線 0.02 到 0.04、
+   較快的重複週期讓 sink 從 0.30 掉到 0.25，這些都出自 `procedures/chain-trotter-compensation`。
+   正在進行的比例系列量測結果沒有放進文件。
+5. **專案說明的措辭仍待你決定**（§10.3）：`PROJECT_SUMMARIES["MpembaEP_trotter"]` 沒有提到 Mpemba 或 EP，
+   兩份文件的 Purpose 也只寫了電路在做什麼，沒有寫專案的物理目標。
+
+### 21.5 整體鋪開到此完成，接下來是什麼
+
+- 51 份文件都有了，Theory 一節除了 `qubit_ramsey` 的草稿以外全部留空。
+- §16 的清單是所有等你處理的事。照你的決定，這些到現在才一起處理。
+- 還沒做的功能在 §16 最後一段：就緒狀態、檢視器標記、執行前閘門、`scqo run <name> --doc`、檢視器的實驗頁。
+- 三個分支都還沒有合併回 main。合併前要先等另一個工作階段的 `qubit_ramsey_flux_crosstalk_pulse` 落地，
+  它也需要 `writes` 宣告與一份文件（清單已清空，不能再把它放進 `UNDOCUMENTED`）。

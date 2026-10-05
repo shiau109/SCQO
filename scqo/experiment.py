@@ -86,6 +86,14 @@ class Experiment(ABC):
     #: only when the document links it. For a field that changes the sequence
     #: or the shape of the result, not for every option.
     doc_variants: ClassVar[dict[str, dict[str, Any]]] = {}
+    #: Parameters values the document's figures are drawn with, under every
+    #: variant's own. For an experiment whose Parameters have NO default for
+    #: some field, so that no document could be built without them: a chain
+    #: experiment's topology, and its ``targets`` (a chain, not one qubit).
+    #: The names are the offline demo device's (``scqo.testing``), which the
+    #: simulated figure runs on; the sequence figure shows roles, not names.
+    #: Empty wherever the defaults are complete.
+    doc_parameters: ClassVar[dict[str, Any]] = {}
 
     @classmethod
     def requirements(cls) -> tuple[Requirement, ...]:

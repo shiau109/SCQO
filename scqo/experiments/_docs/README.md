@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**49 of 51 registered experiments are documented.**
+**51 of 51 registered experiments are documented.**
 
 ## Shared
 
@@ -68,8 +68,7 @@ Device-level calibration and characterization, for every chip and operator.
 
 Unidirectional (cascaded) coupling along a qubit chain by Trotterized partial swaps with a relay reset.
 
-None yet.
-
-## Not documented yet
-
-`qc_trotter_compensation`, `qc_unidirectional_trotter`
+| experiment | what it does | validated |
+|---|---|---|
+| [qc_trotter_compensation](qc_trotter_compensation/README.md) | Trotter-chain AC-Stark compensation scan: run the unidirectional-coupling chain over a 2-D sweep of ONE qubit's Stark compensation amplitude against the Trotter-step count, and report the amplitude that maximises transport to the sink. | offline |
+| [qc_unidirectional_trotter](qc_unidirectional_trotter/README.md) | Unidirectional (cascaded) coupling by Trotterization on a three-qubit chain: excite the chain source once (prep_operations can prepare other qubits too, e.g. | offline |

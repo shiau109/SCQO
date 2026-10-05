@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="777.4" height="588" viewBox="0 0 777.4 588" role="img">
+<rect x="0.5" y="0.5" width="776.4" height="587" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<rect x="333.6" y="50" width="338.4" height="412" rx="4" fill="none" stroke="#bc4c00" stroke-dasharray="4 3"/>
+<text x="502.8" y="40" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">x N  (round_count)</text>
+<text x="124.8" y="92" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">chain.xy</text>
+<path d="M134.8,98 H763.4" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="124.8" y="176" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">first_pair.z</text>
+<path d="M134.8,182 H763.4" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="124.8" y="260" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">second_pair.z</text>
+<path d="M134.8,266 H763.4" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="124.8" y="344" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">reset_qubit.z</text>
+<path d="M134.8,350 H763.4" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="124.8" y="428" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">chain.ro</text>
+<path d="M134.8,434 H763.4" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M146.8,88 H251.6" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M141.8,88 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M256.6,88 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="199.2" y="81" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M275.6,98 C290.5,98 288.8,72 297.6,72 C306.4,72 304.6,98 319.6,98 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="297.6" y="66" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">prep<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<path d="M338.6,182 L347.6,156 H383.6 L392.6,182 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="365.6" y="173.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">swap<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<path d="M406.6,266 L415.6,240 H451.6 L460.6,266 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="433.6" y="257.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">swap<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<rect x="474.6" y="333.9" width="59.3" height="16.1" fill="#e3e8ef" fill-opacity="0.55" stroke="#1f2328" stroke-width="1.2"/>
+<text x="504.2" y="327.9" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">reset<tspan font-size="9.4" dy="-4.9">3</tspan></text>
+<rect x="547.9" y="81.9" width="119.1" height="16.1" fill="#ffe8d6" fill-opacity="0.55" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="607.4" y="75.9" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">stark<tspan font-size="9.4" dy="-4.9">4</tspan></text>
+<text x="607.4" y="113" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">compensation_amp</text>
+<rect x="681" y="408" width="75.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="718.7" y="425.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout<tspan font-size="9.4" dy="-4.9">5</tspan></text>
+<text x="134.8" y="483" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  prep_operations, all at once; by default an x180 on the source</text>
+<text x="134.8" y="500" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  the pair's named operation, at its stored amplitudes</text>
+<text x="134.8" y="517" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">3  reset_operation on reset_qubit: a parametric reset that empties the relay</text>
+<text x="134.8" y="534" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">4  on compensation_target at the swept factor, with the fixed compensation_amps tones</text>
+<text x="134.8" y="551" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">5  every chain qubit, discriminated: the dataset holds each one's population</text>
+<rect x="134.8" y="559" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="154.8" y="568" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>

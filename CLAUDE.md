@@ -579,7 +579,10 @@ left empty.)
   carry parameters: the parity monitors need a beat-model Ramsey). One whose defaults
   the demo device cannot hold, or whose estimator is meant to be read at another
   setting, names the parameters of its figure in `FIGURE_PARAMETERS`, and its document
-  says so beside the figure.
+  says so beside the figure. An experiment whose Parameters have NO default for some
+  field (the chain experiments' topology; their targets are a chain, not one qubit)
+  declares `doc_parameters` on the class, in the demo device's names: both figures are
+  drawn with them, and the sequence figure still shows roles.
 - **Every `Contract.sweeps` axis is marked `swept` in the diagram**, and a probe whose
   pulse order changes updates the diagram in the same commit. Pieces several
   experiments draw alike are shared: a capability's own in its module (`reset_step`,
@@ -590,7 +593,9 @@ left empty.)
 - **Equations**: inline `$...$`, display in a fenced `math` block. GitHub runs Markdown
   over inline math first, so write `T_2^{\ast}` rather than a literal `*` and avoid
   backslash-punctuation (`\,` `\!` `\{`) there.
-- `tests/test_experiment_docs.py` holds the census: `UNDOCUMENTED` may only shrink.
+- `tests/test_experiment_docs.py` holds the census. Every registered experiment has a
+  document; `UNDOCUMENTED` is empty and stays empty - a new experiment ships with its
+  document.
 
 **Shared vs project.** `Experiment.project` is None for a SHARED experiment
 (device-level calibration or characterization, for every chip and operator) and names

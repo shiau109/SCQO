@@ -108,7 +108,9 @@ import xarray as xr
 from pydantic import Field
 
 from ..contract import DatasetContract
-from ._capabilities.qubit_reset import QubitResetParameters
+from ..requirements import Requirement
+from ..sequence_diagram import Block, SequenceDiagram
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     ReadoutModeParameters,
     states_to_joint_population,
@@ -138,6 +140,90 @@ PAIR_SPEC_KEYS = ("pair", "operation")
 #: what ``prep_operations=None`` plays on the chain source: the single
 #: excitation the whole sequence is designed around.
 DEFAULT_PREP_OPERATION = "x180"
+
+#: the chain of the offline demo device (``scqo.testing``): q0 -> q1 -> q2 with
+#: the relay q1 reset. The two chain experiments' documents are drawn with it
+#: (``Experiment.doc_parameters``), because their Parameters have no default
+#: topology - and a chain's targets are the chain, not one qubit.
+DOC_CHAIN: dict = {
+    "targets": ["q0", "q1", "q2"],
+    "first_pair": {"pair": "q0_q1", "operation": "partial_swap"},
+    "second_pair": {"pair": "q1_q2", "operation": "partial_swap"},
+    "reset_qubit": "q1",
+}
+
+#: what both chain experiments need of the device. The fields are the chain
+#: QUBITS' and the flux lines': the operations themselves (the two swaps, the
+#: relay's reset, the stark tone) are stored with the backend's configuration.
+CHAIN_REQUIRES: tuple[Requirement, ...] = (
+    Requirement("drive_freq_hz",
+                "the prep pulses have to be on resonance, and each compensation "
+                "tone is set off from its qubit's drive frequency"),
+    Requirement("pi_amp", "the default prep is an x180 on the chain source"),
+    Requirement("idle_flux",
+                "the swaps and the relay's reset are flux pulses on top of each "
+                "line's standing bias"),
+    Requirement("readout_freq_hz",
+                "each chain qubit's readout tone has to sit on its resonator"),
+    Requirement("readout_power_dbm",
+                "each chain qubit's readout has to be at its working power"),
+    Requirement("readout_rotation_rad",
+                "every chain qubit is discriminated in every shot: the axis each "
+                "is projected on"),
+    Requirement("readout_threshold",
+                "every chain qubit is discriminated in every shot: what splits "
+                "|0> from |1> on that axis"),
+)
+
+
+def chain_sequence_diagram(params, *, stark_axis: str | None = None) -> SequenceDiagram:
+    """The chain's shot, for both chain experiments: reset, prep, N rounds of
+    [first step, second step, relay reset, stark tones], joint readout. The
+    compensation scan passes the axis its swept tone varies with."""
+    (_first, first_op), (_second, second_op) = pair_specs(params)
+    diagram = SequenceDiagram({
+        "drive": "chain.xy", "first": "first_pair.z", "second": "second_pair.z",
+        "reset": "reset_qubit.z", "readout": "chain.ro"})
+    reset_step(diagram, params)
+    if params.prep_operations is None or params.prep_operations:
+        diagram.step(Block("drive", "prep", "gate",
+                           note="prep_operations, all at once; by default an x180 "
+                                "on the source"))
+    gap = bool(params.operation_gap_ns)
+    with diagram.repeat("x N", swept="round_count"):
+        for lane, operation in (("first", first_op), ("second", second_op)):
+            if operation == IDLE:
+                diagram.step(Block(
+                    lane, "idle", "wait",
+                    note="plays nothing, for as long as idle_reference_operation's "
+                         "pulse"))
+            else:
+                diagram.step(Block(
+                    lane, "swap", "flattop",
+                    note="the pair's named operation, at its stored amplitudes"))
+            if gap:
+                diagram.step(Block(lane, "gap", "wait"))
+        diagram.step(Block(
+            "reset", "reset", "tone",
+            note="reset_operation on reset_qubit: a parametric reset that empties "
+                 "the relay"))
+        if gap:
+            diagram.step(Block("reset", "gap", "wait"))
+        if stark_axis is not None:
+            diagram.step(Block(
+                "drive", "stark", "tone", swept=stark_axis,
+                note="on compensation_target at the swept factor, with the fixed "
+                     "compensation_amps tones"))
+        elif params.compensation_amps:
+            diagram.step(Block(
+                "drive", "stark", "tone",
+                note="on each qubit in compensation_amps, all at once, "
+                     "stark_detuning_hz off its drive"))
+    kept = ("each shot's levels are kept" if params.readout_mode == "shot"
+            else "the dataset holds each one's population")
+    diagram.step(Block("readout", "readout", "acquire",
+                       note=f"every chain qubit, discriminated: {kept}"))
+    return diagram
 
 
 def pair_specs(params) -> tuple[tuple[str, str], tuple[str, str]]:
@@ -464,6 +550,35 @@ class QcUnidirectionalTrotter(Experiment):
 
     name: ClassVar[str] = "qc_unidirectional_trotter"
     project: ClassVar[str | None] = "MpembaEP_trotter"
+    requires: ClassVar[tuple[Requirement, ...]] = CHAIN_REQUIRES
+    extracts: ClassVar[dict[str, str]] = {
+        "p_initial": "this qubit's population before the first round",
+        "p_final": "its population after the last round",
+        "p_max": "its largest population over the rounds",
+        "p_min": "its smallest population over the rounds",
+        "n_at_max": "the round count at which it peaks",
+        "sink_p_max": "the sink's largest population over the rounds; the same on "
+                      "every row",
+        "n_round_count": "the number of points on the round axis",
+        "theta_first_rad": "the angle of the first step, read from its operation's "
+                           "theta_rad; 0 for an idle step, NaN when unknown",
+        "theta_second_rad": "the same for the second step",
+        "ideal_sink_p_max": "the sink's peak for a perfect round with those angles; "
+                            "NaN when an angle is unknown",
+        "ideal_sink_n_at_max": "the round count of that peak",
+        "model_sink_p_max": "the sink's peak of the round model with T1 and T2* "
+                            "decay; NaN without round_duration_ns and both ends' "
+                            "measured T1 and T2*",
+        "model_sink_n_at_max": "the round count of that peak",
+    }
+    #: drawn with a compensation tone on the sink, so that the round shows its
+    #: stark step; the simulated figure does not depend on it
+    doc_parameters: ClassVar[dict] = {**DOC_CHAIN, "compensation_amps": {"q2": 0.3}}
+
+    @classmethod
+    def sequence_diagram(cls, params: QcUnidirectionalTrotterParameters) -> SequenceDiagram:
+        return chain_sequence_diagram(params)
+
     description: ClassVar[str] = (
         "Unidirectional (cascaded) coupling by Trotterization on a three-qubit chain: "
         "excite the chain source once (prep_operations can prepare other qubits too, "

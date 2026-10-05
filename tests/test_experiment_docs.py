@@ -41,12 +41,10 @@ SCRIPT = REPO_ROOT / "scripts" / "update_docs.py"
 CORE = {obj.name: obj for obj in (getattr(registry, n) for n in registry.__all__)
         if isinstance(obj, type) and issubclass(obj, Experiment)}
 
-#: experiments still owed a document. THIS LIST MAY ONLY SHRINK: writing a
-#: document means deleting its name here, and a new experiment never joins it -
-#: it ships with its document (CLAUDE.md, promotion checklist).
-UNDOCUMENTED = frozenset({
-    "qc_trotter_compensation", "qc_unidirectional_trotter",
-})
+#: experiments still owed a document. EMPTY since every registered experiment
+#: has one, and it stays empty: a new experiment never joins it - it ships with
+#: its document (CLAUDE.md, promotion checklist).
+UNDOCUMENTED: frozenset[str] = frozenset()
 
 DOCUMENTED = sorted(name for name in CORE if docs.has_doc(name))
 
@@ -82,14 +80,22 @@ def test_no_document_folder_without_an_experiment():
     assert folders <= set(CORE), sorted(folders - set(CORE))
 
 
-def test_an_undocumented_experiment_declares_no_diagram_by_name():
-    """The base hook refuses rather than drawing an empty picture."""
-    name = sorted(UNDOCUMENTED)[0]
-    cls = CORE[name]
-    if "sequence_diagram" in vars(cls):
-        pytest.skip(f"{name} already declares its diagram")
-    with pytest.raises(NotImplementedError, match=cls.__name__):
-        cls.sequence_diagram(None)
+def test_an_experiment_without_a_diagram_refuses_by_name():
+    """The base hook refuses rather than drawing an empty picture. Every
+    registered experiment declares its diagram now, so the case is a class of
+    this test's own."""
+    class Undrawn(Experiment):
+        name = "undrawn"
+
+    with pytest.raises(NotImplementedError, match="Undrawn"):
+        Undrawn.sequence_diagram(None)
+
+
+def test_every_registered_experiment_declares_its_diagram():
+    undrawn = sorted(name for name, cls in CORE.items()
+                     if cls.sequence_diagram.__func__
+                     is Experiment.sequence_diagram.__func__)
+    assert not undrawn, undrawn
 
 
 # ------------------------------------------------------------- each document
@@ -119,8 +125,8 @@ def _active_reset_params(name):
     if "reset_method" not in cls.Parameters.model_fields:
         return None
     try:
-        return cls.Parameters(targets=["q"], reset_method="active",
-                              active_reset_rounds=2)
+        return cls.Parameters(**{"targets": ["q"], **cls.doc_parameters,
+                                 "reset_method": "active", "active_reset_rounds": 2})
     except ValueError:
         return None
 
@@ -189,7 +195,8 @@ def test_figure_tables_name_documented_experiments_and_valid_parameters(update_d
     for name, settings in update_docs.FIGURE_PARAMETERS.items():
         assert name in DOCUMENTED, name
         assert settings, f"{name}: an empty entry says nothing"
-        CORE[name].Parameters(targets=["q"], **settings)
+        CORE[name].Parameters(**{"targets": ["q"], **CORE[name].doc_parameters,
+                                 **settings})
         text = docs.doc_path(name).read_text(encoding="utf-8")
         figure = text.split("## Expected result", 1)[1].split("## Traps", 1)[0]
         for field, value in settings.items():

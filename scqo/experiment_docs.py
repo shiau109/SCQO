@@ -245,9 +245,10 @@ def check_doc(cls, doc: ExperimentDoc) -> list[str]:
 
 def doc_params(cls, variant: str | None = None):
     """The Parameters a figure is drawn for: the experiment's defaults on one
-    placeholder target, with a variant's overrides on top."""
+    placeholder target, its ``doc_parameters`` (what has no default), and a
+    variant's overrides on top."""
     overrides = cls.doc_variants[variant] if variant is not None else {}
-    return cls.Parameters(**{"targets": ["q"], **overrides})
+    return cls.Parameters(**{"targets": ["q"], **cls.doc_parameters, **overrides})
 
 
 def sequence_svgs(cls, doc: ExperimentDoc) -> dict[str, str]:

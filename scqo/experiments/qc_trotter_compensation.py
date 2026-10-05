@@ -67,15 +67,20 @@ import xarray as xr
 from pydantic import Field
 
 from ..contract import DatasetContract
+from ..requirements import Requirement
+from ..sequence_diagram import SequenceDiagram
 from ._sim import stable_seed
 from ..result import Outcome, Result
 from ..experiment import Experiment
 from . import register
 from .qc_unidirectional_trotter import (
     CHAIN_LABEL,
+    CHAIN_REQUIRES,
+    DOC_CHAIN,
     IDLE,
     QcUnidirectionalTrotterParameters,
     chain_roles,
+    chain_sequence_diagram,
     pair_specs,
 )
 
@@ -159,6 +164,38 @@ class QcTrotterCompensation(Experiment):
 
     name: ClassVar[str] = "qc_trotter_compensation"
     project: ClassVar[str | None] = "MpembaEP_trotter"
+    requires: ClassVar[tuple[Requirement, ...]] = CHAIN_REQUIRES
+    extracts: ClassVar[dict[str, str]] = {
+        "best_compensation_amp_refined": "the compensation: the vertex of the sink "
+                                         "population averaged over the rounds from "
+                                         "2 on, against the swept amplitude",
+        "best_compensation_amp_err": "its spread when the rounds are resampled",
+        "compensation_unresolved": "1 when that curve has no peak inside the "
+                                   "window; the refined value is then NaN",
+        "best_compensation_amp": "the amplitude of the single brightest pixel of "
+                                 "the sink map",
+        "best_sink_p_max": "the sink's peak population at that amplitude",
+        "best_n_at_max": "the round count of that peak",
+        "worst_compensation_amp": "the amplitude with the lowest sink peak",
+        "worst_sink_p_max": "that sink peak",
+        "contrast": "the best sink peak over the worst; near 1 the tone does "
+                    "nothing on this chain",
+        "n_compensation_amp": "the number of swept amplitudes",
+        "n_round_count": "the number of points on the round axis",
+        "p_initial": "this qubit's population before the first round, at the "
+                     "amplitude of the brightest pixel",
+        "p_final": "its population after the last round, at that amplitude",
+        "p_max": "its largest population over the rounds, at that amplitude",
+        "p_min": "its smallest population over the rounds, at that amplitude",
+        "n_at_max": "the round count at which it peaks, at that amplitude",
+    }
+    #: the sink carries the swept tone, as the calibration procedure scans it
+    doc_parameters: ClassVar[dict] = {**DOC_CHAIN, "compensation_target": "q2"}
+
+    @classmethod
+    def sequence_diagram(cls, params: QcTrotterCompensationParameters) -> SequenceDiagram:
+        return chain_sequence_diagram(params, stark_axis="compensation_amp")
+
     description: ClassVar[str] = (
         "Trotter-chain AC-Stark compensation scan: run the unidirectional-coupling chain "
         "over a 2-D sweep of ONE qubit's Stark compensation amplitude against the Trotter-"
