@@ -557,8 +557,10 @@ left empty.)
   order to calibrate it. What such an experiment needs of the field it measures is a
   place to start, which is `Requirement(..., seed_ok=True)`. `when` is
   `(parameter, value)`, or `(parameter, (value, ...))` for any of several. A conditional
-  line is dropped by `collect()` when the experiment needs that field always, or when its
-  Parameters refuse the setting the line is conditional on. The *Before running it* and *Outputs* sections are GENERATED
+  line is dropped by `collect()` when the experiment needs that field always, when its
+  Parameters refuse the setting the line is conditional on, or when the class is a driver's
+  probe that has not opted in to that setting (`declare_probe_opt_in`, one line per driver:
+  active reset). The *Before running it* and *Outputs* sections are GENERATED
   from these between `<!-- BEGIN generated: ... -->` markers; `catalog()` and
   `scqo run <name> --help` carry the same data.
 - **The calibration order is computed.** Joining every `requires` with every `writes` on

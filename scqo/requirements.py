@@ -29,7 +29,9 @@ not a derived one.
 
 WHAT IS NOT HERE: anything true of one backend only. A knob only one driver
 consumes (QM's own pi/2 amplitude) is declared by that driver's subclass, which
-extends ``requires`` and carries its ``backend_notes``.
+extends ``requires`` and carries its ``backend_notes``. A setting only some of
+a driver's probes realize (active reset) is declared by that driver, once
+(:func:`declare_probe_opt_in`).
 """
 
 from __future__ import annotations
@@ -96,15 +98,19 @@ def collect(cls) -> tuple[Requirement, ...]:
     ``(field, condition)`` wins, so an experiment may restate a mixin's line
     with its own reason.
 
-    Two kinds of conditional line are dropped, because a reader would take
-    either for a real choice:
+    Three kinds of conditional line are dropped, because a reader would take
+    any of them for a real choice:
 
     * one whose field the experiment needs ALWAYS (an unconditional line for
       the same field): ``qubit_t1_ade`` discriminates every shot, so the reset
       mixin's "with reset_method=active" line for the threshold says nothing;
     * one whose setting the experiment's Parameters REFUSE:
       ``qubit_thermal_population`` rejects ``reset_method="active"``, so what an
-      active reset would need is not a requirement of it.
+      active reset would need is not a requirement of it;
+    * one whose setting the Parameters accept and THIS PROBE refuses: a driver
+      realizes active reset only on the probes that opt in
+      (:func:`declare_probe_opt_in`), so a thermal-only probe never reads what
+      an active reset would need. The core class keeps the line.
     """
     declared: list[Requirement] = []
     seen: set[tuple[str, Any]] = set()
@@ -119,7 +125,9 @@ def collect(cls) -> tuple[Requirement, ...]:
     return tuple(
         req for req in declared
         if req.when is None
-        or (req.field not in always and not _setting_refused(cls.Parameters, *req.when)))
+        or (req.field not in always
+            and not _setting_refused(cls.Parameters, *req.when)
+            and not _probe_refuses(cls, *req.when)))
 
 
 def _setting_refused(parameters, name: str, value: Any) -> bool:
@@ -143,6 +151,45 @@ def _setting_refused(parameters, name: str, value: Any) -> bool:
             continue
         return False
     return True
+
+
+#: Settings a driver realizes only on the probes that opt in:
+#: ``{(parameter, value): {driver package: opt-in class attribute}}``, filled by
+#: :func:`declare_probe_opt_in`. Empty in a driver-free install.
+_PROBE_OPT_INS: dict[tuple[str, Any], dict[str, str]] = {}
+
+
+def declare_probe_opt_in(package: str, parameter: str, value: Any, attribute: str) -> None:
+    """A driver's statement that its probes realize ``parameter=value`` only
+    where their class sets ``attribute`` to True, and refuse it by name
+    everywhere else - although the shared Parameters accept the setting.
+
+    ``package`` is the driver's top-level package (``"scqo_qm"``); the rule
+    covers every class defined under it and their subclasses. :func:`collect`
+    then leaves out, for a probe that has not opted in, what the setting would
+    need. Which probes opt in stays the driver's own decision, read from the
+    class; this only tells the listing where to look. Declared once per driver,
+    where its experiments are imported.
+    """
+    _PROBE_OPT_INS.setdefault((parameter, value), {})[package] = attribute
+
+
+def _probe_refuses(cls, name: str, value: Any) -> bool:
+    """Whether ``cls`` is a driver's probe that has not opted in to
+    ``name=value``. With alternatives, the line stands while ANY of them is
+    realized."""
+    return all(_not_opted_in(cls, name, candidate)
+               for candidate in (value if isinstance(value, tuple) else (value,)))
+
+
+def _not_opted_in(cls, name: str, value: Any) -> bool:
+    for package, attribute in _PROBE_OPT_INS.get((name, value), {}).items():
+        from_driver = any(klass.__module__ == package
+                          or klass.__module__.startswith(package + ".")
+                          for klass in cls.__mro__)
+        if from_driver and not getattr(cls, attribute, False):
+            return True
+    return False
 
 
 def unknown_fields(names) -> list[str]:

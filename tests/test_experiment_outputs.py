@@ -155,6 +155,41 @@ def test_a_condition_the_parameters_refuse_is_not_a_requirement():
         req.condition() for req in collect(CORE["qubit_relaxation"])}
 
 
+def test_a_setting_a_probe_has_not_opted_in_to_is_not_a_requirement(monkeypatch):
+    """Both drivers realize active reset only on the probes that opt in and say
+    so with `declare_probe_opt_in`: a thermal-only probe then does not list what
+    an active reset would need, while the core class and an opted-in probe do."""
+    from scqo import requirements
+
+    monkeypatch.setattr(requirements, "_PROBE_OPT_INS", {})
+    core = CORE["qubit_relaxation"]
+
+    class ThermalOnly(core):
+        pass
+
+    class OptedIn(core):
+        supports_active_reset = True
+
+    class EitherReset(core):
+        requires = (Requirement("flux_delay_s", "a line of this test's own",
+                                when=("reset_method", ("thermal", "active"))),)
+
+    def conditions(cls):
+        return {req.condition() for req in collect(cls)}
+
+    # nothing declared (a driver-free install): every line stands
+    assert "reset_method=active" in conditions(ThermalOnly)
+
+    requirements.declare_probe_opt_in(
+        __name__, "reset_method", "active", "supports_active_reset")
+    assert "reset_method=active" not in conditions(ThermalOnly)
+    assert "reset_method=thermal" in conditions(ThermalOnly)
+    assert "reset_method=active" in conditions(OptedIn)
+    assert "reset_method=active" in conditions(core)  # not that package's class
+    # with alternatives the line stands while any of them is realized
+    assert "reset_method=thermal / active" in conditions(EitherReset)
+
+
 def test_an_unconditional_need_supersedes_a_conditional_one_for_the_same_field():
     """`qubit_t1_ade` discriminates every shot: its threshold is needed always,
     so the reset mixin's 'with reset_method=active' line for it says nothing."""
