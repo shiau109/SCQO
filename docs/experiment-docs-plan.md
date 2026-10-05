@@ -1148,5 +1148,9 @@ Stark 訊號用切換中頻的方式偏離共振；一個回合比各段相加�
    併入後只多了文件，程式碼與跑過整套測試的版本相同。main 上只剩 `run/index.sqlite` 未追蹤，沒有提交（它是資料庫檔）。
 2. **落地**：SCQO 先、驅動後，都是快轉合併；之後寫 `RELEASES.d/experiment-docs.toml`（新增性質，離線驗證）。
    main 是硬體工作階段即時匯入的程式碼，要挑沒有量測在跑的時候。
+   **已落地（2026-10-05）**：你確認沒有量測在跑之後，三個 repo 都快轉到功能分支的頂端
+   （SCQO `e88ad1e`、scqo-qm `d7de49b`、scqo-qblox `43f58a8`），片段是 `RELEASES.d/experiment-docs.toml`。
+   落地後在 SCQO 的 main 上重跑了文件相關的四個測試檔。兩個驅動的整套測試是落地前對同一份程式碼跑的
+   （scqo-qm 852、scqo-qblox 379）；從 main、在各自的共用環境重跑一次，留給切版本那一步。
 3. **切版本**：這是整個 combo 的事。`RELEASES.d` 裡已有另外五個片段，SCQO main 有二十多個還沒推送的提交，
    三個作業系統的 CI 要推送之後才會跑。版本是 minor。
