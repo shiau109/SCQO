@@ -1,6 +1,0 @@
-name = "readout-assign-keys"
-repos = { scqo = "d2a0bbb" }
-kind = "breaking"
-coupling = ""
-validated = "offline"
-notes = "UPGRADE REQUIRES: scripts reading the COUNTED confusion entries from single_shot_readout / qubit_thermal_population fits read assign_e_prep_g / assign_g_prep_e (were p_e_given_g / p_g_given_e); the fitted pop_*_prep_* keys are unchanged, and runs recorded before keep the old keys (immutable run data), so a cross-cutover comparison of the counted value must read both names."

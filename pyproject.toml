@@ -1,6 +1,6 @@
 [project]
 name = "scqo"
-version = "4.1.0"
+version = "4.2.0"
 description = "Superconducting Qubit Orchestration — instrument-agnostic experiment API shared by QM and Qblox backends"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -145,6 +145,12 @@ dependencies = [
                         # coarse qubit_power_rabi (cea9ea8) below it takes the GLOBAL
                         # argmax, so a window holding several Rabi periods returns
                         # 3pi as SUCCESSFUL. See RELEASES.toml [v4-1-0].
+                        # As of v4.2.0 the floor is scqat v0.30.0, LOUD but late:
+                        # qc_n_swap_tomography and qubit_ramsey_flux_crosstalk_pulse
+                        # each lazy-import an estimator scqat v0.29.0 does not have
+                        # (e5a57d5 / d67fa3a and 0eb4989), so estimate() raises
+                        # ModuleNotFoundError after the instrument time is spent.
+                        # See RELEASES.toml [v4-2-0].
     "netcdf4>=1.6",     # datastore: dataset.nc has a string qubit coord (needs netCDF4, not the scipy netCDF3 fallback)
     "tomli>=2.0; python_version<'3.11'",  # labconfig TOML parsing on py3.10
 ]

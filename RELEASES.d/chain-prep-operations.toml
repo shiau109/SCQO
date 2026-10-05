@@ -1,6 +1,0 @@
-name = "chain-prep-operations"
-repos = { scqo = "b4c3468", scqo-qm = "2cc258c" }
-kind = "breaking"
-coupling = "scqo-qm 2cc258c needs scqo >= b4c3468 (the builders read chain_roles' resolved prep MAP; an older scqo hands them a qubit name)"
-validated = "hardware 5Q4C 2026-09-29/30 (tag prep-map: |101> and |100> on the 040/020, 040/040, 040/060 chains)"
-notes = "qc_unidirectional_trotter and qc_trotter_compensation: prep_qubit + prep_operation are REPLACED by prep_operations = {qubit: xy operation} (None = {<source>: 'x180'}, the old default; {} = no prep), so a chain can start in a multi-excitation state such as {'q1': 'x180', 'q3': 'x180'} (|101>). qc_trotter_compensation refuses anything but exactly one prepared qubit. UPGRADE REQUIRES: every parameter file / parameters.toml table that sets prep_qubit or prep_operation must drop them (use prep_operations) - Parameters is extra='forbid', so an old file is refused by name. Stored runs are untouched. Also: pair-partial-swap Trap 5 gains the 2026-09-29 resonance jump; BACKLOG I34."
