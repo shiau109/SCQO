@@ -62,7 +62,9 @@ from ..contract import DatasetContract
 from ..estimate_inputs import acquisition_note, note_acquisition
 from ..experiment import Experiment
 from ..parameters import AveragingParameters, TargetSelection
+from ..requirements import Requirement
 from ..result import Outcome, Result
+from ..sequence_diagram import Block, SequenceDiagram, held
 from . import register
 from ._capabilities.flux import (
     END_FLUX_PULSE_DESC,
@@ -81,14 +83,16 @@ from ._capabilities.flux_source import (
     source_flux_sweep,
     source_line_problems,
 )
-from ._capabilities.qubit_reset import QubitResetParameters
+from ._capabilities.qubit_reset import QubitResetParameters, reset_step
 from ._capabilities.state_readout import (
     POPULATION_ALT,
     StateReadoutParameters,
+    measure_step,
     population_row,
     readout_vars,
     signal_rename,
 )
+from ._requires import CALIBRATED_READOUT
 from ._sim import iq_from_population, stable_seed
 from ._time_grid import time_axis_ns
 
@@ -210,6 +214,82 @@ class QubitRamseyFluxCrosstalkPulse(Experiment):
     """Backend-agnostic flux-crosstalk map. ``probe()`` is supplied by a driver."""
 
     name: ClassVar[str] = NAME
+    requires: ClassVar[tuple[Requirement, ...]] = (
+        Requirement("idle_flux",
+                    "both flux windows are excursions from a standing bias, the "
+                    "target line's and the source line's; the pi/2 pulses and the "
+                    "readout are played at the target's"),
+        Requirement("drive_freq_hz",
+                    "every fringe is measured against it; at the idle point the "
+                    "qubit has to sit on it"),
+        *CALIBRATED_READOUT,
+    )
+    extracts: ClassVar[dict[str, str]] = {
+        "flux_crosstalk": "the signed coefficient m: one volt on the source line "
+                          "acts on the target like m volts on its own line",
+        "flux_crosstalk_stderr": "the fit's standard error on m",
+        "flux_offset_from_idle": "the target's apex at zero source amplitude, as an "
+                                 "excursion from its idle flux",
+        "flux_offset_from_idle_stderr": "the fit's standard error on that apex",
+        "curvature_hz_per_v2": "the curvature of the target's local arch",
+        "apex_height_span_hz": "how far the HEIGHT of the apex moved over the source "
+                               "window: a shift of the qubit that is not crosstalk",
+        "line_residual_rms_v": "the rms distance of the apex positions from the "
+                               "fitted straight line",
+        "line_max_residual_v": "the largest such distance",
+        "n_source_points": "the number of source amplitudes",
+        "n_valid_source_points": "how many of them gave an apex; the line needs 3",
+        "n_apex_not_bracketed": "how many had their apex outside the own-line window",
+        "nonlinear_suspected": "1 when the apex positions do not follow a straight "
+                               "line; the run fails",
+        "fold_suspected": "1 when a fringe may have folded through zero frequency; "
+                          "the run fails",
+        "source_line": "the flux line that was pulsed as the source",
+        "source_lead_time_ns": "how long the source pulse was already on when the "
+                               "own-line pulse started",
+        "old_idle_flux": "the target line's idle flux: the origin of its window",
+        "old_source_idle_flux": "the source line's idle flux: the origin of its "
+                                "window",
+        "old_drive_freq_hz": "the drive frequency every fringe was measured against",
+        "ramp_detuning_hz": "the SIGNED virtual detuning that was applied",
+        "ramp_sign_from": "where that sign came from: 'facts' (predicted from the "
+                          "arch facts) or 'default'",
+    }
+    #: the source line has no default; on the demo device the other qubit's z line
+    doc_parameters: ClassVar[dict] = {"source_line": "z_q1"}
+
+    @classmethod
+    def sequence_diagram(
+            cls, params: QubitRamseyFluxCrosstalkPulseParameters) -> SequenceDiagram:
+        diagram = SequenceDiagram({
+            "drive": "q.xy", "flux": "q.z", "source": "source.z", "readout": "q.ro"})
+        lead = bool(params.source_lead_time_ns)
+        source = Block(
+            "source", "source pulse", "square",
+            swept=(SOURCE_FLUX_AXIS, "idle_time_ns"),
+            note=("starts source_lead_time_ns before the own-line pulse; the two end "
+                  "together" if lead else
+                  "on the source line, an excursion from its idle_flux, as long as "
+                  "the idle"))
+        reset_step(diagram, params)
+        diagram.step(Block("drive", "y90", "gate"), *([source] if lead else []))
+        if params.flux_buffer_ns:
+            diagram.step(Block("drive", "buffer", "wait"),
+                         *([held("source")] if lead else []))
+        diagram.step(
+            Block("drive", "idle", "wait", swept="idle_time_ns"),
+            Block("flux", "flux pulse", "square", swept=(FLUX_AXIS, "idle_time_ns"),
+                  note="an excursion from idle_flux, as long as the idle"),
+            held("source") if lead else source)
+        if params.flux_buffer_ns:
+            diagram.step(Block("drive", "buffer", "wait"))
+        diagram.step(Block(
+            "drive", "x90", "gate",
+            note="its phase is ramped with the idle: a virtual detuning of signed "
+                 "size frequency_detuning_hz"))
+        measure_step(diagram, params)
+        return diagram
+
     description: ClassVar[str] = (
         "Signed flux crosstalk onto ONE qubit from another flux line (source_line: "
         "another qubit's z line or a coupler's). A Ramsey fringe is taken with the "

@@ -612,6 +612,7 @@ class Experiment(ABC):
 | 8 | 專案 `MpembaEP_trotter`，2 個 | 完成（理論留空），見 §21 |
 
 51 個登錄的實驗都有文件了。`UNDOCUMENTED` 清單已經清空，之後新增的實驗必須帶著文件一起進來。
+併入 main 之後多了第 52 個（`qubit_ramsey_flux_crosstalk_pulse`），也補上了，見 §22。
 
 ## 14. 第 2 批實作紀錄（2026-10-04）：單比特頻率與相干，十三個實驗
 
@@ -1107,3 +1108,42 @@ Stark 訊號用切換中頻的方式偏離共振；一個回合比各段相加�
 - 還沒做的功能在 §16 最後一段：就緒狀態、檢視器標記、執行前閘門、`scqo run <name> --doc`、檢視器的實驗頁。
 - 三個分支都還沒有合併回 main。合併前要先等另一個工作階段的 `qubit_ramsey_flux_crosstalk_pulse` 落地，
   它也需要 `writes` 宣告與一份文件（清單已清空，不能再把它放進 `UNDOCUMENTED`）。
+
+## 22. 併入 main 與第 52 個實驗（2026-10-05）
+
+你問能不能先 release、其餘的放到後續小版本。可以：§16 的項目與還沒做的功能都是往上加的，不影響這一版的正確性。
+這一節是 release 之前要做的第一步，只動功能分支的工作樹，沒有碰 main。
+
+### 22.1 把 main 併進功能分支
+
+功能分支是從 `9e8ba6f` 開出來的，之後 main 多了另一個工作階段的 `qubit_ramsey_flux_crosstalk_pulse`
+（核心四個提交、QM 一個提交、scqat 的估計器）。
+
+- SCQO：只有 `BACKLOG.md` 衝突。main 用掉了 I38，所以這個分支的四條順移一號：
+  I39（QM `qubit_echo_flux_pulse` 的單臂時間）、I40（`qubit_xyz_delay` 的模擬）、I41（`pair_zz_coupler` 的假去耦點）、
+  I42（pair 系列的呈現不一致）。兩份文件、QM 的一條後端註記與這份計畫裡引用的編號都跟著改了；
+  本文件前面各節提到這四條時用的已經是新編號。
+- scqo-qm：沒有衝突。scqo-qblox：main 沒有新提交，不需要合併。
+
+### 22.2 `qubit_ramsey_flux_crosstalk_pulse` 的宣告與文件
+
+它是在 main 上做的，那時還沒有這個功能，所以沒有宣告也沒有文件；清單已清空，併進來後文件普查的測試就會失敗。照同一套做法補上：
+
+- 前置條件：兩條磁通線的 `idle_flux`（目標自己的與來源線的）、`drive_freq_hz`、讀出。
+- 產出：紀錄用，不提議任何欄位；21 個擬合鍵都有說明。
+- 序列圖：`qubit_ramsey_flux_pulse` 的序列多一條來源線。`source_lead_time_ns` 大於 0 時，來源脈衝從第一個 pi/2 脈衝之前就開始，
+  用「脈衝跨欄持續」畫成一個形狀。
+- `source_line` 沒有預設值，用 `doc_parameters` 給示範裝置上另一個量子位元的磁通線。
+- QM：加上 `pi_amp_x90` 與後端註記。
+
+現在 52 個登錄的實驗都有文件。
+
+### 22.3 落地與 release 還差什麼
+
+1. **main 上有別的工作階段未提交的修改**：SCQO 的 `BACKLOG.md`、`docs/coupler-readout-plan.md`、`procedures/README.md`。
+   這個分支的合併會動到 `BACKLOG.md`，它沒提交之前 main 收不進來。那不是這個功能的檔案，要由它的主人處理。
+   它新增的條目用的是 I37，不會跟這裡的編號衝突。
+2. **落地**：SCQO 先、驅動後，都是快轉合併；之後寫 `RELEASES.d/experiment-docs.toml`（新增性質，離線驗證）。
+   main 是硬體工作階段即時匯入的程式碼，要挑沒有量測在跑的時候。
+3. **切版本**：這是整個 combo 的事。`RELEASES.d` 裡已有另外五個片段，SCQO main 有二十多個還沒推送的提交，
+   三個作業系統的 CI 要推送之後才會跑。版本是 minor。

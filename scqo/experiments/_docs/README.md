@@ -6,7 +6,7 @@ pulse sequence, what it writes, and what a good result looks like.
 Parameters are not repeated here; read them with `scqo run <name> --help`.
 Which experiment provides what another needs: [DEPENDENCIES.md](DEPENDENCIES.md).
 
-**51 of 51 registered experiments are documented.**
+**52 of 52 registered experiments are documented.**
 
 ## Shared
 
@@ -40,6 +40,7 @@ Device-level calibration and characterization, for every chip and operator.
 | [qubit_power_rabi](qubit_power_rabi/README.md) | Sweep drive amplitude (as a factor of the current pi pulse) and fit the Rabi oscillation to recalibrate the drive channel's pi_amp. | offline |
 | [qubit_ramsey](qubit_ramsey/README.md) | Two pi/2 pulses separated by a swept idle time with an artificial drive detuning | offline |
 | [qubit_ramsey_cryoscope](qubit_ramsey_cryoscope/README.md) | Reconstruct the flux line's step response with a Ramsey phase-tomography sequence — a flux pulse of swept DURATION (1 ns resolution) between two x90 pulses, the second's FRAME swept through a turn — and fit it to a sum of exponentials. | offline |
+| [qubit_ramsey_flux_crosstalk_pulse](qubit_ramsey_flux_crosstalk_pulse/README.md) | Signed flux crosstalk onto ONE qubit from another flux line (source_line: another qubit's z line or a coupler's). | offline |
 | [qubit_ramsey_flux_pulse](qubit_ramsey_flux_pulse/README.md) | Ramsey fringe vs a z PULSE played during the idle (relative to idle_flux, 0 = stay parked): the pi/2 pulses and the readout stay at the idle point, so the fringe frequency gives f01 at each flux to a few kHz. | offline |
 | [qubit_ramsey_phasor](qubit_ramsey_phasor/README.md) | Two pi/2 pulses separated by a LOG-spaced idle time, with the closing pulse's phase swept through a full turn at every idle point. | offline |
 | [qubit_relaxation](qubit_relaxation/README.md) | Excite with a pi pulse, wait a swept delay and measure | offline |

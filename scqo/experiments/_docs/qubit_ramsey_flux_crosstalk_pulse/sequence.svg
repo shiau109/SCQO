@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="728.1" height="438" viewBox="0 0 728.1 438" role="img">
+<rect x="0.5" y="0.5" width="727.1" height="437" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+<text x="84.5" y="60" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.xy</text>
+<path d="M94.5,66 H714.1" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="84.5" y="144" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.z</text>
+<path d="M94.5,150 H714.1" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="84.5" y="228" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">source.z</text>
+<path d="M94.5,234 H714.1" fill="none" stroke="#8c959f" stroke-width="1"/>
+<text x="84.5" y="312" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="end">q.ro</text>
+<path d="M94.5,318 H714.1" fill="none" stroke="#8c959f" stroke-width="1"/>
+<path d="M106.5,56 H211.3" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M101.5,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M216.3,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="158.9" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">thermal reset</text>
+<path d="M235.3,66 C250.2,66 248.5,40 257.3,40 C266.1,40 264.3,66 279.3,66 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="257.3" y="34" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">y90</text>
+<path d="M303.3,56 H351.6" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M298.3,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M356.6,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="327.4" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">buffer</text>
+<path d="M375.6,56 H481.3" fill="none" stroke="#bc4c00" stroke-width="1.2"/>
+<path d="M370.6,56 l5,-3.5 v7 Z" fill="#bc4c00"/>
+<path d="M486.3,56 l-5,-3.5 v7 Z" fill="#bc4c00"/>
+<text x="428.5" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">idle</text>
+<text x="428.5" y="81" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">idle_time_ns</text>
+<rect x="370.6" y="124" width="115.7" height="26" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="428.5" y="141.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">flux pulse<tspan font-size="9.4" dy="-4.9">1</tspan></text>
+<text x="428.5" y="165" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">flux_bias_v</text>
+<text x="428.5" y="178" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">idle_time_ns</text>
+<rect x="370.6" y="208" width="115.7" height="26" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.4"/>
+<text x="428.5" y="225.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#bc4c00" text-anchor="middle">source pulse<tspan font-size="9.4" dy="-4.9">2</tspan></text>
+<text x="428.5" y="249" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">source_flux_v</text>
+<text x="428.5" y="262" font-family="Consolas, Menlo, monospace" font-size="11" fill="#bc4c00" text-anchor="middle">idle_time_ns</text>
+<path d="M505.3,56 H553.7" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+<path d="M500.3,56 l5,-3.5 v7 Z" fill="#1f2328"/>
+<path d="M558.7,56 l-5,-3.5 v7 Z" fill="#1f2328"/>
+<text x="529.5" y="49" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">buffer</text>
+<path d="M577.7,66 C592.7,66 590.9,40 599.7,40 C608.5,40 606.7,66 621.7,66 Z" fill="#e3e8ef" stroke="#1f2328" stroke-width="1.4"/>
+<text x="599.7" y="34" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">x90<tspan font-size="9.4" dy="-4.9">3</tspan></text>
+<rect x="640.7" y="292" width="66.4" height="26" fill="#ffffff" stroke="#1f2328" stroke-width="1.4" stroke-dasharray="5 3"/>
+<text x="673.9" y="309.6" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1f2328" text-anchor="middle">readout</text>
+<text x="94.5" y="367" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">1  an excursion from idle_flux, as long as the idle</text>
+<text x="94.5" y="384" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">2  on the source line, an excursion from its idle_flux, as long as the idle</text>
+<text x="94.5" y="401" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#1f2328" text-anchor="start">3  its phase is ramped with the idle: a virtual detuning of signed size frequency_detuning_hz</text>
+<rect x="94.5" y="409" width="14" height="9" fill="#ffe8d6" stroke="#bc4c00" stroke-width="1.2"/>
+<text x="114.5" y="418" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#bc4c00" text-anchor="start">swept; the name under it is the sweep axis</text>
+</svg>
