@@ -37,23 +37,29 @@ from scqo.experiments._capabilities import (
     END_FLUX_DESC,
     END_FLUX_PULSE_DESC,
     END_READOUT_DETUNING_DESC,
+    END_SOURCE_FLUX_DESC,
     FLUX_AXIS,
     NUM_AMP_POINTS_DESC,
     NUM_AMP_POINTS_OPTIONAL_DESC,
     NUM_FLUX_DESC,
     NUM_FREQ_POINTS_DESC,
+    NUM_SOURCE_FLUX_DESC,
     RESET_METHOD_DESC,
+    SOURCE_FLUX_AXIS,
+    SOURCE_LINE_DESC,
     START_AMP_FACTOR_DESC,
     START_DRIVE_DETUNING_DESC,
     START_FLUX_DESC,
     START_FLUX_PULSE_DESC,
     START_READOUT_DETUNING_DESC,
+    START_SOURCE_FLUX_DESC,
     THERMALIZATION_TIME_DESC,
     AmplitudeSweepParameters,
     DriveDetuningSweepParameters,
     ReadoutDetuningSweepParameters,
     FluxComponentParameters,
     FluxPulseSweepParameters,
+    FluxSourcePulseSweepParameters,
     FluxSweepParameters,
     QubitResetParameters,
     StateReadoutParameters,
@@ -63,6 +69,8 @@ from scqo.experiments._capabilities import (
     foreign_flux_source,
     readout_detuning_sweep,
     reset_wait_ns,
+    source_flux_sweep,
+    source_line_problems,
 )
 from scqo.parameters import Parameters
 from scqo.experiments._window import window_bounds
@@ -131,6 +139,10 @@ EXPECTED_CAPABILITIES = {
     "qubit_relaxation_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
     "qubit_echo_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
     "qubit_ramsey_flux_pulse": ["state_readout", "flux", "qubit_reset", "flux_pulse"],
+    # the crosstalk map: the target's own flux-pulse window PLUS a second flux line
+    # (the source) pulsed alongside it, so flux_source on top of the parent's four
+    "qubit_ramsey_flux_crosstalk_pulse": ["state_readout", "flux", "qubit_reset",
+                                          "flux_pulse", "flux_source"],
     # parametric drive (both siblings): state_readout + qubit_reset, but NO flux
     # capability — the swept axes are the modulation TONE's own amplitude
     # (absolute volts of a new RF drive, not a z-bias window), its frequency
@@ -258,7 +270,7 @@ def test_capability_summaries_track_the_derived_set():
     assert list(CAPABILITY_SUMMARIES) == [
         "state_readout", "flux", "qubit_reset", "flux_pulse", "amplitude",
         "drive_detuning", "readout_detuning", "coupler_flux", "drive_line",
-        "mapped_readout"]
+        "mapped_readout", "flux_source"]
     assert set(CAPABILITY_SUMMARIES) == {
         cap for caps in EXPECTED_CAPABILITIES.values() for cap in caps}
     # one short plain line each: no reST markup, no scraped "Mixin:" prefix
@@ -339,6 +351,13 @@ def test_canonical_field_text_never_drifts():
                 NUM_COUPLER_FLUX_DESC), name
         if "drive_line" in entry["capabilities"]:
             assert props["drive_line"]["description"] == DRIVE_LINE_DESC, name
+        if "flux_source" in entry["capabilities"]:
+            assert props["source_line"]["description"] == SOURCE_LINE_DESC, name
+            assert (props["start_source_flux_v"]["description"]
+                    == START_SOURCE_FLUX_DESC), name
+            assert props["end_source_flux_v"]["description"] == END_SOURCE_FLUX_DESC, name
+            assert props["num_source_flux_points"]["description"].startswith(
+                NUM_SOURCE_FLUX_DESC), name
         if "mapped_readout" in entry["capabilities"]:
             assert props["readout_member"]["description"] == READOUT_MEMBER_DESC, name
             assert props["selective_pi_len_ns"]["description"] == SELECTIVE_PI_LEN_DESC, name
@@ -410,6 +429,50 @@ def test_coupler_flux_carriers_carry_the_pulse_suffix():
         assert name.endswith("_pulse"), name
         assert COUPLER_FLUX_AXIS in get(name).Contract.sweeps, name
     assert "idle_flux" in START_COUPLER_FLUX_DESC and "idle_flux" in END_COUPLER_FLUX_DESC
+
+
+def test_flux_source_carriers_carry_the_pulse_suffix():
+    """The source window has ONE frame - a pulse relative to the source line's
+    idle_flux - so every carrier announces it in its name, sweeps SOURCE_FLUX_AXIS
+    next to its own flux window, and the window text names its origin."""
+    entries = _core_catalog()
+    carriers = [n for n, e in entries.items() if "flux_source" in e["capabilities"]]
+    assert carriers == ["qubit_ramsey_flux_crosstalk_pulse"]
+    for name in carriers:
+        assert name.endswith("_pulse"), name
+        assert SOURCE_FLUX_AXIS in get(name).Contract.sweeps, name
+        assert issubclass(get(name).Parameters, FluxSourcePulseSweepParameters), name
+    assert "idle_flux" in START_SOURCE_FLUX_DESC and "idle_flux" in END_SOURCE_FLUX_DESC
+
+
+def test_source_flux_edges_are_a_traversal_order():
+    """start_source_flux_v -> end_source_flux_v as given; only zero width is
+    refused, and the line is named bare (the target comes from targets)."""
+    up = FluxSourcePulseSweepParameters(start_source_flux_v=-0.1, end_source_flux_v=0.03,
+                                        num_source_flux_points=14)
+    down = FluxSourcePulseSweepParameters(start_source_flux_v=0.03, end_source_flux_v=-0.1,
+                                          num_source_flux_points=14)
+    _assert_traversal_order(source_flux_sweep(up)[SOURCE_FLUX_AXIS],
+                            source_flux_sweep(down)[SOURCE_FLUX_AXIS], 0.03, -0.1)
+    with pytest.raises(ValidationError, match="zero-width"):
+        FluxSourcePulseSweepParameters(start_source_flux_v=0.02, end_source_flux_v=0.02)
+    with pytest.raises(ValidationError, match="LINE only"):
+        FluxSourcePulseSweepParameters(source_line="z_q1.q1")
+
+
+def test_source_line_gate_names_every_refusal():
+    """The roster gate a flux-source carrier runs before any instrument time."""
+    roster, _design, _vendor = demo_device(tunable=True)
+    assert source_line_problems(roster, "z_q1", ["q0"]) == []
+    assert source_line_problems(roster, "zc_q0_q1", ["q0"]) == []
+    for line, targets, needle in [
+            (None, ["q0"], "source_line is required"),
+            ("z_q0", ["q0"], "OWN flux line"),
+            ("xy_q1", ["q0"], "carries no flux channel"),
+            ("nope", ["q0"], "not a line of this roster"),
+            ("zc_q0_q1", ["q0", "q1"], "one target per run")]:
+        problems = source_line_problems(roster, line, targets)
+        assert problems and needle in "; ".join(problems), (line, problems)
 
 
 def test_reset_wait_precedence():
@@ -530,6 +593,9 @@ def test_foreign_flux_source_guard():
     ("qubit_relaxation_flux_pulse", {"num_flux_points": 5, "num_wait_points": 11}),
     ("qubit_echo_flux_pulse", {"num_flux_points": 5, "num_wait_points": 11}),
     ("qubit_ramsey_flux_pulse", {"num_flux_points": 5, "num_idle_points": 11}),
+    ("qubit_ramsey_flux_crosstalk_pulse",
+     {"source_line": "z_q1", "num_flux_points": 5, "num_source_flux_points": 3,
+      "num_idle_points": 11}),
 ])
 def test_population_contract_accepted_for_newly_wired(name, params):
     """The newly wired carriers emit `population` (no I/Q) in discriminated mode

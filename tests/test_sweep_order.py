@@ -1,10 +1,10 @@
 """A sweep window's start/end is a TRAVERSAL ORDER, and the order is not a result.
 
 Decided 2026-09-26: on the flux, drive-detuning, readout-detuning,
-amplitude and coupler-flux windows the probe walks ``start`` -> ``end`` in either
+amplitude, coupler-flux and source-flux windows the probe walks ``start`` -> ``end`` in either
 direction, the dataset keeps the order it walked, and no estimator may be able to
 tell which way the sweep went. Three properties, checked on EVERY carrier of those
-five windows (the carrier list is derived from the Parameters mixins, so a new carrier
+six windows (the carrier list is derived from the Parameters mixins, so a new carrier
 is covered the day it lands):
 
 1. ``define_sweep`` emits the reversed window as the reversed axis — never
@@ -33,9 +33,11 @@ from scqo.experiments._capabilities import (
     COUPLER_FLUX_AXIS,
     DETUNING_AXIS,
     FLUX_AXIS,
+    SOURCE_FLUX_AXIS,
     AmplitudeSweepParameters,
     CouplerFluxPulseSweepParameters,
     DriveDetuningSweepParameters,
+    FluxSourcePulseSweepParameters,
     FluxSweepParameters,
     ReadoutDetuningSweepParameters,
 )
@@ -51,11 +53,15 @@ WINDOWS = {
     AmplitudeSweepParameters: ("start_amp_factor", "end_amp_factor", AMP_AXIS),
     CouplerFluxPulseSweepParameters: (
         "start_coupler_flux_v", "end_coupler_flux_v", COUPLER_FLUX_AXIS),
+    FluxSourcePulseSweepParameters: (
+        "start_source_flux_v", "end_source_flux_v", SOURCE_FLUX_AXIS),
 }
 
 #: per-carrier params the window needs to be a window at all: benchmarking
 #: defaults to ONE point (the current amplitude), which has no direction.
-EXTRA = {"qubit_deterministic_benchmarking": {"num_amp_points": 5}}
+EXTRA = {"qubit_deterministic_benchmarking": {"num_amp_points": 5},
+         # no default source line: which other flux line to pulse is the question
+         "qubit_ramsey_flux_crosstalk_pulse": {"source_line": "z_q1"}}
 
 #: a fit whose answer already wobbles between two calls on the SAME data -
 #: readout_power's Gaussian-mixture discrimination (~1e-5); the order check must

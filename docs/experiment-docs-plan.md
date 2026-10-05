@@ -670,7 +670,7 @@ class Experiment(ABC):
 1. **QM 的 `qubit_echo_flux_pulse` 把單臂時間存成 `wait_time_ns`**，所以擬合出來的 T2 echo 是真實值的一半。
    每一臂實際打的長度是對的，錯的是座標的標示（`4 * cycles` 應為 `8 * cycles`；`qubit_echo` 是對的）。
    這是讀程式得到的結論，沒有在儀器上重現。**我沒有修**：它不在這個功能的範圍內，而且會改變硬體上的資料。
-   已記在 `BACKLOG.md` I38，並寫進該類別的後端註記。
+   已記在 `BACKLOG.md` I39，並寫進該類別的後端註記。
 2. `qubit_relaxation_flux_pulse.prepare_state` 只有模擬在讀，唯一的 probe（QM）沒有實作。記在 I19。
 3. `qubit_spectroscopy_flux_pulse` 沒有驅動長度的參數，兩個驅動實際打的驅動不同。記在 I19（QM 那一半原本就在 I20）。
 
@@ -765,7 +765,7 @@ class Experiment(ABC):
 - `pair_swap_flux_map` 的預期結果圖用的是布居圖，不是耦合強度曲線：模擬資料大部分落在超過完整交換的區域，
   曲線圖上幾乎每一欄都被標記。要不要換成硬體的圖（§19.4）。
 - `pair_zz_coupler` 的預期結果圖是估計器自己的圖，軸標寫「ZZ (MHz)」，實際畫的是含 detuning 的條紋頻率（Hz）。
-  文件照實說明了怎麼讀；圖本身要在 scqat 改（I40，§19.3）。
+  文件照實說明了怎麼讀；圖本身要在 scqat 改（I41，§19.3）。
 - pair 實驗的前置條件表只列欄位名稱，分不出是哪個成員或哪條線的值；每份文件在表格下方用一段話說明。
   這個寫法請過目（§19.2）。
 - 第 7 批四個實驗同樣只有 QM 有 probe；`qc_n_swap_tomography` 的登錄說明結尾還寫著「QM only.」，
@@ -789,19 +789,19 @@ class Experiment(ABC):
 
 **發現但沒有修的問題（都在 `BACKLOG.md`）**
 
-- I38：QM 的 `qubit_echo_flux_pulse` 把單臂時間存成總等待時間，T2 echo 讀成一半。
+- I39：QM 的 `qubit_echo_flux_pulse` 把單臂時間存成總等待時間，T2 echo 讀成一半。
 - I19：兩個後端不一致的地方，第 2、3 批各補了幾條（`prepare_state`、`qubit_spectroscopy_flux_pulse` 的驅動、
   `pulse_repetitions`、DRAG 係數的三種掃法、tomography 的 `amp` 與 `detuning`、SQRB 的單位 Clifford）。
 - I17：沒有失敗判斷的估計，第 3 批補了三個。
 - I20、I25、I30、I13、I31：原本就在，文件的 Traps 有引用。
-- I39：`qubit_xyz_delay` 的模擬把峰畫在已存的延遲上，接受一次就把延遲加倍（只影響模擬）。
+- I40：`qubit_xyz_delay` 的模擬把峰畫在已存的延遲上，接受一次就把延遲加倍（只影響模擬）。
 - I19 第 4 批補了兩條：`qubit_ramsey_cryoscope` 兩個後端在磁通脈衝前後留的時間不同；
   `qubit_spectroscopy_cryoscope` 兩邊對頻譜脈衝振幅的防護不是同一個問題。
 - I19 第 5 批補了一條：`qubit_parity_switch_discrete` 補滿週期的等待，兩個後端的時間格點不同。
-- I40：`pair_zz_coupler` 的 ZZ 低於 −2 倍 detuning 時會回報一個假的去耦點，而且判定成功、提議寫回（已重現，§19.3）。
-- I41：pair 系列三處呈現不一致（`result.fit` 裡放了字串、`pair_swap_flux_map` 的軸說明與圖相反、
+- I41：`pair_zz_coupler` 的 ZZ 低於 −2 倍 detuning 時會回報一個假的去耦點，而且判定成功、提議寫回（已重現，§19.3）。
+- I42：pair 系列三處呈現不一致（`result.fit` 裡放了字串、`pair_swap_flux_map` 的軸說明與圖相反、
   `pair_zz_coupler` 的 `idle_time_ns` 是單臂時間但說明沒講清楚）。
-- I41 第 7 批補了兩條：`qc_n_swap_amp` 的登錄說明與 `pair_swap_chevron` 的說法相反；
+- I42 第 7 批補了兩條：`qc_n_swap_amp` 的登錄說明與 `pair_swap_chevron` 的說法相反；
   三個要用部分交換的實驗預設卻是完整交換。
 - I34、F16、F18、I36：原本就在，第 8 批文件的 Traps 有引用（多個量子位元的初態下摘要沒有意義；
   回合的實際長度沒有記錄；Stark 視窗不超過一圈沒有程式把關；強的 Stark 訊號會多損失布居）。
@@ -852,7 +852,7 @@ class Experiment(ABC):
 1. **`qubit_xyz_delay` 的模擬把三角形的峰畫在「已存的延遲」上**，而估計回報的是「已存的值加上擬合到的位移」，
    所以在模擬後端接受一次，延遲就變成兩倍，再跑一次再加倍。我實際重現過：先把延遲設成 5 ns，
    連續兩次接受後變成 10.0 ns 與 20.1 ns。硬體不受影響（硬體上峰的位置是「還差多少」）；
-   示範裝置的延遲是 0，所以現有測試看不到。記在 `BACKLOG.md` I39，文件的 Traps 也有寫。
+   示範裝置的延遲是 0，所以現有測試看不到。記在 `BACKLOG.md` I40，文件的 Traps 也有寫。
 2. **`qubit_ramsey_cryoscope` 兩個後端在磁通脈衝前後留的時間不同**（I19）：QM 在第一個 `x90` 之後 16 ns 才開始，
    最長的脈衝結束時第二個 `x90` 剛好開始；Qblox 緊接著第一個 `x90` 開始，最後留 8 ns。
    脈衝下降沿到第二個 `x90` 之間能安定的時間因此每一點都差 8 ns。
@@ -966,7 +966,7 @@ class Experiment(ABC):
 
 ### 19.3 發現但沒有修的問題
 
-1. **`pair_zz_coupler` 會回報假的去耦點（I40，已重現）。** 估計器擬合的條紋頻率沒有正負號，實驗用「條紋頻率減 detuning」當作 ZZ。
+1. **`pair_zz_coupler` 會回報假的去耦點（I41，已重現）。** 估計器擬合的條紋頻率沒有正負號，實驗用「條紋頻率減 detuning」當作 ZZ。
    真實的 ZZ 低於 −detuning 時條紋會折回；低到 −2 倍 detuning 時，算出來的 ZZ 又過一次零。
    程式取偏壓軸上的第一個過零點，所以掃描範圍的低偏壓端只要夠負，就會把假的過零點當成去耦點，判定成功並提議寫回。
    用實驗自己的訊號模型驗證：零點放在 +0.100 V，斜率 2.5 MHz/V 時回報 +0.099 V（正確）；
@@ -974,7 +974,7 @@ class Experiment(ABC):
 2. **同一個實驗的圖會誤導。** 估計器的兩張圖畫的都是條紋頻率（單位 Hz、含 detuning），標籤卻寫 ZZ。
    曲線的最低點看起來像去耦點，其實是 ZZ 等於 −detuning 的地方；真正的去耦點是曲線穿過 detuning 的位置。
    文件的「預期結果」照實說明了怎麼讀。
-3. **I41：三處呈現不一致**，都只是文字或型別，不影響數值：
+3. **I42：三處呈現不一致**，都只是文字或型別，不影響數值：
    `pair_coupler_crossing_pulse` 在 `result.fit` 放了字串（每次執行都印一條 pydantic 警告，兩個 punchout 也一樣）；
    `pair_swap_flux_map` 的說明把耦合器寫成橫軸，圖畫成縱軸；
    `pair_zz_coupler` 的 `idle_time_ns` 是單臂的長度，欄位說明與程式註解沒有講清楚。

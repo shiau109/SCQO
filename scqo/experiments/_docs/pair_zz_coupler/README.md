@@ -154,7 +154,7 @@ and time.
   negative. Where the true ZZ is below minus `detuning_hz`, the reported ZZ
   turns back up, and where it reaches minus twice `detuning_hz` it crosses zero
   again. A window that reaches that far on its low-bias side reports the false
-  crossing, as a `SUCCESSFUL` run (`BACKLOG.md` I40). Raise `detuning_hz` above
+  crossing, as a `SUCCESSFUL` run (`BACKLOG.md` I41). Raise `detuning_hz` above
   the largest ZZ in the window, or narrow the window.
 - **The fringe has to fit in the window.** Near the decouple point the fringe
   frequency is `detuning_hz`, so `max_idle_time_ns` should hold a few periods

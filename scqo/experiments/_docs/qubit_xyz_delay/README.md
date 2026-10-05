@@ -166,7 +166,7 @@ device starts with no delay.
   Everything played on that output then moves with it.
 - **The offline simulation does not converge.** On the simulated backend the
   peak is drawn at the delay the line already has, so an accepted run doubles a
-  non-zero delay instead of cancelling it (`BACKLOG.md` I39). It affects the
+  non-zero delay instead of cancelling it (`BACKLOG.md` I40). It affects the
   practice mode only.
 
 ## References
