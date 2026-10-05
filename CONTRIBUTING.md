@@ -31,7 +31,8 @@ running your own hardware with an unmodified stack.
 
 Fork only when you must change code that ships:
 
-- **QM**: lab-specific QUAM classes in `scqo-qm/quam_builder/` and `scqo_qm/components/`.
+- **QM**: lab-specific QUAM classes in `scqo-qm/scqo_qm/quam_builder/` and
+  `scqo-qm/scqo_qm/components/`.
 - **Qblox**: the vendored element types in `scqo-qblox/scqo_qblox/elements.py`.
 
 If you do fork for that reason, know one trap up front: those classes are persisted

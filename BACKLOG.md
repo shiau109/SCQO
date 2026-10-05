@@ -1080,6 +1080,10 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   (`.venv-qm`) is built from `requirements-qm.lock.txt`, not from `uv.lock`. The cost is
   that a reader cannot tell a stale entry from a real pin, and a release diff picks one up
   at random depending on which suite happened to run through `uv`.
+- `scq-reports/uv.lock` is a fourth one, outside the combo and so outside every release
+  checklist: after each release `uv lock --check` fails there and the next `uv run` rewrites
+  the tracked file. Refreshed by hand after v4.2.0 (2026-10-05, `uv lock` + commit; only the
+  two version strings moved); it goes stale again at the next release.
 - Done when: either the release checklist regenerates all three (and RELEASING.md step 2
   says so), or the repos that cannot regenerate theirs stop tracking it — `scqo-qm` is the
   clear case, since `uv run` is forbidden there and its lock has been wrong since v3.0.0.
