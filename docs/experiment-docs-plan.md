@@ -1143,6 +1143,9 @@ Stark 訊號用切換中頻的方式偏離共振；一個回合比各段相加�
 1. **main 上有別的工作階段未提交的修改**：SCQO 的 `BACKLOG.md`、`docs/coupler-readout-plan.md`、`procedures/README.md`。
    這個分支的合併會動到 `BACKLOG.md`，它沒提交之前 main 收不進來。那不是這個功能的檔案，要由它的主人處理。
    它新增的條目用的是 I37，不會跟這裡的編號衝突。
+   **已解決（2026-10-05）**：你要我代為提交。內容原樣，分成五個提交進了 main（`dcdc734` sideband-swap 的程序與 BACKLOG I37、
+   `e742183` coupler-readout 計畫 §8、`6ce7ad8` / `08d558c` / `dc67b56` 三份原本未追蹤的計畫），再把 main 併回這個分支。
+   併入後只多了文件，程式碼與跑過整套測試的版本相同。main 上只剩 `run/index.sqlite` 未追蹤，沒有提交（它是資料庫檔）。
 2. **落地**：SCQO 先、驅動後，都是快轉合併；之後寫 `RELEASES.d/experiment-docs.toml`（新增性質，離線驗證）。
    main 是硬體工作階段即時匯入的程式碼，要挑沒有量測在跑的時候。
 3. **切版本**：這是整個 combo 的事。`RELEASES.d` 裡已有另外五個片段，SCQO main 有二十多個還沒推送的提交，
