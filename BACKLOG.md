@@ -255,17 +255,31 @@ provenance or a trap a user can walk into, **low** = hygiene.
   probe. The round body now lives once, in `scqo-qm` `_chain_round.play_chain_round`.
   Offline only: the default programs are the earlier ones statement for statement, and a
   `with_reset` program differs from them by the one `align()` before the tones.
+- Done on 5Q4C 2026-10-08 (tag `stark-with-reset-1008`; every line sat ~2 mV off its park
+  that day, which this test does not depend on): **the tones do not disturb the relay's
+  reset.** q2 prepared in |1>, both swap steps `idle`, 8 rounds, 4000 averages; q2 after
+  1-8 resets, mean:
+
+  | tone on q3 | `after_reset` | `with_reset` |
+  |---|---|---|
+  | none (the same program) | 0.0176 (`122345-811`) | 0.0159 (`122218-446`) |
+  | 0.40 | 0.0184 (`122259-598`) | 0.0169 (`122238-867`) |
+  | 0.90 | 0.0185 (`122455-283`) | 0.0179 (`122322-654`) |
+
+  The two no-tone runs are one program and differ by 0.0017, so that is the scatter. q3
+  itself read 0.062-0.065 in the first two rows; at 0.90 the tone drives it in both
+  timings (I36), more with the reset (mean 0.093, highest 0.116 at round 4-5) than after
+  it (0.075, 0.084).
 - Still owed, all on 5Q4C:
   1. the `with_reset` round length on the gateway simulator (F16's method), and how far the
      reset pulse starts behind the tones (the reset macro sets its z frequency first). By
      the pulse budget at gap 20 the round is ~300 ns (40 + 20 + 40 + 20 + 140 + 20 + ~20
-     of overhead), not the ~280 this entry first said;
-  2. the relay's population after its reset with the tones on and off: noted 2026-10-06,
-     q3's tone (+50 MHz) sits ~35 MHz from a q2 sideband during the reset;
-  3. the compensation rescanned at `with_reset`, and the sink curve against the 360 ns round;
-  4. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
+     of overhead), not the ~280 this entry first said. Tried 2026-10-08 and blocked by I43;
+  2. the compensation rescanned at `with_reset`, and the sink curve against the 360 ns
+     round. Not run 2026-10-08: the lines had to be re-parked first;
+  3. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
      (the file carried another session's uncommitted edits on 2026-10-08).
-- Done when: those four are done.
+- Done when: those three are done.
 
 ### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
 - Added 2026-09-22 with the operator's rule that a stark compensation tone stays below one
@@ -1387,6 +1401,21 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   the period reading stops meaning anything). `pair_swap_angle` defaults to
   `partial_swap`.
 - Done when: each is made consistent, on whichever side is judged right.
+
+### I43 The QM gateway simulator returned no samples for the chain program (medium)
+- 2026-10-08, measuring the `stark_timing="with_reset"` round of F17 on the gateway
+  simulator (5Q4C, F16's method through `Session.preview`). `qmm.simulate` returned in
+  about 10 s each time, and `job.get_simulated_samples()` then raised `QMSimulationError:
+  Error while pulling samples`, on six calls between 12:09 and 12:28:
+  `qc_unidirectional_trotter`, both stark timings, windows of 16, 20 and 26 us, 1 and 400
+  averages, `thermalization_time_ns` 400 and 2000. The cluster listing answered throughout
+  and the ten hardware runs right after were normal.
+- The same simulator returned samples on 2026-10-04 (I38), and for the chain on 2026-09-22
+  (F16), so neither the two-upconverter config nor the chain program alone explains it.
+- Not investigated, by the stop-at-the-first-problem rule: the gateway that day, or
+  something those six requests share (the per-run thermal override was in all of them).
+- Consequence: the `with_reset` round length is still unmeasured (F17).
+- Done when: a chain preview simulates again, or the failing condition is named.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_crosstalk_pulse` (built 2026-10-04; F32). FIRST RUNS on 5Q4C the same
