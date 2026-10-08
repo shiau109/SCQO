@@ -103,8 +103,12 @@ their fixed factors. Every factor multiplies the stored amplitude of
 `stark_operation`.
 
 The chain parameters are the same class as the chain experiment's, so an idle
-step, a gap and `swap_coupler_flux` mean the same here. A scan with one step
-idle is the background: what the tone does with no transport.
+step, a gap, `swap_coupler_flux` and `stark_timing` mean the same here. A scan
+with one step idle is the background: what the tone does with no transport.
+
+With `stark_timing=with_reset` the swept tone and the fixed ones start together
+with the reset of the relay, instead of after it. The chain experiment's
+document shows that round. Scan with the setting the chain run will use.
 
 ## Theory
 
@@ -196,8 +200,9 @@ The figure is from a simulated chain, with the tone swept on the sink.
   brightest pixel at the edge (the same procedure, trap 8;
   `BACKLOG.md` F18, I36). The procedure stops a coarse scan at 0.9.
 - **The compensation belongs to one round.** It moves with the gap, with the
-  length of any operation in the round, and with either swap operation. A value
-  measured for another pair of operations does not carry over (traps 1 and 2).
+  length of any operation in the round, with either swap operation, and with
+  `stark_timing`. A value measured for another pair of operations, or with the
+  other timing, does not carry over (traps 1 and 2).
 - **It drifts.** On a real chip it moved from 0.23 to 0.33 within hours with an
   unchanged configuration, while repeats ten minutes apart agreed within 0.002
   (trap 3). Scan right before the chain run.

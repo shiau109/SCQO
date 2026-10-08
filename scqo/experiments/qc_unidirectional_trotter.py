@@ -44,6 +44,19 @@ swap would have taken (``idle_reference_operation``) — the control arm, with t
 round's timing left identical so the comparison is about the swap and not about
 when everything else happened.
 
+WHEN THE STARK TONES PLAY is ``stark_timing``. ``"after_reset"`` (the default)
+plays them once the relay's reset and its gap are over, so the round is strictly
+sequential. ``"with_reset"`` starts them together with the reset, and the round
+goes on when both the reset with its gap and the tones have ended — a shorter
+round, which is the lever against the decay each round costs. The CIRCUIT is the
+same one either way: a Z phase on one qubit commutes with the reset of another,
+which is why this is a setting of one experiment and not a second experiment.
+What does change is everything that belongs to the round's TIMING — the
+compensation above all, so rescan it — and one refusal: with ``"with_reset"`` a
+tone on ``reset_qubit`` would shift that qubit while its reset is playing (after
+the reset it only meets an emptied qubit), so ``compensation_amps`` may not name
+it.
+
 WHAT THE SINK DOES **NOT** DO is reach unity, and that is the sequence, not a
 miscalibration. The second swap is an exchange like the first, so the sink also
 emits back into the relay — which the very next reset dumps. The chain is
@@ -101,7 +114,7 @@ said what these curves actually look like; ``sink_p_max`` is carried in
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import numpy as np
 import xarray as xr
@@ -132,6 +145,12 @@ CHAIN_LABEL = "chain"
 #: the operation NAME is the only signal either half has that a step contributes
 #: no exchange.
 IDLE = "idle"
+
+#: the ``stark_timing`` value that starts a round's stark tones together with
+#: the relay's reset instead of after it. Named here because three readers must
+#: agree on it: the roster gate (``chain_roles``), the sequence diagram and the
+#: driver probe.
+STARK_WITH_RESET = "with_reset"
 
 #: the exact keys a pair spec carries — the roster name of the pair, and the
 #: operation played on it. Two, both required.
@@ -179,7 +198,8 @@ CHAIN_REQUIRES: tuple[Requirement, ...] = (
 def chain_sequence_diagram(params, *, stark_axis: str | None = None) -> SequenceDiagram:
     """The chain's shot, for both chain experiments: reset, prep, N rounds of
     [first step, second step, relay reset, stark tones], joint readout. The
-    compensation scan passes the axis its swept tone varies with."""
+    compensation scan passes the axis its swept tone varies with. With
+    ``stark_timing="with_reset"`` the tones share the reset's step."""
     (_first, first_op), (_second, second_op) = pair_specs(params)
     diagram = SequenceDiagram({
         "drive": "chain.xy", "first": "first_pair.z", "second": "second_pair.z",
@@ -203,22 +223,32 @@ def chain_sequence_diagram(params, *, stark_axis: str | None = None) -> Sequence
                     note="the pair's named operation, at its stored amplitudes"))
             if gap:
                 diagram.step(Block(lane, "gap", "wait"))
-        diagram.step(Block(
+        reset = Block(
             "reset", "reset", "tone",
             note="reset_operation on reset_qubit: a parametric reset that empties "
-                 "the relay"))
-        if gap:
-            diagram.step(Block("reset", "gap", "wait"))
+                 "the relay")
+        stark = None
         if stark_axis is not None:
-            diagram.step(Block(
+            stark = Block(
                 "drive", "stark", "tone", swept=stark_axis,
                 note="on compensation_target at the swept factor, with the fixed "
-                     "compensation_amps tones"))
+                     "compensation_amps tones")
         elif params.compensation_amps:
-            diagram.step(Block(
+            stark = Block(
                 "drive", "stark", "tone",
                 note="on each qubit in compensation_amps, all at once, "
-                     "stark_detuning_hz off its drive"))
+                     "stark_detuning_hz off its drive")
+        # with_reset: the tones start with the reset, so they share its column;
+        # the gap stays the reset's, since it is the flux pulse that has to settle
+        together = stark is not None and params.stark_timing == STARK_WITH_RESET
+        if together:
+            diagram.step(reset, stark)
+        else:
+            diagram.step(reset)
+        if gap:
+            diagram.step(Block("reset", "gap", "wait"))
+        if stark is not None and not together:
+            diagram.step(stark)
     kept = ("each shot's levels are kept" if params.readout_mode == "shot"
             else "the dataset holds each one's population")
     diagram.step(Block("readout", "readout", "acquire",
@@ -340,6 +370,16 @@ def chain_roles(roster, params) -> tuple[str, str, str, dict[str, str]]:
             problems.append(
                 f"compensation_amps names {qubit!r}, which has no drive "
                 f"channel — nothing to play {params.stark_operation!r} on")
+    # After the reset a tone on the reset qubit meets an emptied qubit and does
+    # nothing; DURING the reset it detunes the qubit the reset is acting on.
+    if (params.stark_timing == STARK_WITH_RESET
+            and params.reset_qubit in params.compensation_amps):
+        problems.append(
+            f"compensation_amps names the reset qubit {params.reset_qubit!r} "
+            f"while stark_timing={STARK_WITH_RESET!r} plays the tones during its "
+            f"reset — the tone would shift that qubit off the reset's resonance. "
+            f"Drop it from compensation_amps (a tone on the reset qubit never "
+            f"enters the transport), or use stark_timing='after_reset'")
     # The swap coupler flux names PAIRS, and only the two the chain declares:
     # a third name is a typo that would otherwise be silently ignored.
     operation_of = {first_name: first_op, second_name: second_op}
@@ -459,6 +499,20 @@ class QcUnidirectionalTrotterParameters(TargetSelection, AveragingParameters,
                     "qubit's drive frequency. Must be off-resonant for a genuine Stark "
                     "shift (a resonant tone drives Rabi rotations instead); tune per chip. "
                     "Not a sweep axis, and shared by every compensated qubit.")
+    stark_timing: Literal["after_reset", "with_reset"] = Field(
+        "after_reset",
+        description="When a round's compensation tones play. 'after_reset' (default): "
+                    "once the reset of reset_qubit and its gap are over, so the round is "
+                    "strictly sequential. 'with_reset': they start together with that "
+                    "reset, and the round goes on when both the reset with its gap and "
+                    "the tones have ended — a shorter round, by the tone's length when the "
+                    "tone is no longer than the reset plus its gap. The circuit is the "
+                    "same (a phase on one qubit commutes with the reset of another) and so "
+                    "is the analysis, but the compensation belongs to the round's timing: "
+                    "rescan it with qc_trotter_compensation at the SAME setting, and give "
+                    "round_duration_ns the new round. With 'with_reset' a tone on "
+                    "reset_qubit is refused by name — it would shift that qubit while its "
+                    "reset is playing. Without any tone the two settings are one round.")
     prep_operations: dict[str, str] | None = Field(
         None,
         description="The state preparation, played ONCE before the rounds begin, as "
@@ -574,6 +628,11 @@ class QcUnidirectionalTrotter(Experiment):
     #: drawn with a compensation tone on the sink, so that the round shows its
     #: stark step; the simulated figure does not depend on it
     doc_parameters: ClassVar[dict] = {**DOC_CHAIN, "compensation_amps": {"q2": 0.3}}
+    #: the round with the tone inside the reset's step. The tone is restated so
+    #: the variant stands on its own: a tone on the reset qubit is refused here.
+    doc_variants: ClassVar[dict[str, dict]] = {
+        "with_reset": {"stark_timing": STARK_WITH_RESET,
+                       "compensation_amps": {"q2": 0.3}}}
 
     @classmethod
     def sequence_diagram(cls, params: QcUnidirectionalTrotterParameters) -> SequenceDiagram:
@@ -587,7 +646,9 @@ class QcUnidirectionalTrotter(Experiment):
         "off-resonant AC-Stark phase compensation, reading every chain qubit out at the "
         "end. Dumping the relay each round destroys the sink's return path, so the "
         "coupling is one-way and the populations vs N show the excitation walking from "
-        "source to sink while the relay stays empty. readout_mode='shot' keeps every shot "
+        "source to sink while the relay stays empty. stark_timing='with_reset' plays the "
+        "compensation during the relay's reset instead of after it, for a shorter round "
+        "of the same circuit. readout_mode='shot' keeps every shot "
         "and additionally reconstructs the JOINT chain distribution. Record-only "
         "diagnostic: the per-qubit summary lands in result.fit and nothing is written "
         "back to the device."

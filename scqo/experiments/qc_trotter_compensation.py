@@ -17,7 +17,9 @@ common-mode phase factors out, so there is one number to calibrate, not one per
 qubit. Three consequences the Parameters enforce:
 
 * the tone on the RESET qubit is inert — it fires after the reset, onto a qubit
-  that has just been emptied — so ``compensation_target`` refuses it by name;
+  that has just been emptied — so ``compensation_target`` refuses it by name
+  (with ``stark_timing="with_reset"`` it would play DURING that reset and
+  disturb it instead, and is refused for that reason);
 * the sum peaks at ``dPhi = 0``, so the sweep has a single optimum, and sweeping
   the source or the sink covers opposite signs of ``dPhi`` (the Stark shift's
   sign is fixed by ``stark_detuning_hz``, which is shared);
@@ -35,7 +37,8 @@ more sharply than, the peak height — and it only exists if N is swept. The
 estimator reports both.
 
 The chain itself — the two round steps, the relay, the reset and Stark
-operations, the gap, the swap coupler flux — is inherited from
+operations, the gap, the swap coupler flux, and ``stark_timing`` (whether the
+tones play after the relay's reset or with it) — is inherited from
 ``QcUnidirectionalTrotterParameters`` unchanged, so the scan and the run it
 calibrates can never disagree about what the round is. That includes the
 ``"idle"`` operation: scanning the tone with one step idled is the background
@@ -78,6 +81,7 @@ from .qc_unidirectional_trotter import (
     CHAIN_REQUIRES,
     DOC_CHAIN,
     IDLE,
+    STARK_WITH_RESET,
     QcUnidirectionalTrotterParameters,
     chain_roles,
     chain_sequence_diagram,
@@ -256,6 +260,17 @@ class QcTrotterCompensation(Experiment):
                 f"SWEPT tone) and a key of compensation_amps (the tones held FIXED) — "
                 f"two sources of truth for one amplitude. Remove it from "
                 f"compensation_amps.")
+        # chain_roles has refused a FIXED tone on the reset qubit; the swept one
+        # is this experiment's own, and only an unusual chain (a reset qubit that
+        # is not the relay) can put it there.
+        if (self.params.stark_timing == STARK_WITH_RESET
+                and target == self.params.reset_qubit):
+            raise ValueError(
+                f"qc_trotter_compensation: compensation_target={target!r} is the "
+                f"reset qubit while stark_timing={STARK_WITH_RESET!r} plays the tones "
+                f"during its reset — the swept tone would shift that qubit off the "
+                f"reset's resonance. Sweep the other chain end, or use "
+                f"stark_timing='after_reset'.")
         return {
             # dict order IS the contract order: amplitude outer, round count inner.
             "compensation_amp": np.linspace(self.params.min_compensation_amp,

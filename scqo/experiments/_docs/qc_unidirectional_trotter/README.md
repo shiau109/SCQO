@@ -101,6 +101,8 @@ Three more values are used when they are there, for the theory curves:
 The run is refused before any instrument time when the two pairs do not share
 exactly one member, a pair or the reset qubit is not in the roster, the reset
 qubit has no flux line, or a prepared or compensated qubit has no drive line.
+With `stark_timing=with_reset` it is also refused when `compensation_amps`
+names the reset qubit.
 
 ## Pulse sequence
 
@@ -132,6 +134,22 @@ Three settings change the round:
   the stored one, in volts. This is the angle of that swap;
 - `prep_operations` prepares other qubits, or more than one. `{}` prepares
   nothing.
+
+A fourth setting, `stark_timing`, moves the stark tones. With the default
+`after_reset` they play after the reset and its gap, as in the figure above.
+With `stark_timing=with_reset` they start together with the reset:
+
+![Pulse sequence, the tones with the reset](sequence-with_reset.svg)
+
+The round then goes on when both the reset with its gap and the tones have
+ended. It is shorter by the length of the tone, as long as the tone is not
+longer than the reset and its gap together.
+
+The circuit is the same in both settings: a phase on one qubit and the reset of
+another can be applied in either order, so the analysis does not change. The
+compensation does change, because it belongs to the timing of the round. A tone
+on the reset qubit is refused with `with_reset`: it would shift that qubit
+while its reset is playing.
 
 ## Theory
 
@@ -213,9 +231,16 @@ angle is stored on the simulated device, so no theory curve is drawn.
   peaks at the first round. Only that one phase matters: the tone on the relay
   does nothing, because it plays after the relay was emptied.
 - **The compensation belongs to this round.** It changes with the gap, with the
-  length of any operation in the round, and with either swap operation. It also
-  drifts within hours. Scan it with `qc_trotter_compensation` right before the
-  run (`procedures/chain-trotter-compensation/PROCEDURE.md`, traps 1 to 3).
+  length of any operation in the round, with either swap operation, and with
+  `stark_timing`. It also drifts within hours. Scan it with
+  `qc_trotter_compensation` right before the run, at the same `stark_timing`
+  (`procedures/chain-trotter-compensation/PROCEDURE.md`, traps 1 to 3).
+- **With `stark_timing=with_reset`, check the reset itself.** The tones now
+  play while the relay is being reset, and a tone close to a frequency the
+  relay passes during its reset can disturb it. Compare the relay's population
+  in two runs, one with the tones and one with `compensation_amps` empty,
+  before using the setting on a chip. The round is also shorter, so
+  `round_duration_ns` has to be measured again.
 - **Use the same reset method as the compensation scan.** A shorter time
   between shots moves the working point of the chain. On a real chip the sink
   fell from 0.30 to 0.25 with the faster repetition, whichever reset produced

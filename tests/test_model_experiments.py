@@ -1266,6 +1266,10 @@ BROKEN_CHAINS = [
     ({"prep_operations": {"q0": "x180", "q0_q1_c": "x180"}},
      "prep_operations names 'q0_q1_c', which has no drive channel"),
     ({"prep_operations": {"q0": ""}}, "with an empty operation"),
+    # with the tones DURING the reset, one on the reset qubit would detune the
+    # very qubit the reset is acting on (after the reset it is merely inert)
+    ({"stark_timing": "with_reset", "compensation_amps": {"q1": 0.2, "q2": 0.25}},
+     "names the reset qubit 'q1'"),
 ]
 
 
@@ -1303,6 +1307,19 @@ def test_unidirectional_trotter_idle_step_stops_the_transport(session):
     assert out["fit"][source]["p_final"] > 0.5
     # ...against the swapping run, which drains it
     assert _trotter(session, max_rounds=12)["fit"][source]["p_final"] < 0.1
+
+
+def test_unidirectional_trotter_with_reset_is_the_same_circuit(session):
+    """stark_timing moves the tones in TIME, and the neutral model has no time
+    in it — the axis is the round COUNT. So the same chain, tone for tone, gives
+    the same curves in both settings; what differs lives in the probe."""
+    tones = {"compensation_amps": {"q2": 0.25}}
+    after = _trotter(session, max_rounds=10, **tones)
+    together = _trotter(session, max_rounds=10, stark_timing="with_reset", **tones)
+    assert set(together["outcomes"].values()) == {"successful"}
+    for qubit in CHAIN_QUBITS:
+        assert together["fit"][qubit] == pytest.approx(after["fit"][qubit],
+                                                      nan_ok=True)
 
 
 def _ideal_sink_peak(rounds, theta_first, theta_second):
@@ -2416,6 +2433,17 @@ def test_trotter_compensation_is_record_only(session):
     assert len(_compensation(session, max_rounds=6).get("suggestions", [])) == 0
 
 
+def test_trotter_compensation_takes_the_chains_stark_timing(session):
+    """stark_timing is the chain's own field, inherited, so the scan calibrates
+    the round the chain will run. The neutral model has no time in it, so the
+    optimum it plants does not move with the setting."""
+    after = _compensation(session, max_rounds=12)["fit"]["q2"]
+    together = _compensation(session, max_rounds=12,
+                             stark_timing="with_reset")["fit"]["q2"]
+    for key in ("best_compensation_amp", "best_compensation_amp_refined"):
+        assert together[key] == pytest.approx(after[key])
+
+
 COMPENSATION_REFUSALS = [
     # the relay's tone fires AFTER the reset, onto an emptied qubit
     ({"compensation_target": "q1"}, "must be the chain source"),
@@ -2427,6 +2455,14 @@ COMPENSATION_REFUSALS = [
     # the phase formula is single-excitation: two preps, or none, are refused
     ({"prep_operations": {"q0": "x180", "q2": "x180"}}, "prepares 2 qubits"),
     ({"prep_operations": {}}, "prepares 0 qubits"),
+    # with_reset plays the FIXED tones during the reset: none on its qubit...
+    ({"stark_timing": "with_reset", "compensation_amps": {"q1": 0.2}},
+     "names the reset qubit 'q1'"),
+    # ...and not the SWEPT one either, which only an unusual chain (the reset
+    # qubit is the sink) can put there
+    ({"stark_timing": "with_reset", "reset_qubit": "q2",
+      "compensation_target": "q2", "compensation_amps": {}},
+     "compensation_target='q2' is the reset qubit"),
 ]
 
 

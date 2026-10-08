@@ -243,17 +243,29 @@ provenance or a trap a user can walk into, **low** = hygiene.
   from the compiled program) — or the probes pad a round to a declared length — and the
   simulator measurement is a script in `scqo-qm/scripts/`.
 
-### F17 A shorter Trotter round: the stark tones during the relay reset (medium)
+### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED 2026-10-08, HARDWARE OWED (medium)
 - Added 2026-09-22 after the `partial_swap_030` chain run `20260922-202034-457`.
 - Problem: 80 ns of the 360 ns round swaps; the rest is three gaps (60), the relay reset
   (140 + overhead) and the stark tones (60). The sink decays with ~19 rounds (6.9 us),
   close to the q1-q3 combined dephasing, so round length is the lever. The tones act on the
-  source and sink, the reset on the relay, so they could play concurrently (~280 ns round).
-- Where: the round body of `scqo-qm` `qc_unidirectional_trotter.py` /
-  `qc_trotter_compensation.py` (the align before the tones), the Qblox probes for parity,
-  and the SCQO docs.
-- Done when: a Parameters switch plays the tones during the reset on both backends, the
-  compensation is re-measured, and the sink curve is compared with the 360 ns round.
+  source and sink, the reset on the relay, so they can play concurrently.
+- Landed (`RELEASES.d/chain-stark-with-reset.toml`): `stark_timing="with_reset"` on
+  `qc_unidirectional_trotter` and, inherited, `qc_trotter_compensation`; the default
+  `after_reset` is the round as it was. QM only — neither chain experiment has a Qblox
+  probe. The round body now lives once, in `scqo-qm` `_chain_round.play_chain_round`.
+  Offline only: the default programs are the earlier ones statement for statement, and a
+  `with_reset` program differs from them by the one `align()` before the tones.
+- Still owed, all on 5Q4C:
+  1. the `with_reset` round length on the gateway simulator (F16's method), and how far the
+     reset pulse starts behind the tones (the reset macro sets its z frequency first). By
+     the pulse budget at gap 20 the round is ~300 ns (40 + 20 + 40 + 20 + 140 + 20 + ~20
+     of overhead), not the ~280 this entry first said;
+  2. the relay's population after its reset with the tones on and off: noted 2026-10-06,
+     q3's tone (+50 MHz) sits ~35 MHz from a q2 sideband during the reset;
+  3. the compensation rescanned at `with_reset`, and the sink curve against the 360 ns round;
+  4. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
+     (the file carried another session's uncommitted edits on 2026-10-08).
+- Done when: those four are done.
 
 ### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
 - Added 2026-09-22 with the operator's rule that a stark compensation tone stays below one

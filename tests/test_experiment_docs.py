@@ -158,6 +158,40 @@ def test_a_foreign_flux_source_is_drawn_on_the_source_lane():
     assert own.lanes["flux"] == "q.z" and foreign.lanes["flux"] == "source.z"
 
 
+@pytest.mark.parametrize("name", ["qc_unidirectional_trotter",
+                                  "qc_trotter_compensation"])
+def test_the_chain_draws_its_stark_tones_where_stark_timing_puts_them(name):
+    """after_reset: the reset, its gap, then the tones in a step of their own.
+    with_reset: ONE step holds the reset and the tones, and the gap still
+    follows it - on both chain experiments, which share the declaration."""
+    cls = CORE[name]
+
+    def steps(**overrides):
+        params = cls.Parameters(**{**cls.doc_parameters, "operation_gap_ns": 20,
+                                   **overrides})
+        return [sorted(block.label for block in step)
+                for step in cls.sequence_diagram(params).steps]
+
+    after, together = steps(), steps(stark_timing="with_reset")
+    at = after.index(["reset"])
+    assert after[at:at + 3] == [["reset"], ["gap"], ["stark"]]
+    at = together.index(["reset", "stark"])
+    assert together[at + 1] == ["gap"]
+    assert ["reset"] not in together and ["stark"] not in together
+    assert len(together) == len(after) - 1
+
+
+def test_the_chain_without_a_tone_is_one_round_in_both_stark_timings():
+    cls = CORE["qc_unidirectional_trotter"]
+    drawn = [
+        [[(block.lane, block.label) for block in step]
+         for step in cls.sequence_diagram(cls.Parameters(**{
+             **cls.doc_parameters, "compensation_amps": {},
+             "stark_timing": timing})).steps]
+        for timing in ("after_reset", "with_reset")]
+    assert drawn[0] == drawn[1]
+
+
 def test_a_mapped_readout_is_drawn_on_the_member():
     """qubit_power_rabi on a coupler: the closing readout is the three-step map
     onto a pair member, on lanes of the member's own."""
