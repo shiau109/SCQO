@@ -1406,14 +1406,14 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
 - 2026-10-08, measuring the `stark_timing="with_reset"` round of F17 on the gateway
   simulator (5Q4C, F16's method through `Session.preview`). `qmm.simulate` returned in
   about 10 s each time, and `job.get_simulated_samples()` then raised `QMSimulationError:
-  Error while pulling samples`, on six calls between 12:09 and 12:28:
+  Error while pulling samples`, on five calls between 12:09 and 12:28:
   `qc_unidirectional_trotter`, both stark timings, windows of 16, 20 and 26 us, 1 and 400
   averages, `thermalization_time_ns` 400 and 2000. The cluster listing answered throughout
-  and the ten hardware runs right after were normal.
+  and the ten hardware runs made in between were normal.
 - The same simulator returned samples on 2026-10-04 (I38), and for the chain on 2026-09-22
   (F16), so neither the two-upconverter config nor the chain program alone explains it.
 - Not investigated, by the stop-at-the-first-problem rule: the gateway that day, or
-  something those six requests share (the per-run thermal override was in all of them).
+  something those five requests share (the per-run thermal override was in all of them).
 - Consequence: the `with_reset` round length is still unmeasured (F17).
 - Done when: a chain preview simulates again, or the failing condition is named.
 
