@@ -243,7 +243,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   from the compiled program) — or the probes pad a round to a declared length — and the
   simulator measurement is a script in `scqo-qm/scripts/`.
 
-### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED 2026-10-08, HARDWARE OWED (medium)
+### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED, FIRST HARDWARE RUN WORSE 2026-10-08 (medium)
 - Added 2026-09-22 after the `partial_swap_030` chain run `20260922-202034-457`.
 - Problem: 80 ns of the 360 ns round swaps; the rest is three gaps (60), the relay reset
   (140 + overhead) and the stark tones (60). The sink decays with ~19 rounds (6.9 us),
@@ -270,16 +270,40 @@ provenance or a trap a user can walk into, **low** = hygiene.
   itself read 0.062-0.065 in the first two rows; at 0.90 the tone drives it in both
   timings (I36), more with the reset (mean 0.093, highest 0.116 at round 4-5) than after
   it (0.075, 0.084).
+- Done on 5Q4C 2026-10-08 15:18-15:49, after a re-park (030/030, tomography 0.3020 /
+  0.2961, gap 20, 60 ns tone on q3 only): **at this round `with_reset` transports far
+  worse than `after_reset`.**
+
+  | | `after_reset` | `with_reset` |
+  |---|---|---|
+  | compensation, fine scan | 0.3344 ± 0.0003 (`152036-516`) | 0.5615 ± 0.0008 (`152441-319`) |
+  | sink, source prepared, 4000 shots | 0.295 at round 13 (`152632-013`) | 0.180 at round 24 (`152804-324`) |
+  | source kept per round | 0.8796 | 0.8965 |
+  | relay after its reset | 0.011 | 0.011 |
+  | sink, nothing prepared | not obtained | rises to 0.09-0.10 by round 10-20 (`154753-897`) |
+
+  - The ridge of the `with_reset` scan is one sharp line whose centre does not move with
+    the round count (0.561-0.567 over rounds 3-30), bright only from round ~15 on.
+  - The optimum moved from 0.33 to 0.56 because the round is ~60 ns shorter. At 0.56 the
+    tone drives q3: with nothing prepared the sink sits at 0.09-0.10, against 0.03 in the
+    `after_reset` series of 2026-10-05 (compensations 0.33-0.48). So about half of the
+    `with_reset` sink is that floor.
+  - Not separated: whether the weak transport is only the strong tone (I36), or also where
+    the tone now plays (it starts 20 ns after the sink's own flux pulse, and inside the
+    relay's reset).
 - Still owed, all on 5Q4C:
-  1. the `with_reset` round length on the gateway simulator (F16's method), and how far the
+  1. the two controls that separate those: `after_reset` at `operation_gap_ns=0` (the same
+     ~300 ns round, so its optimum should also sit near 0.56, with the tone after the
+     reset), and `with_reset` at a gap whose optimum is a weak tone (each 4 ns of round is
+     0.19 turn). A longer stark tone needs less amplitude for the same phase;
+  2. the `with_reset` round length on the gateway simulator (F16's method), and how far the
      reset pulse starts behind the tones (the reset macro sets its z frequency first). By
      the pulse budget at gap 20 the round is ~300 ns (40 + 20 + 40 + 20 + 140 + 20 + ~20
      of overhead), not the ~280 this entry first said. Tried 2026-10-08 and blocked by I43;
-  2. the compensation rescanned at `with_reset`, and the sink curve against the 360 ns
-     round. Not run 2026-10-08: the lines had to be re-parked first;
-  3. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
+  3. the nothing-prepared control of `after_reset` beside the one above;
+  4. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
      (the file carried another session's uncommitted edits on 2026-10-08).
-- Done when: those three are done.
+- Done when: those four are done, or the setting is withdrawn.
 
 ### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
 - Added 2026-09-22 with the operator's rule that a stark compensation tone stays below one
