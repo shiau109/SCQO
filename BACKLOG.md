@@ -243,7 +243,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   from the compiled program) — or the probes pad a round to a declared length — and the
   simulator measurement is a script in `scqo-qm/scripts/`.
 
-### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED, FIRST HARDWARE RUN WORSE 2026-10-08 (medium)
+### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED, RUNS ON 5Q4C 2026-10-08 (medium)
 - Added 2026-09-22 after the `partial_swap_030` chain run `20260922-202034-457`.
 - Problem: 80 ns of the 360 ns round swaps; the rest is three gaps (60), the relay reset
   (140 + overhead) and the stark tones (60). The sink decays with ~19 rounds (6.9 us),
@@ -270,40 +270,40 @@ provenance or a trap a user can walk into, **low** = hygiene.
   itself read 0.062-0.065 in the first two rows; at 0.90 the tone drives it in both
   timings (I36), more with the reset (mean 0.093, highest 0.116 at round 4-5) than after
   it (0.075, 0.084).
-- Done on 5Q4C 2026-10-08 15:18-15:49, after a re-park (030/030, tomography 0.3020 /
-  0.2961, gap 20, 60 ns tone on q3 only): **at this round `with_reset` transports far
-  worse than `after_reset`.**
+- Done on 5Q4C 2026-10-08 16:38-17:08, after a re-park (030/030, 60 ns tone on q3 only;
+  every chain 60 rounds, 4000 shots, each configuration with its own coarse + fine scan):
+  **`with_reset` transports at least as well as `after_reset`.**
 
-  | | `after_reset` | `with_reset` |
-  |---|---|---|
-  | compensation, fine scan | 0.3344 ± 0.0003 (`152036-516`) | 0.5615 ± 0.0008 (`152441-319`) |
-  | sink, source prepared, 4000 shots | 0.295 at round 13 (`152632-013`) | 0.180 at round 24 (`152804-324`) |
-  | source kept per round | 0.8796 | 0.8965 |
-  | relay after its reset | 0.011 | 0.011 |
-  | sink, nothing prepared | not obtained | rises to 0.09-0.10 by round 10-20 (`154753-897`) |
+  | stark timing, gap | compensation | sink, source prepared | source kept per round | sink, nothing prepared (rounds 10-60) | sink summed over 0-60, minus that control |
+  |---|---|---|---|---|---|
+  | `after_reset`, 20 | 0.2965 | 0.272 at round 14 (`164019-178`) | 0.8722 | 0.029 | 6.19 |
+  | `with_reset`, 20 | 0.9285 | 0.371 at round 12 (`170517-294`) | 0.8524 | 0.030 | 7.07 |
+  | `with_reset`, 32 | 0.1093 | 0.288 at round 15 (`164551-826`) | 0.8871 | 0.027 | 7.13 |
+  | `after_reset`, 0 | 0.9102 | 0.324 at round 12 (`165604-125`) | 0.8613 | 0.038 | 6.20 |
 
-  - The ridge of the `with_reset` scan is one sharp line whose centre does not move with
-    the round count (0.561-0.567 over rounds 3-30), bright only from round ~15 on.
-  - The optimum moved from 0.33 to 0.56 because the round is ~60 ns shorter. At 0.56 the
-    tone drives q3: with nothing prepared the sink sits at 0.09-0.10, against 0.03 in the
-    `after_reset` series of 2026-10-05 (compensations 0.33-0.48). So about half of the
-    `with_reset` sink is that floor.
-  - Not separated: whether the weak transport is only the strong tone (I36), or also where
-    the tone now plays (it starts 20 ns after the sink's own flux pulse, and inside the
-    relay's reset).
+  - The relay reads 0.011-0.012 after its reset in all four.
+  - Read the ranking with care: each configuration was measured once, 6-10 minutes apart,
+    while q1's park moved by -0.57 mV and q3's by -0.24 mV (read 17:18). The summed sink
+    alternates with the timing and not with the clock (6.19, 7.13, 6.20, 7.07 in run
+    order), which a drift alone would not do; the peak heights may carry some of it.
+  - At gap 20 the `with_reset` optimum needs a tone near one full turn (0.93), the range
+    `procedures/README.md` tells an operator to avoid; at gap 32 it is a weak tone (0.11).
+    A gap step is 12 ns of round, 0.57 turn, so the gap cannot land the optimum where one
+    wants it: a 4 ns step (0.19 turn) would.
+  - **The first `with_reset` run that day (15:18-15:49) was at a FALSE optimum (I44):** its
+    0-0.9 scan had no ridge to find, the real one being at 0.93, and settled on a sharp line
+    at 0.5615. That chain read 0.180 at round 24 with the sink at 0.09-0.10 for nothing
+    prepared (`152804-324`, `154753-897`).
 - Still owed, all on 5Q4C:
-  1. the two controls that separate those: `after_reset` at `operation_gap_ns=0` (the same
-     ~300 ns round, so its optimum should also sit near 0.56, with the tone after the
-     reset), and `with_reset` at a gap whose optimum is a weak tone (each 4 ns of round is
-     0.19 turn). A longer stark tone needs less amplitude for the same phase;
+  1. the comparison repeated INTERLEAVED (after / with / after / with at one gap), to say
+     whether the ~14 % in the summed sink is real;
   2. the `with_reset` round length on the gateway simulator (F16's method), and how far the
      reset pulse starts behind the tones (the reset macro sets its z frequency first). By
      the pulse budget at gap 20 the round is ~300 ns (40 + 20 + 40 + 20 + 140 + 20 + ~20
      of overhead), not the ~280 this entry first said. Tried 2026-10-08 and blocked by I43;
-  3. the nothing-prepared control of `after_reset` beside the one above;
-  4. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
+  3. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
      (the file carried another session's uncommitted edits on 2026-10-08).
-- Done when: those four are done, or the setting is withdrawn.
+- Done when: those three are done.
 
 ### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
 - Added 2026-09-22 with the operator's rule that a stark compensation tone stays below one
@@ -1440,6 +1440,28 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   something those five requests share (the per-run thermal override was in all of them).
 - Consequence: the `with_reset` round length is still unmeasured (F17).
 - Done when: a chain preview simulates again, or the failing condition is named.
+
+### I44 `qc_trotter_compensation` reports a tone-driven line as a resolved optimum (medium)
+- Found 2026-10-08 on 5Q4C (F17). With `stark_timing="with_reset"` at gap 20 the real
+  optimum was at 0.93, outside the procedure's 0-0.9 coarse window. Inside the window the
+  sink map held one sharp line at 0.56 (one 0.03 step wide, bright only from round ~15 on),
+  and the scan returned `best_compensation_amp_refined` 0.5643 +- 0.0009 with
+  `compensation_unresolved` = 0 (`152227-489`); the fine scan confirmed it, 0.5615 +- 0.0008
+  (`152441-319`). The chain run at that value read a sink of 0.180 against 0.371 at the real
+  optimum, measured that evening.
+- The line is not transport: with nothing prepared the sink still rises to 0.09-0.10 there
+  (`154753-897`). Two scans later that day each show a second, weaker line near 0.40 beside
+  their real ridge (`164911-298`, `164149-361`). What the tone drives there is not known.
+- What told the two apart, afterwards: the real ridge is several steps wide and already
+  bright by round 8-12; the false line is one step wide and bright only late; the
+  nothing-prepared chain is flat (0.03) at a real optimum.
+- Where: scqat `estimators/qc_trotter_compensation` (the refine takes the vertex of the
+  round-averaged sink, whatever its width), and Step 2 of
+  `procedures/chain-trotter-compensation` (a 0-0.9 window, with 1.0 allowed only when the
+  scan comes back unresolved - this one came back resolved).
+- Done when: a line of that kind is flagged rather than refined (its width against the
+  ridge the angles predict, or the round at which it becomes bright), and the procedure
+  says to run the nothing-prepared chain at a new optimum before trusting it.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_crosstalk_pulse` (built 2026-10-04; F32). FIRST RUNS on 5Q4C the same
