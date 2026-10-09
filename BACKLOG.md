@@ -243,7 +243,7 @@ provenance or a trap a user can walk into, **low** = hygiene.
   from the compiled program) — or the probes pad a round to a declared length — and the
   simulator measurement is a script in `scqo-qm/scripts/`.
 
-### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED, RUNS ON 5Q4C 2026-10-08 (medium)
+### F17 A shorter Trotter round: the stark tones during the relay reset — CODE LANDED, A/B MEASURED ON 5Q4C 2026-10-09 (medium)
 - Added 2026-09-22 after the `partial_swap_030` chain run `20260922-202034-457`.
 - Problem: 80 ns of the 360 ns round swaps; the rest is three gaps (60), the relay reset
   (140 + overhead) and the stark tones (60). The sink decays with ~19 rounds (6.9 us),
@@ -294,15 +294,71 @@ provenance or a trap a user can walk into, **low** = hygiene.
     0-0.9 scan had no ridge to find, the real one being at 0.93, and settled on a sharp line
     at 0.5615. That chain read 0.180 at round 24 with the sink at 0.09-0.10 for nothing
     prepared (`152804-324`, `154753-897`).
+- Done on 5Q4C 2026-10-09 10:33-13:33 (tag `with-reset-prep4-1009`; scripts, logs and
+  figures in `scq-reports/scratch/with_reset_prep4_20261009/`): **the interleaved
+  comparison, four prepared states, r = 1 and r = 3.** theta2 0.3013, theta1 0.2987
+  (r 0.98) and 0.5221 (r 3.00) by tomography at gap 260; gap 200 reads all three within
+  1.3 %. A = `after_reset` (360 ns by the pulse budget), B = `with_reset` (300 ns), gap 20
+  in both. Per r four cycles; a cycle is one fine compensation scan per arm, then |10>,
+  |00>, |01>, |11> (digits = q1, q3) with the two arms back to back, 60 rounds, 1000 shots
+  (4000 pooled). An error is the spread between the cycles. "Sum" is q3 over rounds 0-60
+  minus the same arm's |00> chain.
+
+  | r | prepared | quantity | A | B |
+  |---|---|---|---|---|
+  | 0.98 | 10 | q3 sum | 6.03 +- 0.14 | 7.31 +- 0.06 (B/A 1.21 +- 0.03) |
+  | 0.98 | 10 | q1 kept per round | 0.878 | 0.902 |
+  | 0.98 | 01 | q3 kept per round | 0.868 | 0.889 |
+  | 0.98 | 01 | q3 sum | 6.91 +- 0.06 | 7.79 +- 0.11 |
+  | 0.98 | 11 | q3 sum | 7.43 +- 0.05 | 9.20 +- 0.02 |
+  | 3.00 | 10 | q3 sum | 4.19 +- 0.14 | 4.99 +- 0.07 (B/A 1.19 +- 0.04) |
+  | 3.00 | 10 | q1 kept per round | 0.701 | 0.746 |
+  | 3.00 | 01 | q3 kept per round | 0.878 | 0.885 |
+  | 3.00 | 01 | q3 sum | 7.37 +- 0.13 | 7.44 +- 0.07 |
+  | 3.00 | 11 | q3 sum | 5.94 +- 0.12 | 6.59 +- 0.08 |
+  | 3.00 | 11 over 01 | q3 sum, rounds 20-40 | 0.59 +- 0.04 | 0.87 +- 0.09 |
+  | both | 00 | q3, rounds 10-60 | 0.031 | 0.029 |
+
+  - **`with_reset` is the better round for the transported population**, in every prepared
+    state and at both r, and by about what a 60 ns shorter round predicts: the Trotter
+    circuit with that day's T1 / T2* (q1 10.6 / 3.7 us, q3 21.1 / 8.7 us) gives B/A 1.11
+    (T1 only) to 1.19 for the |10> sum at r 1 and 1.07 to 1.12 at r 3. In absolute terms the
+    |10> data sit 1.03-1.33 times ABOVE the curve with T2*: the Ramsey T2* overstated the
+    chain's dephasing that day (q1's fringe was a two-frequency beat, 55 kHz apart).
+  - **That the round LENGTH is the cause is not isolated.** Controls at r 1:
+    (a) tone power is not it: at 360 ns the q3 keep is 0.868 with A's tone and 0.870 with a
+    zero-amplitude tone (q1 0.883 / 0.884); at 300 ns a q3 tone of 0.38 DURING the reset
+    costs q3 about 1 % per round (0.881 against 0.891) and q1 nothing;
+    (b) with both swaps idle and no tone the loss per round is plain T1 from 240 to 420 ns
+    (q1 7-9 us, q3 18-20 us);
+    (c) with the swaps on and no tone the keep per round is NOT monotonic in the round
+    length and moves by as much as A and B differ (I46).
+  - **At r 3 the |11> curve is not closer to the Mpemba zero in B.** Its late-round weight
+    against |01> is larger (table), and so is sum(|11>) / sum(|01>): 0.89 against 0.81
+    (ideal circuit 0.60). q1 empties more slowly in B (keep 0.746 against 0.701), so the
+    ratio of the two decay rates is further below 3 there; theta1 was set once by
+    tomography, not per timing.
+  - Where the tone went: A's optimum sat at a q3 tone of 0.37-0.39 (r 1) and 0.43-0.46
+    (r 3). B's is A's minus 0.165 turn; 60 ns x 47.4 MHz = 2.84 turns predicts 0.156, the
+    first measured support for the 300 ns budget (modulo 21.1 ns). At r 1 that is a phase
+    just below zero, out of reach of a q3 tone under one turn: a tone on q1 (0.10-0.15)
+    has the other sign, gives a clean ridge, and leaves the |00> chain at 0.03. At r 3 a q3
+    tone of 0.10-0.15 does it.
+  - The chip that day: q1's T1 read 6.0-11.7 us (stored 15.75). Every line moved: q1's park
+    -0.4 mV in the first 30 min, still for 16 min, -0.5 mV more by 13:30; the couplers
+    -4.4 / -3.5 MHz over the r 3 block (not re-parked inside it). The optimum moved by up
+    to ~0.002 turn per minute, hence a scan before every cycle.
 - Still owed, all on 5Q4C:
-  1. the comparison repeated INTERLEAVED (after / with / after / with at one gap), to say
-     whether the ~14 % in the summed sink is real;
-  2. the `with_reset` round length on the gateway simulator (F16's method), and how far the
+  1. the `with_reset` round length on the gateway simulator (F16's method), and how far the
      reset pulse starts behind the tones (the reset macro sets its z frequency first). By
      the pulse budget at gap 20 the round is ~300 ns (40 + 20 + 40 + 20 + 140 + 20 + ~20
      of overhead), not the ~280 this entry first said. Tried 2026-10-08 and blocked by I43;
-  3. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
-     (the file carried another session's uncommitted edits on 2026-10-08).
+  2. `procedures/chain-trotter-compensation/PROCEDURE.md` does not name `stark_timing` yet
+     (the file carried another session's uncommitted edits on 2026-10-08 and 10-09). It
+     should also say that the optimum may need the tone on the SOURCE, and how to tell;
+  3. the r = 3 comparison with theta1 retuned per timing (to the same q1 keep per round),
+     before the Mpemba observable is read against the timing;
+  4. the 100 ns stark operation the user planned for the merged round (not registered).
 - Done when: those three are done.
 
 ### F18 A stark amplitude-to-phase conversion, and the one-turn bound in code (medium)
@@ -1459,9 +1515,51 @@ resonance. The real J minimum is at a LINE voltage of ~0.148-0.165 V.
   round-averaged sink, whatever its width), and Step 2 of
   `procedures/chain-trotter-compensation` (a 0-0.9 window, with 1.0 allowed only when the
   scan comes back unresolved - this one came back resolved).
+- Seen again 2026-10-09, and one more kind. The 0.57 line came back, only with
+  `with_reset` (`112457-106`: brightest at round 29); the `after_reset` scan of the same
+  minutes has nothing there (`111931-837`). And at the top of the window the sink rises in
+  BOTH timings: at 0.99 it reads 0.39 and stays at 0.27-0.37 after q1 has emptied, at 0.96
+  it idles at 0.10-0.14. A coarse scan to 0.99 calls that unresolved (the maximum is the
+  edge), which is the right answer for the wrong reason: the real ridge was at 0.39.
 - Done when: a line of that kind is flagged rather than refined (its width against the
   ridge the angles predict, or the round at which it becomes bright), and the procedure
   says to run the nothing-prepared chain at a new optimum before trusting it.
+
+### I45 The chain experiments compile a `wait` of 1-3 cycles for a gap of 4-12 ns (low)
+- Found 2026-10-09 on 5Q4C: `qc_unidirectional_trotter` with `operation_gap_ns=8` connects,
+  then fails at compile (`122738-453`): "Time value in wait statement must be a minimum 4
+  (2 was provided)", from the pair's `wait(duration, *channels)` and the qubit's `wait`.
+  A gap of 0 plays no wait and 16 or more is legal; 4, 8 and 12 are not.
+- Where: `scqo-qm` `_chain_round.play_chain_round` and the callers that turn
+  `operation_gap_ns` into cycles; `qc_trotter_compensation` inherits it. The same family as
+  the xyz-delay illegal wait.
+- Done when: a gap the instrument cannot play is refused by name before any instrument
+  time (in `define_sweep` or the probe's own checks), on both chain experiments.
+
+### I46 The chain's keep per round depends on the round length in 12 ns steps (medium)
+- Found 2026-10-09 on 5Q4C (030 / 030, no tone, both swaps on, 60 rounds, 1000 shots;
+  `operation_gap_ns` 16-40 in 4 ns steps = 288-360 ns of round by the budget; two passes,
+  12:27 and 13:16, the second in reverse order). Keep per round, mean of the passes:
+
+  | round (ns) | 288 | 300 | 312 | 324 | 336 | 348 | 360 |
+  |---|---|---|---|---|---|---|---|
+  | q3, prepared alone | 0.874 | 0.889 | 0.890 | 0.898 | 0.891 | 0.875 | 0.883 |
+  | q1, prepared alone | 0.884 | 0.900 | 0.907 | 0.881 | 0.895 | 0.892 | 0.879 |
+
+  The two passes agree within 0.002 for q3 at 300-336 ns and within 0.017 elsewhere; q1's
+  second pass is lower throughout by ~0.01 (its T1 moved). With both swaps idle the same
+  rounds lose plain T1 (F17). 60 ns of T1 is worth 0.3 % (q3) and 0.6 % (q1) per round.
+- My reading, not shown: amplitude left in the relay after its reset returns at the next
+  swap with the phase the relay and the end have accumulated over one round. (f3 - f2) and
+  (f1 - f2) are 349.8 and 302.4 MHz, so a 12 ns step turns those phases by 0.20 and 0.63
+  turn, and both rows fit a cosine in them; a leftover of ~0.5 % in population is enough
+  for +-1.2 %. The absolute phase is not known: the round's overhead is known to a few ns.
+- Consequence: the tomography's theta does not predict a chain's decay per round to better
+  than ~1.5 %, and two rounds of different length differ by that much for a reason that
+  is not their length (F17's A/B carries it).
+- Done when: the keep is measured against the round length in 1 ns steps (the periods are
+  2.9 and 3.3 ns; this needs a round-length setting finer than the three-gap step), or the
+  relay's leftover is measured with its phase.
 
 ## Hardware validation owed (from earlier session notes — verify before acting)
 - `qubit_ramsey_flux_crosstalk_pulse` (built 2026-10-04; F32). FIRST RUNS on 5Q4C the same
